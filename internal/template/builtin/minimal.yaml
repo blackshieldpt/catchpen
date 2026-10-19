@@ -1,0 +1,3 @@
+description: Small VM with the base toolset only
+extends: base
+resources: { cpus: 2, memory: 4G, disk: 20G }

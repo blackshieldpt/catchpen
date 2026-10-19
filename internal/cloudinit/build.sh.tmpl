@@ -1,0 +1,99 @@
+#!/bin/bash
+# curral base build — generated, runs once as root inside the build VM.
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+log() { echo "curral-build: $*"; }
+aptq() { apt-get -q -o DPkg::Lock::Timeout=600 "$@"; }
+. /etc/os-release
+# The build VM's only exit is curral's egress proxy (public hosts only).
+export http_proxy={{.Proxy}} https_proxy={{.Proxy}} HTTP_PROXY={{.Proxy}} HTTPS_PROXY={{.Proxy}}
+export no_proxy=localhost,127.0.0.1 NO_PROXY=localhost,127.0.0.1
+printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";\n' {{.Proxy}} {{.Proxy}} > /etc/apt/apt.conf.d/95curral-build-proxy
+
+log "disabling background package jobs"
+systemctl disable --now unattended-upgrades.service apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+systemctl stop apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+systemctl mask apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+
+log "updating packages"
+aptq update
+aptq -y -o Dpkg::Options::=--force-confold dist-upgrade
+aptq -y install --no-install-recommends ca-certificates curl jq xz-utils gnupg
+{{- if .Packages}}
+aptq -y install --no-install-recommends {{join .Packages " "}}
+{{- end}}
+{{- if .Docker}}
+
+log "installing docker"
+install -d -m 0755 /etc/apt/keyrings
+curl -fsSL "https://download.docker.com/linux/${ID}/gpg" -o /tmp/docker.asc
+fpr=$(gpg --show-keys --with-colons /tmp/docker.asc | awk -F: '$1=="fpr"{print $10; exit}')
+[ "$fpr" = "9DC858229FC7DD38854AE2D88D81803C0EBFCD88" ] || { log "docker key fingerprint mismatch: $fpr"; exit 1; }
+gpg --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.asc
+if curl -fsS -o /dev/null "https://download.docker.com/linux/${ID}/dists/${VERSION_CODENAME}/Release"; then
+  echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${ID} ${VERSION_CODENAME} stable" > /etc/apt/sources.list.d/docker.list
+  aptq update
+  aptq -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+else
+  log "no docker repo for ${ID} ${VERSION_CODENAME}; using distro packages"
+  aptq -y install docker.io docker-compose-v2 || aptq -y install docker.io
+fi
+usermod -aG docker {{.User}}
+systemctl enable docker
+{{- end}}
+{{- if .Node}}
+
+log "installing node {{.Node}}"
+base="https://nodejs.org/dist/latest-v{{.Node}}.x"
+curl -fsSL "$base/SHASUMS256.txt" -o /tmp/node.sums
+tarball=$(awk '/ node-v[0-9.]+-linux-x64\.tar\.xz$/{print $2; exit}' /tmp/node.sums)
+[ -n "$tarball" ] || { log "node {{.Node}} not found"; exit 1; }
+curl -fsSL "$base/$tarball" -o "/tmp/$tarball"
+(cd /tmp && grep " $tarball\$" node.sums | sha256sum -c -)
+tar -xJf "/tmp/$tarball" -C /usr/local --strip-components=1 --no-same-owner
+rm -f "/tmp/$tarball" /tmp/node.sums
+node --version
+{{- end}}
+{{- if .Go}}
+
+log "installing go {{.Go}}"
+gover="{{.Go}}"
+curl -fsSL "https://go.dev/dl/?mode=json&include=all" -o /tmp/go.json
+if [[ "$gover" =~ ^1\.[0-9]+$ ]]; then
+  gover=$(jq -r --arg p "go$gover." '[.[] | select(.stable and (.version|startswith($p)))][0].version // empty' /tmp/go.json | sed 's/^go//')
+  [ -n "$gover" ] || { log "no stable go {{.Go}}.x release"; exit 1; }
+fi
+gosum=$(jq -r --arg v "go$gover" '.[] | select(.version==$v) | .files[] | select(.os=="linux" and .arch=="amd64" and .kind=="archive") | .sha256' /tmp/go.json)
+[ -n "$gosum" ] || { log "go $gover not found"; exit 1; }
+curl -fsSL "https://go.dev/dl/go$gover.linux-amd64.tar.gz" -o /tmp/go.tgz
+echo "$gosum  /tmp/go.tgz" | sha256sum -c -
+rm -rf /usr/local/go && tar -xzf /tmp/go.tgz -C /usr/local
+ln -sf /usr/local/go/bin/go /usr/local/go/bin/gofmt /usr/local/bin/
+rm -f /tmp/go.tgz /tmp/go.json
+go version
+{{- end}}
+{{- if .UV}}
+
+log "installing uv"
+uvbase="https://github.com/astral-sh/uv/releases/latest/download"
+curl -fsSL "$uvbase/uv-x86_64-unknown-linux-gnu.tar.gz" -o /tmp/uv.tgz
+curl -fsSL "$uvbase/uv-x86_64-unknown-linux-gnu.tar.gz.sha256" -o /tmp/uv.sha256
+echo "$(awk '{print $1}' /tmp/uv.sha256)  /tmp/uv.tgz" | sha256sum -c -
+tar -xzf /tmp/uv.tgz -C /usr/local/bin --strip-components=1 --no-same-owner
+rm -f /tmp/uv.tgz /tmp/uv.sha256
+uv --version
+{{- end}}
+{{- range .Scripts}}
+
+log "running {{.}}"
+bash "/var/lib/curral/build/scripts/{{.}}"
+{{- end}}
+
+log "cleaning up"
+aptq -y autoremove
+apt-get clean
+rm -f /etc/apt/apt.conf.d/95curral-build-proxy
+cloud-init clean --logs --machine-id
+rm -f /etc/ssh/ssh_host_*
+fstrim -av || true
+log "done"

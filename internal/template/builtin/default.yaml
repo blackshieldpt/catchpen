@@ -1,0 +1,10 @@
+description: General development VM with Docker, Node and Python (uv)
+extends: base
+resources: { cpus: 4, memory: 8G, disk: 40G }
+packages: [build-essential, make, python3, python3-venv, pkg-config]
+docker: true
+runtimes:
+  node: "24"
+  python: uv
+network:
+  presets: [github, npm, pypi, go, apt-ubuntu, apt-debian, docker-apt, docker-hub, ghcr]
