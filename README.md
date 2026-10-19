@@ -190,7 +190,9 @@ github.com and Gitea behind OpenSSH do, gitlab.com and Gitea's built-in SSH serv
 don't. `forge add` / `forge test` check this for `agent`-mode forges.
 
 `host` forwards your own agent (`$SSH_AUTH_SOCK`): anything in the VM can use all its
-keys while you're connected. curral warns when you create such a VM.
+keys while you're connected. curral warns when you create such a VM, and `agent`-mode
+forges require `restricted` (start-time clones would otherwise forward your agent
+unattended).
 
 ```
 curral forward dev -L 3000 -L 8080:80      # guest ports on the host's 127.0.0.1

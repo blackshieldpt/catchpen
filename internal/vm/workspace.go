@@ -339,8 +339,9 @@ func agentForges(fs map[string]forge.Forge) []forge.Forge {
 
 func checkAgent(s template.SSH, fs map[string]forge.Forge) error {
 	af := agentForges(fs)
-	if len(af) > 0 && s.Mode() == template.AgentOff {
-		return fmt.Errorf("forge %s uses auth mode agent; set ssh.agent: restricted (or host)", af[0].Name)
+	// Clones at start would otherwise forward the whole host agent unattended.
+	if len(af) > 0 && s.Mode() != template.AgentRestricted {
+		return fmt.Errorf("forge %s uses auth mode agent; set ssh.agent: restricted", af[0].Name)
 	}
 	if s.Mode() == template.AgentRestricted && len(af) == 0 {
 		return fmt.Errorf("ssh.agent: restricted needs a repo on a forge with auth mode agent (keys are only usable for those forges)")

@@ -60,7 +60,8 @@ func TestCheckAgent(t *testing.T) {
 		{restricted, tokenForge, "needs a repo on a forge with auth mode agent"},
 		{restricted, nil, "needs a repo"},
 		{restricted, agentForge, ""},
-		{template.SSH{Agent: template.AgentHost}, agentForge, ""},
+		{template.SSH{Agent: template.AgentHost}, agentForge, "set ssh.agent: restricted"},
+		{template.SSH{Agent: template.AgentHost}, tokenForge, ""},
 		{template.SSH{}, tokenForge, ""},
 	}
 	for i, c := range cases {
