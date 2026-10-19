@@ -320,6 +320,8 @@ type Entry struct {
 	Name string
 	User string
 	Keys Keys
+	// ForwardAgent is "" (no forwarding), an agent socket path, or "$SSH_AUTH_SOCK".
+	ForwardAgent string
 }
 
 // cfgQuote double-quotes a path for ssh_config (which has no escape syntax).
@@ -355,8 +357,24 @@ func WriteConfig(path, curralBin string, entries []Entry) error {
 		}
 		fmt.Fprintf(&b, "  IdentityFile %s\n", id)
 		b.WriteString("  IdentitiesOnly yes\n")
-		b.WriteString("  IdentityAgent none\n")
-		b.WriteString("  ForwardAgent no\n")
+		// ssh doesn't forward an agent when IdentityAgent is none, so a forwarding
+		// VM names the forwarded agent there too; IdentitiesOnly keeps its keys
+		// from being offered to the VM itself.
+		switch e.ForwardAgent {
+		case "":
+			b.WriteString("  IdentityAgent none\n")
+			b.WriteString("  ForwardAgent no\n")
+		case "$SSH_AUTH_SOCK":
+			b.WriteString("  IdentityAgent $SSH_AUTH_SOCK\n")
+			b.WriteString("  ForwardAgent $SSH_AUTH_SOCK\n")
+		default:
+			sock, err := cfgQuote(e.ForwardAgent)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(&b, "  IdentityAgent %s\n", sock)
+			fmt.Fprintf(&b, "  ForwardAgent %s\n", sock)
+		}
 		// Override forwarding a user's `Host *` block might enable.
 		b.WriteString("  ForwardX11 no\n")
 		b.WriteString("  ForwardX11Trusted no\n")

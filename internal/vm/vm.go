@@ -91,6 +91,7 @@ type State struct {
 	Repos      []RepoState            `json:"repos,omitempty"`
 	Forges     map[string]forge.Forge `json:"forges,omitempty"`      // snapshot of the forges Repos use
 	ForgeUsers map[string]string      `json:"forge_users,omitempty"` // token owner per forge (mode token)
+	SSH        template.SSH           `json:"ssh"`
 }
 
 // Runtime describes a running VM.
@@ -105,6 +106,7 @@ type Manager struct {
 	Cfg   config.Config
 	Tpl   template.Loader
 	Out   io.Writer    // progress messages
+	In    io.Reader    // terminal input for key passphrases (nil: none)
 	Bin   string       // absolute path of the curral binary (ProxyCommand, guestfwd)
 	Debug bool         // stream the whole build log; log the serial console; keep failed VMs running
 	HTTP  *http.Client // forge API client (nil: default)
@@ -472,6 +474,8 @@ type CreateOpts struct {
 	ClaudeAuth string   // overrides agents.claude.auth
 	Repos      []string // added to the template's repos
 	ReadOnly   bool     // deploy keys are read-only
+	SSHAgent   string   // overrides ssh.agent
+	AgentKeys  []string // added to ssh.agent_keys
 }
 
 func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *State, err error) {
@@ -519,8 +523,20 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 	if egressMode == egress.ModeOpen && !o.AllowOpen {
 		return nil, fmt.Errorf("template %s uses network.egress: open (unfiltered internet and the host's 127.0.0.1 services); pass --allow-open to confirm", r.T.Name)
 	}
+	if o.SSHAgent != "" || len(o.AgentKeys) > 0 {
+		if o.SSHAgent != "" {
+			r.T.SSH.Agent = o.SSHAgent
+		}
+		r.T.SSH.AgentKeys = append(append([]string(nil), r.T.SSH.AgentKeys...), o.AgentKeys...)
+		if err := r.T.SSH.Validate(); err != nil {
+			return nil, err
+		}
+	}
 	repos, forges, err := m.planRepos(append(append([]string(nil), r.T.Repos...), o.Repos...), o.ReadOnly)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkAgent(r.T.SSH, forges); err != nil {
 		return nil, err
 	}
 	var allow []string
@@ -604,7 +620,10 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		CPUs: res.CPUs, MemoryMB: memMB, DiskMB: max(diskMB, baseMB), Ports: r.T.Ports,
 		Egress: egressMode, Docker: r.T.HasDocker(), Created: time.Now().UTC(),
 		Agents: r.T.Agents, Env: r.T.Env, MCP: r.T.MCP, Sync: r.T.Sync,
-		Repos: s.Repos, Forges: s.Forges, ForgeUsers: s.ForgeUsers,
+		Repos: s.Repos, Forges: s.Forges, ForgeUsers: s.ForgeUsers, SSH: r.T.SSH,
+	}
+	if r.T.SSH.Mode() == template.AgentHost {
+		m.logf("warning: %s forwards your host ssh-agent: anything in the VM can use all its keys while you're connected", name)
 	}
 	if err := m.save(s); err != nil {
 		return nil, err
@@ -756,6 +775,9 @@ func (m *Manager) Start(ctx context.Context, name string) (*Runtime, error) {
 		return failed(err)
 	}
 	defer c.Close()
+	if err := m.startAgent(ctx, s); err != nil {
+		return failed(fmt.Errorf("ssh agent: %w", err))
+	}
 	if !s.Booted {
 		m.logf("waiting for first-boot setup")
 		out, err := sshx.Run(wctx, c, "cloud-init status --wait >/dev/null; rc=$?; cloud-init status --long; exit $rc", nil)
@@ -921,6 +943,8 @@ func (m *Manager) stopLocked(name string, force bool) error {
 }
 
 func (m *Manager) cleanupRuntime(name string) error {
+	m.stopForwards(name)
+	_ = m.agent(name).Stop()
 	for _, f := range []string{runtimeFile, qmpSock, serialSock, pidFile} {
 		_ = os.Remove(m.file(name, f))
 	}
@@ -1009,7 +1033,14 @@ func (m *Manager) WriteSSHConfig() error {
 	}
 	var es []sshx.Entry
 	for _, v := range vms {
-		es = append(es, sshx.Entry{Name: v.Name, User: v.User, Keys: m.keys(v.Name)})
+		e := sshx.Entry{Name: v.Name, User: v.User, Keys: m.keys(v.Name)}
+		switch v.SSH.Mode() {
+		case template.AgentRestricted:
+			e.ForwardAgent = m.agent(v.Name).Socket()
+		case template.AgentHost:
+			e.ForwardAgent = "$SSH_AUTH_SOCK"
+		}
+		es = append(es, e)
 	}
 	return sshx.WriteConfig(m.P.SSHConfig(), m.Bin, es)
 }

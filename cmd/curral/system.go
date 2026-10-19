@@ -115,6 +115,11 @@ func doctorCmd() *cobra.Command {
 			if _, err := exec.LookPath("notify-send"); err != nil {
 				warn("notify-send", "not found; `egress watch --desktop` unavailable (sudo apt install libnotify-bin)")
 			}
+			if _, err := exec.LookPath("ssh-add"); err != nil {
+				warn("ssh-agent", "ssh-agent/ssh-add not found; ssh.agent: restricted unavailable")
+			} else if askpassMissing() {
+				warn("ssh-askpass", "no askpass program or no display; restricted agents with confirm on can't ask (sudo apt install ssh-askpass, or set SSH_ASKPASS)")
+			}
 			if failed {
 				return errors.New("some checks failed")
 			}
@@ -138,4 +143,17 @@ func inGroup(name string) bool {
 		}
 	}
 	return false
+}
+
+// askpassMissing reports whether ssh-agent has no way to ask for key-use confirmation.
+func askpassMissing() bool {
+	if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+		return true
+	}
+	if p := os.Getenv("SSH_ASKPASS"); p != "" {
+		_, err := exec.LookPath(p)
+		return err != nil
+	}
+	_, err := os.Stat("/usr/bin/ssh-askpass")
+	return err != nil
 }

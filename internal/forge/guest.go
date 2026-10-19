@@ -20,8 +20,11 @@ func (g GuestRepo) Dir() string { return "/workspace/" + g.Repo.Name }
 
 // CloneURL is the remote URL the guest uses.
 func (g GuestRepo) CloneURL() string {
-	if g.Forge.Auth.Mode == ModeDeployKey {
+	switch g.Forge.Auth.Mode {
+	case ModeDeployKey:
 		return g.Alias + ":" + g.Repo.Path() + ".git"
+	case ModeAgent:
+		return g.Forge.AgentAlias() + ":" + g.Repo.Path() + ".git"
 	}
 	return g.Forge.WebURL() + "/" + g.Repo.Path() + ".git"
 }
@@ -46,7 +49,21 @@ func Alias(r Repo) string {
 func SSHConfig(repos []GuestRepo, proxy string) string {
 	var b strings.Builder
 	b.WriteString("# written by curral at each start; do not edit\n")
+	agentSeen := map[string]bool{}
 	for _, g := range repos {
+		if g.Forge.Auth.Mode == ModeAgent && !agentSeen[g.Forge.Name] {
+			agentSeen[g.Forge.Name] = true
+			// Keys come from the agent forwarded by `curral ssh` / ssh curral-<vm>.
+			fmt.Fprintf(&b, `
+Host %s
+  HostName %s
+  Port %d
+  User git
+  UserKnownHostsFile ~/.ssh/curral_known_hosts
+  StrictHostKeyChecking yes
+  ProxyCommand nc -X connect -x %s %%h %%p
+`, g.Forge.AgentAlias(), g.Forge.Host, g.Forge.Port(), proxy)
+		}
 		if g.Forge.Auth.Mode != ModeDeployKey {
 			continue
 		}
@@ -71,7 +88,7 @@ func KnownHosts(repos []GuestRepo) string {
 	seen := map[string]bool{}
 	var b strings.Builder
 	for _, g := range repos {
-		if g.Forge.Auth.Mode == ModeDeployKey && !seen[g.Forge.Name] {
+		if g.Forge.UsesSSH() && !seen[g.Forge.Name] {
 			seen[g.Forge.Name] = true
 			b.WriteString(g.Forge.KnownHosts())
 		}

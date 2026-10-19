@@ -103,6 +103,7 @@ type Template struct {
 	Env         map[string]string `yaml:"env,omitempty" json:"env,omitempty"` // pushed at each start; literal or secret:NAME
 	MCP         []MCP             `yaml:"mcp,omitempty" json:"mcp,omitempty"`
 	Sync        Sync              `yaml:"sync,omitempty" json:"sync"`
+	SSH         SSH               `yaml:"ssh,omitempty" json:"ssh"`
 	Tools       []string          `yaml:"tools,omitempty" json:"tools,omitempty"` // gh, tea
 	Repos       []string          `yaml:"repos,omitempty" json:"repos,omitempty"` // cloned into /workspace at start
 
@@ -260,6 +261,13 @@ func (t *Template) merge(o *Template) {
 	}
 	t.mergeAgents(o)
 	t.Tools = appendUniq(t.Tools, o.Tools...)
+	if o.SSH.Agent != "" {
+		t.SSH.Agent = o.SSH.Agent
+	}
+	t.SSH.AgentKeys = appendUniq(t.SSH.AgentKeys, o.SSH.AgentKeys...)
+	if o.SSH.Confirm != nil {
+		t.SSH.Confirm = o.SSH.Confirm
+	}
 	t.Repos = appendUniq(t.Repos, o.Repos...)
 	for k, v := range o.assets {
 		t.assets[k] = v
@@ -338,6 +346,9 @@ func (t *Template) Validate() error {
 		if d, err := time.ParseDuration(pt); err != nil || d <= 0 {
 			return fmt.Errorf("network.prompt_timeout: invalid duration %q", pt)
 		}
+	}
+	if err := t.SSH.Validate(); err != nil {
+		return err
 	}
 	for _, tool := range t.Tools {
 		if tool != "gh" && tool != "tea" {

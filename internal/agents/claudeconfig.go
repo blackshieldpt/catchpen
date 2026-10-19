@@ -98,10 +98,15 @@ func claudeConfigTar(dir string) ([]byte, []string, error) {
 var sensitiveDirs = []string{".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".password-store",
 	".config/gh", ".config/gcloud", ".config/curral", ".local/share/curral"}
 
+// sensitive reports whether a resolved path is the home directory itself or
+// inside a credentials directory. It is checked for every visited path.
 func sensitive(real string) bool {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return true
+	}
+	if h, err := filepath.EvalSymlinks(home); err == nil {
+		home = h
 	}
 	if real == home {
 		return true
@@ -133,6 +138,10 @@ func (w *walker) walk(path, name string) error {
 	}
 	if real != w.root && !strings.HasPrefix(real, w.root+"/") {
 		w.skipped = append(w.skipped, name+" (links outside its directory)")
+		return nil
+	}
+	if sensitive(real) {
+		w.skipped = append(w.skipped, name+" (credentials directory)")
 		return nil
 	}
 	st, err := os.Stat(real)

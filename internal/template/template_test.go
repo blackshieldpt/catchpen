@@ -204,3 +204,30 @@ func TestAgentsValidation(t *testing.T) {
 		t.Errorf("api-key mode with ANTHROPIC_API_KEY env: %v", err)
 	}
 }
+
+func TestSSHAgentConfig(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "a.yaml", "ssh: { agent: restricted, agent_keys: [~/.ssh/id_ed25519], confirm: false }\n")
+	write(t, dir, "b.yaml", "extends: a\nssh: { agent_keys: [/keys/deploy] }\n")
+	tp, err := Loader{UserDir: dir}.Load("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tp.SSH.Mode() != AgentRestricted || tp.SSH.ConfirmEach() || !slices.Equal(tp.SSH.AgentKeys, []string{"~/.ssh/id_ed25519", "/keys/deploy"}) {
+		t.Errorf("ssh = %+v", tp.SSH)
+	}
+	if (SSH{}).Mode() != AgentOff || !(SSH{}).ConfirmEach() {
+		t.Error("defaults")
+	}
+	for body, want := range map[string]string{
+		"ssh: { agent: always }\n":                                 "ssh.agent must be",
+		"ssh: { agent: restricted }\n":                             "needs ssh.agent_keys",
+		"ssh: { agent: restricted, agent_keys: [relative/key] }\n": "absolute or ~/ path",
+		"ssh: { agent: host, agent_keys: [/k] }\n":                 "only applies to ssh.agent: restricted",
+	} {
+		write(t, dir, "x.yaml", body)
+		if _, err := (Loader{UserDir: dir}).Load("x"); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: err = %v, want %q", body, err, want)
+		}
+	}
+}

@@ -272,3 +272,31 @@ func TestCapWriter(t *testing.T) {
 		t.Fatalf("buffer %q over=%v", w.b.String(), w.over)
 	}
 }
+
+func TestWriteConfigForwardAgent(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "ssh_config")
+	err := WriteConfig(p, "/usr/bin/curral", []Entry{
+		{Name: "off", User: "agent", Keys: Keys{Dir: "/k/off"}},
+		{Name: "res", User: "agent", Keys: Keys{Dir: "/k/res"}, ForwardAgent: "/k/res/agent.sock"},
+		{Name: "host", User: "agent", Keys: Keys{Dir: "/k/host"}, ForwardAgent: "$SSH_AUTH_SOCK"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(p)
+	blocks := strings.Split(string(b), "\nHost ")
+	want := map[string]string{"off": "ForwardAgent no\n", "res": `ForwardAgent "/k/res/agent.sock"` + "\n", "host": "ForwardAgent $SSH_AUTH_SOCK\n"}
+	for _, blk := range blocks[1:] {
+		name := strings.TrimPrefix(strings.SplitN(blk, "\n", 2)[0], "curral-")
+		ia := strings.Replace(want[name], "ForwardAgent", "IdentityAgent", 1)
+		if name == "off" {
+			ia = "IdentityAgent none\n"
+		}
+		if !strings.Contains(blk, want[name]) || strings.Count(blk, "ForwardAgent") != 1 || !strings.Contains(blk, ia) || !strings.Contains(blk, "IdentitiesOnly yes") {
+			t.Errorf("%s block:\n%s", name, blk)
+		}
+	}
+	if err := WriteConfig(p, "/usr/bin/curral", []Entry{{Name: "x", User: "a", Keys: Keys{Dir: "/k"}, ForwardAgent: "/k/%h.sock"}}); err == nil {
+		t.Error("percent token in agent socket path accepted")
+	}
+}

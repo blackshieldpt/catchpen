@@ -24,7 +24,11 @@ const (
 	ActionPromptAllow = "prompt-allow"
 	ActionPromptDeny  = "prompt-deny"
 	ActionError       = "error"
+	ActionForward     = "forward" // host service exposed to the guest with curral forward -R
 )
+
+// Append writes an entry to a VM's egress log.
+func Append(dir string, e LogEntry) error { return appendLog(dir, e) }
 
 const maxLogBytes = 32 << 20
 

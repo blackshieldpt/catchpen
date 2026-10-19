@@ -310,3 +310,32 @@ func TestPushReplacesSymlinkedGuestFile(t *testing.T) {
 		t.Errorf("symlink target written: %s", b)
 	}
 }
+
+func TestClaudeConfigSkipsCredentialsUnderSyncedParent(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	write(t, filepath.Join(fakeHome, ".config", "gh", "hosts.yml"), "oauth_token: x")
+	write(t, filepath.Join(fakeHome, ".config", "curral", "secrets.env"), "K=v")
+	write(t, filepath.Join(fakeHome, ".config", "tool", "conf"), "fine")
+	host := t.TempDir()
+	os.Symlink(filepath.Join(fakeHome, ".config"), filepath.Join(host, "skills")) // parent of credential dirs
+	os.Symlink(fakeHome, filepath.Join(host, "agents"))                           // the home dir itself
+	home := t.TempDir()
+	tru := true
+	res, err := Push(context.Background(), localRemote{home}, Spec{Sync: template.Sync{ClaudeConfig: &tru}, ClaudeDir: host}, fakeSecrets{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := filepath.Join(home, ".claude")
+	if b, err := os.ReadFile(filepath.Join(g, "skills", "tool", "conf")); err != nil || string(b) != "fine" {
+		t.Errorf("ordinary file not synced: %v", err)
+	}
+	for _, f := range []string{"skills/gh/hosts.yml", "skills/curral/secrets.env", "agents"} {
+		if _, err := os.Stat(filepath.Join(g, f)); err == nil {
+			t.Errorf("%s copied into the VM", f)
+		}
+	}
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "skills/gh (credentials directory)") {
+		t.Errorf("warnings = %v", res.Warnings)
+	}
+}

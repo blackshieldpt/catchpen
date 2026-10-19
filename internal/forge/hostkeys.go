@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -95,4 +98,35 @@ func (c *Client) GitHubKeys(ctx context.Context) ([]string, error) {
 		return nil, errors.New("github meta: no ssh_keys")
 	}
 	return out, nil
+}
+
+// HostBound reports whether the forge's SSH server supports OpenSSH host-bound
+// public key auth (publickey-hostbound-v00@openssh.com). Destination-constrained
+// keys in a forwarded agent can only sign for such servers. It uses the system
+// ssh and the pinned host keys; no authentication is attempted.
+func HostBound(ctx context.Context, f Forge) (bool, error) {
+	if len(f.HostKeys) == 0 {
+		return false, fmt.Errorf("forge %s has no pinned host keys", f.Name)
+	}
+	dir, err := os.MkdirTemp("", "curral-probe")
+	if err != nil {
+		return false, err
+	}
+	defer os.RemoveAll(dir)
+	kh := filepath.Join(dir, "known_hosts")
+	if err := os.WriteFile(kh, []byte(f.KnownHosts()), 0o600); err != nil {
+		return false, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	out, _ := exec.CommandContext(ctx, "ssh", "-v", "-F", "/dev/null", "-o", "BatchMode=yes",
+		"-o", "PreferredAuthentications=none", "-o", "IdentityAgent=none", "-o", "StrictHostKeyChecking=yes",
+		"-o", "UserKnownHostsFile="+kh, "-o", "GlobalKnownHostsFile=/dev/null",
+		"-p", strconv.Itoa(f.Port()), "git@"+f.Host).CombinedOutput()
+	s := string(out)
+	if !strings.Contains(s, "SSH2_MSG_SERVICE_ACCEPT") {
+		lines := strings.Split(strings.TrimSpace(s), "\n")
+		return false, fmt.Errorf("ssh to %s:%d failed: %s", f.Host, f.Port(), lines[len(lines)-1])
+	}
+	return strings.Contains(s, "publickey-hostbound@openssh.com") || strings.Contains(s, "publickey-hostbound-v00@openssh.com"), nil
 }

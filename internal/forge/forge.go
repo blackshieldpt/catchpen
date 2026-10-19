@@ -32,7 +32,14 @@ const (
 	ModeMintedToken = "minted-token" // Gitea: per-VM token minted via the API
 	ModeToken       = "token"        // a user-supplied token given to the VM
 	ModeNone        = "none"         // anonymous HTTPS clone; work leaves via curral pull/pr
+	ModeAgent       = "agent"        // SSH with keys from the VM's forwarded (restricted) agent; nothing stored
 )
+
+// UsesSSH reports whether the VM reaches the forge over SSH.
+func (f Forge) UsesSSH() bool { return f.Auth.Mode == ModeDeployKey || f.Auth.Mode == ModeAgent }
+
+// AgentAlias is the guest SSH alias and agent-constraint name for an agent-mode forge.
+func (f Forge) AgentAlias() string { return "curral-forge-" + f.Name }
 
 type Auth struct {
 	Mode     string   `yaml:"mode" json:"mode"`
@@ -85,7 +92,7 @@ func (f Forge) Hosts() []string {
 		port = map[string]string{"https": "443", "http": "80"}[u.Scheme]
 	}
 	hosts := []string{net.JoinHostPort(u.Hostname(), port)}
-	if f.Auth.Mode == ModeDeployKey {
+	if f.UsesSSH() {
 		hosts = append(hosts, net.JoinHostPort(f.Host, strconv.Itoa(f.Port())))
 	}
 	if f.Type == GitHub && f.Host == "github.com" {
@@ -134,7 +141,7 @@ func (f Forge) Validate() error {
 		return err
 	}
 	switch f.Auth.Mode {
-	case ModeNone:
+	case ModeNone, ModeAgent:
 	case ModeToken, ModeDeployKey:
 		if f.Auth.Token == "" {
 			return fmt.Errorf("forge %s: auth.mode %s needs auth.token", f.Name, f.Auth.Mode)
@@ -152,9 +159,9 @@ func (f Forge) Validate() error {
 			}
 		}
 	default:
-		return fmt.Errorf("forge %s: auth.mode must be deploy-key, minted-token, token or none", f.Name)
+		return fmt.Errorf("forge %s: auth.mode must be deploy-key, minted-token, token, agent or none", f.Name)
 	}
-	if f.Auth.Mode == ModeDeployKey && len(f.HostKeys) == 0 {
+	if f.UsesSSH() && len(f.HostKeys) == 0 {
 		return fmt.Errorf("forge %s: no pinned host keys (re-add it with curral forge add)", f.Name)
 	}
 	for _, k := range f.HostKeys {

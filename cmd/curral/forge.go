@@ -68,12 +68,17 @@ func forgeCmd() *cobra.Command {
 			}
 			keys, err := pinHostKeys(cmd.Context(), f, yes)
 			if err != nil {
-				if f.Auth.Mode == forge.ModeDeployKey {
+				if f.UsesSSH() {
 					return err
 				}
-				fmt.Fprintf(os.Stderr, "warning: %v (only needed for deploy-key mode)\n", err)
+				fmt.Fprintf(os.Stderr, "warning: %v (only needed for deploy-key and agent modes)\n", err)
 			}
 			f.HostKeys = keys
+			if f.Auth.Mode == forge.ModeAgent {
+				if err := checkHostBound(cmd.Context(), f); err != nil {
+					return err
+				}
+			}
 			if err := forge.Update(m.P.Forges(), func(r *forge.Registry) error {
 				r.Forges = append(r.Forges, f)
 				return nil
@@ -222,6 +227,24 @@ func testForge(ctx context.Context, m *vm.Manager, f forge.Forge) error {
 			}
 		}
 		fmt.Println("SSH host keys match")
+	}
+	if f.Auth.Mode == forge.ModeAgent {
+		if err := checkHostBound(ctx, f); err != nil {
+			return err
+		}
+		fmt.Println("SSH server supports host-bound auth (agent mode works)")
+	}
+	return nil
+}
+
+func checkHostBound(ctx context.Context, f forge.Forge) error {
+	ok, err := forge.HostBound(ctx, f)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("%s's SSH server does not support host-bound auth (publickey-hostbound@openssh.com), "+
+			"so a restricted agent can't sign for it; use deploy-key or minted-token mode instead", f.Name)
 	}
 	return nil
 }

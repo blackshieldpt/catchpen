@@ -151,6 +151,7 @@ URL whose host matches a forge, and are cloned into `/workspace/<repo>` at start
 | `deploy-key` | a per-VM, per-repo SSH key (`--ro`: read-only) | adding/removing the key |
 | `minted-token` (Gitea) | a per-VM token, minted with the account's password | minting/deleting it |
 | `token` | your token (`--token-secret`), for HTTPS and `gh`/`tea` | — |
+| `agent` | nothing; SSH signs with your key through a restricted agent (below) | — |
 | `none` | nothing; anonymous clone, work leaves via `pull`/`pr` | opening PRs |
 
 Deploy keys and minted tokens are removed when the VM is destroyed. In the VM, git SSH
@@ -168,6 +169,38 @@ curral pr dev --repo api --into ~/src/api       # pull, push with your git creds
 
 `pr` pushes `curral/<vm>/<branch>` through a remote of the host repo that points at the
 same forge repo, then opens the PR with the forge's API token.
+
+## SSH agent and port forwards
+
+```yaml
+# template
+ssh:
+  agent: restricted          # off (default) | restricted | host
+  agent_keys: [~/.ssh/id_ed25519]
+  confirm: true              # default: ask (ssh-askpass) on every use of a key
+```
+
+With `restricted`, `curral start` runs a per-VM `ssh-agent` holding only `agent_keys`,
+each destination-constrained (`ssh-add -h`) so it signs only on the path
+host → VM → that VM's `agent`-mode forges: the VM can't use it to log in anywhere else,
+including back into itself. `ssh curral-<vm>` forwards that agent, never your own; it
+ends when the VM stops. `--ssh-agent` / `--agent-key` on `curral up` override the
+template. Constraints need the forge's SSH server to support OpenSSH host-bound auth:
+github.com and Gitea behind OpenSSH do, gitlab.com and Gitea's built-in SSH server
+don't. `forge add` / `forge test` check this for `agent`-mode forges.
+
+`host` forwards your own agent (`$SSH_AUTH_SOCK`): anything in the VM can use all its
+keys while you're connected. curral warns when you create such a VM.
+
+```
+curral forward dev -L 3000 -L 8080:80      # guest ports on the host's 127.0.0.1
+curral forward dev -R 5432                 # host 127.0.0.1:5432 into the guest
+curral forward dev -D 1080                 # SOCKS proxy on the host into the guest
+curral forward dev --list | --stop
+```
+
+Each `forward` is a background `ssh -N` (log in `vms/<name>/forward.log`); all end when
+the VM stops. `-R` bypasses the egress proxy, so it is recorded in the VM's egress log.
 
 ## Egress
 
@@ -208,8 +241,9 @@ distinct destinations waiting (more are denied), so a guest can't bury you in pr
   be pinned; it holds no user credentials.
 - Guest output shown on the host is filtered: first-boot errors drop control
   characters, and `curral console` drops OSC/DCS/APC sequences (title, clipboard).
-- The generated `ssh_config` disables agent, X11 and port forwarding and tunnels for VM
-  hosts, overriding a `Host *` block in your own config.
+- The generated `ssh_config` disables agent (unless `ssh.agent` is set), X11 and port
+  forwarding and tunnels for VM hosts, overriding a `Host *` block in your own config.
+  `curral forward` turns port forwarding back on only for its own sessions.
 - Template bases are built with the same isolation: the build VM's only exit is the
   proxy, which allows any public host but no private/loopback addresses. Its requests
   are logged to `bases/<base>.egress.log`.

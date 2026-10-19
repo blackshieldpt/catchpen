@@ -332,3 +332,29 @@ func TestScan(t *testing.T) {
 		t.Error(Fingerprint(keys[0]))
 	}
 }
+
+func TestAgentModeGuest(t *testing.T) {
+	_, k := hostKey(t)
+	f := Forge{Name: "acme", Type: Gitea, Host: "git.acme.test", SSHPort: 2222, HostKeys: []string{k}, Auth: Auth{Mode: ModeAgent}}
+	if err := f.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(f.Hosts(), ","), "git.acme.test:2222") {
+		t.Errorf("hosts: %v", f.Hosts())
+	}
+	repos := []GuestRepo{{Repo: Repo{Forge: "acme", Owner: "t", Name: "a"}, Forge: f}, {Repo: Repo{Forge: "acme", Owner: "t", Name: "b"}, Forge: f}}
+	if repos[0].CloneURL() != "curral-forge-acme:t/a.git" {
+		t.Errorf("clone url %s", repos[0].CloneURL())
+	}
+	cfg := SSHConfig(repos, "10.0.2.100:3128")
+	if strings.Count(cfg, "Host curral-forge-acme\n") != 1 || strings.Contains(cfg, "IdentityFile") || !strings.Contains(cfg, "Port 2222") || !strings.Contains(cfg, "ProxyCommand nc -X connect") {
+		t.Errorf("agent-mode ssh config:\n%s", cfg)
+	}
+	if !strings.HasPrefix(KnownHosts(repos), "[git.acme.test]:2222 ") {
+		t.Errorf("known hosts: %q", KnownHosts(repos))
+	}
+	f.HostKeys = nil
+	if err := f.Validate(); err == nil || !strings.Contains(err.Error(), "no pinned host keys") {
+		t.Errorf("agent mode without host keys: %v", err)
+	}
+}

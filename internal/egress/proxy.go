@@ -316,8 +316,10 @@ func (p *Proxy) ask(ctx context.Context, timeout time.Duration, r Request) (Deci
 	}
 	line, err := bufio.NewReader(io.LimitReader(conn, 4096)).ReadBytes('\n')
 	if err != nil {
+		// The watcher gives up at the same deadline, so its hang-up can arrive
+		// just before our own timeout fires: both mean nobody answered in time.
 		var ne net.Error
-		if errors.As(err, &ne) && ne.Timeout() {
+		if (errors.As(err, &ne) && ne.Timeout()) || time.Until(dl) < 100*time.Millisecond {
 			return "", "", errors.New("timeout")
 		}
 		return "", "", err

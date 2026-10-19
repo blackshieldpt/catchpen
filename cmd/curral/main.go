@@ -35,7 +35,7 @@ func manager() (*vm.Manager, error) {
 	}
 	return &vm.Manager{
 		P: p, Cfg: cfg, Tpl: template.Loader{UserDir: p.Templates()},
-		Out: os.Stderr, Bin: bin, Debug: debug,
+		Out: os.Stderr, In: os.Stdin, Bin: bin, Debug: debug,
 	}, nil
 }
 
@@ -50,7 +50,7 @@ func main() {
 	root.AddCommand(
 		doctorCmd(), templateCmd(), upCmd(), startCmd(), stopCmd(), destroyCmd(), lsCmd(),
 		sshCmd(), sshProxyCmd(), consoleCmd(), egressCmd(), egressStdioCmd(), setupSSHCmd(), credsCmd(),
-		forgeCmd(), pullCmd(), prCmd(),
+		forgeCmd(), pullCmd(), prCmd(), forwardCmd(),
 	)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()

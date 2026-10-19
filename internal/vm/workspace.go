@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -8,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,7 +19,9 @@ import (
 	"github.com/blackshieldpt/curral/internal/cloudinit"
 	"github.com/blackshieldpt/curral/internal/creds"
 	"github.com/blackshieldpt/curral/internal/forge"
+	"github.com/blackshieldpt/curral/internal/sshagent"
 	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/curral/internal/template"
 )
 
 const (
@@ -299,7 +304,15 @@ git config --global credential.helper "store --file=$HOME/.config/curral/git-cre
 	}
 	for _, g := range repos {
 		cmd := fmt.Sprintf(`[ -d %[1]s/.git ] && exit 0; GIT_TERMINAL_PROMPT=0 git clone -q %[2]s %[1]s 2>&1`, shQuote(g.Dir()), shQuote(g.CloneURL()))
-		if out, err := r.Run(ctx, cmd, nil); err != nil {
+		run := func() ([]byte, error) { return r.Run(ctx, cmd, nil) }
+		if g.Forge.Auth.Mode != forge.ModeDeployKey && g.Forge.UsesSSH() {
+			// Agent-mode clones need the forwarded agent, which only the system ssh provides.
+			run = func() ([]byte, error) { return m.sshExec(ctx, s.Name, cmd) }
+		}
+		if out, err := run(); err != nil {
+			if g.Forge.Auth.Mode == forge.ModeAgent && strings.Contains(string(out), "agent refused operation") {
+				out = append(out, "(the restricted agent refused: confirmation denied, or the forge's SSH server lacks host-bound auth; see curral forge test "+g.Forge.Name+")\n"...)
+			}
 			return fmt.Errorf("clone %s: %w\n%s", g.Repo, err, sshx.Printable(strings.TrimSpace(string(out))))
 		}
 	}
@@ -307,3 +320,63 @@ git config --global credential.helper "store --file=$HOME/.config/curral/git-cre
 }
 
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+
+func (m *Manager) agent(name string) sshagent.Agent {
+	return sshagent.Agent{Dir: m.keys(name).Dir}
+}
+
+// agentForges are the forges a VM's agent keys may be used for.
+func agentForges(fs map[string]forge.Forge) []forge.Forge {
+	var out []forge.Forge
+	for _, f := range fs {
+		if f.Auth.Mode == forge.ModeAgent {
+			out = append(out, f)
+		}
+	}
+	slices.SortFunc(out, func(a, b forge.Forge) int { return strings.Compare(a.Name, b.Name) })
+	return out
+}
+
+func checkAgent(s template.SSH, fs map[string]forge.Forge) error {
+	af := agentForges(fs)
+	if len(af) > 0 && s.Mode() == template.AgentOff {
+		return fmt.Errorf("forge %s uses auth mode agent; set ssh.agent: restricted (or host)", af[0].Name)
+	}
+	if s.Mode() == template.AgentRestricted && len(af) == 0 {
+		return fmt.Errorf("ssh.agent: restricted needs a repo on a forge with auth mode agent (keys are only usable for those forges)")
+	}
+	return nil
+}
+
+func (m *Manager) startAgent(ctx context.Context, s *State) error {
+	if s.SSH.Mode() != template.AgentRestricted {
+		return nil
+	}
+	k := m.keys(s.Name)
+	err := m.agent(s.Name).Start(ctx, sshagent.Spec{
+		VMAlias: sshx.AliasPrefix + s.Name, VMKnownHosts: k.KnownHosts(),
+		Forges: agentForges(s.Forges), Keys: s.SSH.AgentKeys, Confirm: s.SSH.ConfirmEach(),
+		Stdin: m.In, Stdout: m.Out, Stderr: m.Out,
+	})
+	if err == nil {
+		how := "without confirmation"
+		if s.SSH.ConfirmEach() {
+			how = "confirming each use"
+		}
+		m.logf("restricted ssh-agent for %s: %d key(s), usable only for %d forge(s), %s", s.Name, len(s.SSH.AgentKeys), len(agentForges(s.Forges)), how)
+	}
+	return err
+}
+
+// sshExec runs cmd in the VM through the system ssh and the generated
+// ssh_config, so the VM's agent forwarding applies.
+func (m *Manager) sshExec(ctx context.Context, name, cmd string) ([]byte, error) {
+	c := exec.CommandContext(ctx, "ssh", "-F", m.P.SSHConfig(), "-o", "BatchMode=yes", sshx.AliasPrefix+name, cmd)
+	var buf bytes.Buffer
+	c.Stdout, c.Stderr = &buf, &buf
+	err := c.Run()
+	if buf.Len() > 64<<10 {
+		buf.Truncate(64 << 10)
+	}
+	return buf.Bytes(), err
+}

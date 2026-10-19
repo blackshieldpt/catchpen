@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -16,8 +17,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blackshieldpt/curral/internal/egress"
 	"github.com/blackshieldpt/curral/internal/forge"
 	"github.com/blackshieldpt/curral/internal/qemu"
+	"github.com/blackshieldpt/curral/internal/sshx"
 )
 
 const giteaPassword = "curral-Test-pw-1"
@@ -30,7 +33,9 @@ type gitea struct {
 }
 
 // startGitea runs a throwaway Gitea in Docker with user "bot" and repos app and lib.
-func startGitea(t *testing.T) *gitea {
+// startGitea runs Gitea with its built-in SSH server, or with OpenSSH (which
+// supports host-bound auth, needed for the restricted agent).
+func startGitea(t *testing.T, openssh bool) *gitea {
 	t.Helper()
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker not installed")
@@ -50,15 +55,17 @@ func startGitea(t *testing.T) *gitea {
 	sp, _ := qemu.FreePort()
 	g := &gitea{t: t, ip: ip, http: fmt.Sprintf("http://%s:%d", ip, hp), sshPort: sp}
 	name := fmt.Sprintf("curral-test-gitea-%d", hp)
-	out, err := exec.Command("docker", "run", "-d", "--rm", "--name", name,
-		"-p", fmt.Sprintf("%s:%d:3000", ip, hp), "-p", fmt.Sprintf("%s:%d:2222", ip, sp),
+	sshArgs := []string{"-p", fmt.Sprintf("%s:%d:2222", ip, sp), "-e", "GITEA__server__START_SSH_SERVER=true", "-e", "GITEA__server__SSH_LISTEN_PORT=2222"}
+	if openssh {
+		sshArgs = []string{"-p", fmt.Sprintf("%s:%d:22", ip, sp), "-e", "GITEA__server__START_SSH_SERVER=false"}
+	}
+	args := append([]string{"run", "-d", "--rm", "--name", name,
+		"-p", fmt.Sprintf("%s:%d:3000", ip, hp),
 		"-e", "GITEA__security__INSTALL_LOCK=true",
-		"-e", "GITEA__server__ROOT_URL="+g.http+"/",
-		"-e", "GITEA__server__START_SSH_SERVER=true",
-		"-e", "GITEA__server__SSH_LISTEN_PORT=2222",
+		"-e", "GITEA__server__ROOT_URL=" + g.http + "/",
 		"-e", fmt.Sprintf("GITEA__server__SSH_PORT=%d", sp),
-		"-e", "GITEA__server__DISABLE_SSH=false",
-		image).CombinedOutput()
+		"-e", "GITEA__server__DISABLE_SSH=false"}, sshArgs...)
+	out, err := exec.Command("docker", append(args, image)...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("docker run: %v\n%s", err, out)
 	}
@@ -113,7 +120,7 @@ func (g *gitea) api(method, path string, body, out any) {
 }
 
 func TestForges(t *testing.T) {
-	g := startGitea(t)
+	g := startGitea(t, false)
 	m := integrationManager(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
@@ -224,5 +231,153 @@ cd /workspace/lib && echo x > x.txt && git add x.txt && git commit -qm "Add x" &
 		if strings.HasPrefix(fmt.Sprint(tk["name"]), "curral-fg1-") {
 			t.Errorf("minted token left: %v", tk)
 		}
+	}
+}
+
+func TestAgentForwarding(t *testing.T) {
+	g := startGitea(t, true)
+	m := integrationManager(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	// A host key the user would normally have in ~/.ssh, registered on the forge account.
+	kdir, err := os.MkdirTemp("", "ak")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(kdir)
+	priv, pub, _ := sshx.GenerateKey("user@host")
+	keyFile := filepath.Join(kdir, "id_ed25519")
+	os.WriteFile(keyFile, priv, 0o600)
+	g.api("POST", "/user/keys", map[string]any{"title": "host key", "key": strings.TrimSpace(string(pub))}, nil)
+
+	// Confirmations go to a stub askpass that answers from a file.
+	answer := filepath.Join(kdir, "answer")
+	asked := filepath.Join(kdir, "asked")
+	askpass := filepath.Join(kdir, "askpass")
+	os.WriteFile(askpass, []byte("#!/bin/sh\necho \"$*\" >> "+asked+"\nexit $(cat "+answer+")\n"), 0o700)
+	os.WriteFile(answer, []byte("0"), 0o600)
+	t.Setenv("SSH_ASKPASS", askpass)
+	t.Setenv("SSH_ASKPASS_REQUIRE", "force")
+	t.Setenv("DISPLAY", ":curral-test")
+
+	keys, err := forge.Scan(ctx, g.ip, g.sshPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pinned []string
+	for _, k := range keys {
+		pinned = append(pinned, forge.FormatHostKey(k))
+	}
+	ga := forge.Forge{Name: "ga", Type: forge.Gitea, Host: g.ip, HTTPURL: g.http, SSHPort: g.sshPort, HostKeys: pinned, Auth: forge.Auth{Mode: forge.ModeAgent}}
+	if ok, err := forge.HostBound(ctx, ga); err != nil || !ok {
+		t.Fatalf("Gitea over OpenSSH: host-bound = %v, %v", ok, err)
+	}
+	builtin := startGitea(t, false)
+	bkeys, err := forge.Scan(ctx, builtin.ip, builtin.sshPort)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bf := forge.Forge{Name: "gb", Host: builtin.ip, SSHPort: builtin.sshPort, HostKeys: []string{forge.FormatHostKey(bkeys[0])}}
+	if ok, err := forge.HostBound(ctx, bf); err != nil || ok {
+		t.Errorf("Gitea built-in SSH: host-bound = %v, %v; want false", ok, err)
+	}
+	if err := forge.Update(m.P.Forges(), func(r *forge.Registry) error { r.Forges = []forge.Forge{ga}; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(m.P.Templates(), "ag.yaml"), []byte("extends: minimal\nnetwork: { allow_private: true }\nssh: { agent: restricted, agent_keys: ["+keyFile+"] }\n"), 0o600)
+
+	if _, err := m.Create(ctx, "ag2", CreateOpts{Template: "ag", Repos: []string{"ga:bot/app"}}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Destroy("ag2") })
+	ssh := func(cmd string) (string, error) {
+		out, err := m.sshExec(ctx, "ag2", cmd)
+		return strings.TrimSpace(string(out)), err
+	}
+	if _, err := m.Start(ctx, "ag2"); err != nil {
+		if os.Getenv("CURRAL_TEST_DEBUG") != "" {
+			for _, c := range []string{"echo $SSH_AUTH_SOCK; ssh-add -l", "ssh -v -T curral-forge-ga 2>&1 | grep -v -e load_hostkeys -e kex -e rekey -e Reading | tail -25"} {
+				out, err := ssh(c)
+				t.Logf("$ %s (%v)\n%s", c, err, out)
+			}
+			b, _ := os.ReadFile(asked)
+			t.Logf("askpass log: %q", b)
+		}
+		t.Fatal(err)
+	}
+	// The clone at start used the forwarded agent, after a confirmation.
+	if out, err := ssh("git -C /workspace/app log -1 --format=%s"); err != nil || out != "Initial commit" {
+		t.Fatalf("clone via agent: %q %v", out, err)
+	}
+	if b, _ := os.ReadFile(asked); len(b) == 0 {
+		t.Error("no confirmation was asked")
+	}
+	if out, err := ssh("ssh-add -l | grep -c SHA256"); err != nil || out != "1" {
+		t.Errorf("guest sees %q keys (%v), want only the restricted one", out, err)
+	}
+	// The key is constrained to the forge: the guest can't use it for other hosts.
+	if _, err := ssh("mkdir -p ~/.ssh && echo '" + strings.TrimSpace(string(pub)) + "' >> ~/.ssh/authorized_keys"); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := ssh("ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=no agent@localhost echo pwned"); err == nil || strings.Contains(out, "pwned") {
+		t.Errorf("constrained key worked for the VM itself: %q", out)
+	}
+	if out, err := ssh("git ls-remote curral-forge-ga:bot/app.git HEAD"); err != nil || !strings.Contains(out, "HEAD") {
+		t.Errorf("ls-remote via agent: %q %v", out, err)
+	}
+	// A denied confirmation fails the operation.
+	os.WriteFile(answer, []byte("1"), 0o600)
+	if out, err := ssh("git ls-remote curral-forge-ga:bot/app.git HEAD"); err == nil {
+		t.Errorf("ls-remote succeeded though confirmation was denied: %q", out)
+	}
+	os.WriteFile(answer, []byte("0"), 0o600)
+
+	// Port forwards: a guest web server to the host, a host service to the guest.
+	if _, err := ssh("cd /tmp && echo guest-page > index.html && (setsid python3 -m http.server 8000 --bind 127.0.0.1 >/dev/null 2>&1 &) && sleep 1"); err != nil {
+		t.Fatal(err)
+	}
+	hostPort, _ := qemu.FreePort()
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("host-service")) })}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	go srv.Serve(ln)
+	defer srv.Close()
+	svcPort := ln.Addr().(*net.TCPAddr).Port
+	fs, err := m.Forward(ctx, "ag2", []string{fmt.Sprintf("%d:8000", hostPort)}, []string{fmt.Sprint(svcPort)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/", hostPort))
+	if err != nil {
+		t.Fatalf("-L: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if strings.TrimSpace(string(body)) != "guest-page" {
+		t.Errorf("-L body %q", body)
+	}
+	if out, err := ssh(fmt.Sprintf("curl -s --noproxy '*' http://127.0.0.1:%d/", svcPort)); err != nil || out != "host-service" {
+		t.Errorf("-R: %q %v", out, err)
+	}
+	if list, _ := m.Forwards("ag2"); len(list) != 1 || list[0].PID != fs.PID {
+		t.Errorf("forwards: %+v", list)
+	}
+	elog, _ := os.ReadFile(filepath.Join(m.Dir("ag2"), egress.LogFile))
+	if !strings.Contains(string(elog), `"action":"forward"`) {
+		t.Error("-R forward not recorded in the egress log")
+	}
+
+	// Stopping the VM ends the agent and the forwards.
+	if err := m.Stop("ag2", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.agent("ag2").Running(); ok {
+		t.Error("agent still running after stop")
+	}
+	if m.forwardAlive("ag2", fs.PID) {
+		t.Error("forward still running after stop")
 	}
 }
