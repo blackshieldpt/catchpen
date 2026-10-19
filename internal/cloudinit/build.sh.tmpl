@@ -83,6 +83,21 @@ tar -xzf /tmp/uv.tgz -C /usr/local/bin --strip-components=1 --no-same-owner
 rm -f /tmp/uv.tgz /tmp/uv.sha256
 uv --version
 {{- end}}
+{{- if .AgentPkgs}}
+
+log "installing agents"
+npm install -g --no-fund --no-audit --loglevel=error {{join .AgentPkgs " "}}
+{{- range .AgentBins}}
+{{.}} --version
+{{- end}}
+# No self-updates, telemetry or background catalog fetches: the VM only reaches
+# allowlisted hosts, and versions change by rebuilding the base.
+cat >> /etc/environment <<'CURRAL_ENV'
+{{- range .AgentEnv}}
+{{.}}
+{{- end}}
+CURRAL_ENV
+{{- end}}
 {{- range .Scripts}}
 
 log "running {{.}}"

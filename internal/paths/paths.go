@@ -43,6 +43,7 @@ func (p Paths) VM(name string) string { return filepath.Join(p.VMs(), name) }
 func (p Paths) Templates() string     { return filepath.Join(p.Config, "templates") }
 func (p Paths) ConfigFile() string    { return filepath.Join(p.Config, "config.yaml") }
 func (p Paths) SSHConfig() string     { return filepath.Join(p.Config, "ssh_config") }
+func (p Paths) SecretsFile() string   { return filepath.Join(p.Config, "secrets.env") }
 
 // Ensure creates the data/config directories with private permissions.
 func (p Paths) Ensure() error {

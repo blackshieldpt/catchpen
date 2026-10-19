@@ -2,6 +2,7 @@ package sshx
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"net"
 	"os"
@@ -210,5 +211,52 @@ func TestSetupIncludeKeepsSymlink(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(target); !strings.Contains(string(b), "Include") {
 		t.Fatalf("target not updated: %q", b)
+	}
+}
+
+func TestDialSanitizesGuestErrors(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err == nil {
+			// Valid version line, then a plaintext SSH_MSG_DISCONNECT with an escape sequence.
+			c.Write([]byte("SSH-2.0-x\r\n"))
+			msg := "bye\x1b]0;pwned\x07\x1b[2J"
+			payload := []byte{1, 0, 0, 0, 2}
+			payload = binary.BigEndian.AppendUint32(payload, uint32(len(msg)))
+			payload = append(payload, msg...)
+			payload = append(payload, 0, 0, 0, 0)
+			pad := 8 - (5+len(payload))%8
+			if pad < 4 {
+				pad += 8
+			}
+			pkt := binary.BigEndian.AppendUint32(nil, uint32(1+len(payload)+pad))
+			pkt = append(pkt, byte(pad))
+			pkt = append(pkt, payload...)
+			pkt = append(pkt, make([]byte, pad)...)
+			c.Write(pkt)
+			time.Sleep(200 * time.Millisecond)
+			c.Close()
+		}
+	}()
+	k := Keys{Dir: t.TempDir()}
+	if err := k.Generate("a"); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err = k.Dial(ctx, ln.Addr().(*net.TCPAddr).Port, "agent")
+	if err == nil {
+		t.Fatal("handshake with garbage server succeeded")
+	}
+	if !strings.Contains(err.Error(), "bye") {
+		t.Fatalf("expected the guest's disconnect message, got %q", err)
+	}
+	if strings.ContainsAny(err.Error(), "\x1b\x07\r") {
+		t.Fatalf("control characters in error: %q", err)
 	}
 }

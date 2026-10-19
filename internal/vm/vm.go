@@ -3,6 +3,7 @@ package vm
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -12,18 +13,25 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
+	"github.com/blackshieldpt/curral/internal/agents"
 	"github.com/blackshieldpt/curral/internal/cloudinit"
 	"github.com/blackshieldpt/curral/internal/config"
+	"github.com/blackshieldpt/curral/internal/creds"
 	"github.com/blackshieldpt/curral/internal/egress"
 	"github.com/blackshieldpt/curral/internal/fsutil"
 	"github.com/blackshieldpt/curral/internal/image"
@@ -71,6 +79,12 @@ type State struct {
 	Docker   bool            `json:"docker"`
 	Created  time.Time       `json:"created"`
 	Booted   bool            `json:"booted"` // first boot (cloud-init) completed
+
+	// Pushed into the guest at every start (secrets resolved on the host then).
+	Agents template.Agents   `json:"agents"`
+	Env    map[string]string `json:"env,omitempty"`
+	MCP    []template.MCP    `json:"mcp,omitempty"`
+	Sync   template.Sync     `json:"sync"`
 }
 
 // Runtime describes a running VM.
@@ -317,16 +331,6 @@ func lastLine(s string) string {
 	return strings.TrimSpace(lines[len(lines)-1])
 }
 
-// printable drops control characters (guest output reaching the host terminal).
-func printable(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\t' || (r >= 0x20 && r != 0x7f && !(r >= 0x80 && r < 0xa0)) {
-			return r
-		}
-		return -1
-	}, s)
-}
-
 // baseUsers lists VMs whose disk is an overlay on base. A VM directory whose
 // state can't be read counts as a user: its disk may well depend on base.
 func (m *Manager) baseUsers(base string) ([]string, error) {
@@ -436,7 +440,7 @@ func (m *Manager) follow(path string, done <-chan struct{}) {
 				if i := strings.Index(l, "curral-build:"); i >= 0 && !m.Debug {
 					l = "  " + strings.TrimSpace(l[i+len("curral-build:"):])
 				}
-				m.logf("%s", printable(l))
+				m.logf("%s", sshx.Printable(l))
 			}
 			continue
 		}
@@ -451,13 +455,14 @@ func (m *Manager) follow(path string, done <-chan struct{}) {
 // Create ---------------------------------------------------------------------
 
 type CreateOpts struct {
-	Template  string
-	Distro    string
-	CPUs      int
-	Memory    string
-	Disk      string
-	Rebuild   bool
-	AllowOpen bool // template asks for unfiltered egress; caller confirmed
+	Template   string
+	Distro     string
+	CPUs       int
+	Memory     string
+	Disk       string
+	Rebuild    bool
+	AllowOpen  bool   // template asks for unfiltered egress; caller confirmed
+	ClaudeAuth string // overrides agents.claude.auth
 }
 
 func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *State, err error) {
@@ -474,6 +479,17 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 	r, err := m.Resolve(tplName, o.Distro)
 	if err != nil {
 		return nil, err
+	}
+	if o.ClaudeAuth != "" {
+		if r.T.Agents.Claude == nil {
+			return nil, fmt.Errorf("template %s has no claude agent", r.T.Name)
+		}
+		c := *r.T.Agents.Claude
+		c.Auth = o.ClaudeAuth
+		r.T.Agents.Claude = &c
+		if err := r.T.Validate(); err != nil {
+			return nil, err
+		}
 	}
 	res := m.Cfg.Defaults.Resources.Override(r.T.Resources).Override(template.Resources{CPUs: o.CPUs, Memory: o.Memory, Disk: o.Disk})
 	if res.CPUs < 1 || res.CPUs > maxCPUs {
@@ -505,6 +521,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 			}
 			allow = append(allow, e)
 		}
+		allow = append(allow, agentHosts(r.T)...)
 	}
 	base, err := m.EnsureBase(ctx, r, o.Rebuild)
 	if err != nil {
@@ -567,6 +584,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		Name: name, Template: r.T.Name, Distro: r.Distro.Name, User: r.User, Base: base,
 		CPUs: res.CPUs, MemoryMB: memMB, DiskMB: max(diskMB, baseMB), Ports: r.T.Ports,
 		Egress: egressMode, Docker: r.T.HasDocker(), Created: time.Now().UTC(),
+		Agents: r.T.Agents, Env: r.T.Env, MCP: r.T.MCP, Sync: r.T.Sync,
 	}
 	if err := m.save(s); err != nil {
 		return nil, err
@@ -577,6 +595,32 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 	m.logf("created %s (template %s, %s, %d CPU, %s RAM, %s disk, egress %s)",
 		name, r.T.Name, r.Distro.Name, res.CPUs, res.Memory, res.Disk, egressMode)
 	return s, nil
+}
+
+// agentHosts are the API hosts the template's agents and remote MCP servers need.
+func agentHosts(t *template.Template) []string {
+	var hosts []string
+	if t.Agents.Claude != nil {
+		hosts = append(hosts, "api.anthropic.com:443")
+	}
+	for _, a := range []*template.Agent{t.Agents.OpenCode, t.Agents.Pi} {
+		if a != nil {
+			for _, k := range a.Keys {
+				hosts = append(hosts, template.Providers[k].Host+":443")
+			}
+		}
+	}
+	for _, s := range t.MCP {
+		if u, err := url.Parse(s.URL); err == nil && u.Hostname() != "" {
+			port := u.Port()
+			if port == "" {
+				port = map[string]string{"https": "443", "http": "80"}[u.Scheme]
+			}
+			hosts = append(hosts, net.JoinHostPort(u.Hostname(), port))
+		}
+	}
+	slices.Sort(hosts)
+	return slices.Compact(hosts)
 }
 
 func (m *Manager) writeSeed(name, user, egressMode string, docker bool) error {
@@ -698,14 +742,81 @@ func (m *Manager) Start(ctx context.Context, name string) (*Runtime, error) {
 		var ee *sshx.ExitError
 		if err != nil && !(errors.As(err, &ee) && ee.Status == 2) { // 2 = finished with recoverable errors
 			// The output is guest-controlled; strip control characters before it reaches the terminal.
-			return failed(fmt.Errorf("first boot: %w\n%s", err, printable(strings.TrimSpace(string(out)))))
+			return failed(fmt.Errorf("first boot: %w\n%s", err, sshx.Printable(strings.TrimSpace(string(out)))))
 		}
 		if err := m.markBooted(name); err != nil {
 			return nil, err
 		}
 	}
+	if err := m.push(ctx, c, s); err != nil {
+		return rt, fmt.Errorf("%s is running, but pushing credentials failed: %w (retry: curral creds push %s)", name, err, name)
+	}
 	m.logf("%s is ready: curral ssh %s", name, name)
 	return rt, nil
+}
+
+// Push delivers credentials and agent config into a running VM.
+func (m *Manager) Push(ctx context.Context, name string) error {
+	s, err := m.Load(name)
+	if err != nil {
+		return err
+	}
+	port, err := m.SSHPort(name)
+	if err != nil {
+		return err
+	}
+	c, err := m.keys(name).Dial(ctx, port, s.User)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	if err := m.push(ctx, c, s); err != nil {
+		return err
+	}
+	m.logf("pushed credentials to %s", name)
+	return nil
+}
+
+type sshRemote struct{ c *ssh.Client }
+
+func (r sshRemote) Run(ctx context.Context, cmd string, stdin []byte) ([]byte, error) {
+	return sshx.Run(ctx, r.c, cmd, bytes.NewReader(stdin))
+}
+
+func (m *Manager) push(ctx context.Context, c *ssh.Client, s *State) error {
+	spec := agents.Spec{Agents: s.Agents, Env: s.Env, MCP: s.MCP, Sync: s.Sync}
+	if s.Sync.Claude() {
+		spec.ClaudeDir = hostClaudeDir()
+	}
+	if s.Sync.Git() {
+		spec.GitName, spec.GitEmail = hostGit("user.name"), hostGit("user.email")
+	}
+	sec := &creds.Resolver{Sources: m.Cfg.Secrets, File: m.P.SecretsFile()}
+	res, err := agents.Push(ctx, sshRemote{c}, spec, sec)
+	for _, w := range res.Warnings {
+		m.logf("warning: %s", w)
+	}
+	if len(res.Missing) > 0 {
+		m.logf("secrets not found on the host: %s (set them in the environment, %s, or config.yaml secrets)",
+			strings.Join(res.Missing, ", "), m.P.SecretsFile())
+	}
+	return err
+}
+
+func hostClaudeDir() string {
+	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
+		return d
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".claude")
+}
+
+func hostGit(key string) string {
+	out, err := exec.Command("git", "config", "--global", "--get", key).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func (m *Manager) markBooted(name string) error {

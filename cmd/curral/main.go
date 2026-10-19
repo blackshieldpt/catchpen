@@ -49,7 +49,7 @@ func main() {
 	root.PersistentFlags().BoolVar(&debug, "debug", false, "stream the whole base build log (not just progress); log the VM serial console and keep VMs that fail to boot running")
 	root.AddCommand(
 		doctorCmd(), templateCmd(), upCmd(), startCmd(), stopCmd(), destroyCmd(), lsCmd(),
-		sshCmd(), sshProxyCmd(), consoleCmd(), egressCmd(), egressStdioCmd(), setupSSHCmd(),
+		sshCmd(), sshProxyCmd(), consoleCmd(), egressCmd(), egressStdioCmd(), setupSSHCmd(), credsCmd(),
 	)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()

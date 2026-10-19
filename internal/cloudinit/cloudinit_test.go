@@ -39,8 +39,17 @@ func TestBuildScriptSections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(min, "installing docker") || strings.Contains(min, "installing node") {
-		t.Error("minimal must not install docker/node")
+	if strings.Contains(min, "installing docker") || strings.Contains(min, "installing node") || strings.Contains(min, "installing agents") {
+		t.Error("minimal must not install docker/node/agents")
+	}
+	agents := "npm install -g --no-fund --no-audit --loglevel=error @anthropic-ai/claude-code@latest opencode-ai@latest @earendil-works/pi-coding-agent@latest"
+	if !strings.Contains(def, agents) || strings.Index(def, agents) < strings.Index(def, "installing node") {
+		t.Errorf("default build script must install the agents after node")
+	}
+	for _, want := range []string{"DISABLE_AUTOUPDATER=1\n", "OPENCODE_DISABLE_AUTOUPDATE=1\n", "PI_OFFLINE=1\n", "\nclaude --version\n", "\npi --version\n"} {
+		if !strings.Contains(def, want) {
+			t.Errorf("default build script missing %q", want)
+		}
 	}
 	for _, want := range []string{"installing docker", "9DC858229FC7DD38854AE2D88D81803C0EBFCD88", "usermod -aG docker agent", "latest-v24.x", "sha256sum -c", "installing uv", "cloud-init clean"} {
 		if !strings.Contains(def, want) {
@@ -88,7 +97,7 @@ func TestInstanceUserData(t *testing.T) {
 	if ak, _ := u["ssh_authorized_keys"].([]any); u["name"] != "agent" || u["lock_passwd"] != true || len(ak) != 1 || ak[0] != "ssh-ed25519 AAAA c" {
 		t.Errorf("users = %v", m["users"])
 	}
-	for _, want := range []string{"KbdInteractiveAuthentication no", "PermitRootLogin no", "X11Forwarding no", "PasswordAuthentication no", "AllowUsers agent", "https_proxy=http://10.0.2.100:3128", "Acquire::https::Proxy", "docker.service.d/curral-proxy.conf", `"httpsProxy":"http://10.0.2.100:3128"`} {
+	for _, want := range []string{"KbdInteractiveAuthentication no", "PermitUserEnvironment yes", "PermitRootLogin no", "X11Forwarding no", "PasswordAuthentication no", "AllowUsers agent", "https_proxy=http://10.0.2.100:3128", "Acquire::https::Proxy", "docker.service.d/curral-proxy.conf", `"httpsProxy":"http://10.0.2.100:3128"`} {
 		if !strings.Contains(raw, want) {
 			t.Errorf("instance user-data missing %q", want)
 		}

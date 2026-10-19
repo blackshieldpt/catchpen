@@ -122,3 +122,85 @@ func TestParseSize(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentsMerge(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "a.yaml", `
+extends: default
+agents:
+  claude: { version: "2.1.303" }
+  opencode: { keys: [OPENROUTER_API_KEY] }
+env: { FOO: bar, TOKEN: "secret:TOKEN" }
+mcp:
+  - { name: fs, type: stdio, command: [npx, server-fs] }
+sync: { claude_config: true }
+`)
+	write(t, dir, "b.yaml", `
+extends: a
+agents:
+  opencode: { keys: [ANTHROPIC_API_KEY, OPENROUTER_API_KEY] }
+env: { FOO: baz }
+mcp:
+  - { name: fs, type: http, url: "https://fs.example.com/mcp" }
+  - { name: docs, type: sse, url: "https://docs.example.com/sse", headers: { Authorization: "secret:DOCS" } }
+`)
+	tp, err := Loader{UserDir: dir}.Load("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := tp.Agents
+	if a.Claude == nil || a.Claude.Auth != ClaudeOAuth || a.Claude.Version != "2.1.303" || a.Pi == nil {
+		t.Errorf("agents not merged: claude=%+v pi=%+v", a.Claude, a.Pi)
+	}
+	if !slices.Equal(a.OpenCode.Keys, []string{"OPENROUTER_API_KEY", "ANTHROPIC_API_KEY"}) {
+		t.Errorf("opencode keys = %v", a.OpenCode.Keys)
+	}
+	if tp.Env["FOO"] != "baz" || tp.Env["TOKEN"] != "secret:TOKEN" {
+		t.Errorf("env = %v", tp.Env)
+	}
+	if len(tp.MCP) != 2 || tp.MCP[0].Type != "http" || tp.MCP[1].Name != "docs" {
+		t.Errorf("mcp = %+v", tp.MCP)
+	}
+	if !tp.Sync.Claude() || !tp.Sync.Git() {
+		t.Errorf("sync = %+v", tp.Sync)
+	}
+	// The parent's agent struct is not aliased by the merge.
+	pa, _ := Loader{UserDir: dir}.Load("a")
+	if len(pa.Agents.OpenCode.Keys) != 1 {
+		t.Errorf("parent keys mutated: %v", pa.Agents.OpenCode.Keys)
+	}
+}
+
+func TestAgentsValidation(t *testing.T) {
+	cases := map[string]struct{ body, want string }{
+		"nonode":     {"agents: { claude: {} }\n", "agents need runtimes.node"},
+		"badauth":    {"extends: default\nagents: { claude: { auth: password } }\n", "agents.claude.auth"},
+		"subauth":    {"extends: default\nagents: { pi: { auth: oauth-token } }\n", "Claude Code only"},
+		"claudekeys": {"extends: default\nagents: { claude: { keys: [OPENAI_API_KEY] } }\n", "agents.claude.keys"},
+		"badkey":     {"extends: default\nagents: { pi: { keys: [MY_KEY] } }\n", "unknown provider key"},
+		"badver":     {"extends: default\nagents: { pi: { version: \"1.0; rm\" } }\n", "agents.pi.version"},
+		"reserved":   {"env: { PATH: /x }\n", "env: invalid name"},
+		"lower":      {"env: { foo: x }\n", "env: invalid name"},
+		"secretname": {"env: { A: \"secret:bad name\" }\n", "invalid secret name"},
+		"override":   {"extends: default\nenv: { ANTHROPIC_API_KEY: \"secret:K\" }\n", "override Claude's subscription token"},
+		"mcpname":    {"mcp: [{ name: \"a b\", type: stdio, command: [x] }]\n", "mcp: invalid name"},
+		"mcptype":    {"mcp: [{ name: a, type: ws, url: \"https://x\" }]\n", "type must be"},
+		"mcpstdio":   {"mcp: [{ name: a, type: stdio }]\n", "need command"},
+		"mcpurl":     {"mcp: [{ name: a, type: http, url: \"file:///etc\" }]\n", "http(s) url"},
+		"mcphdr":     {"mcp: [{ name: a, type: http, url: \"https://x\", headers: { \"Bad Header\": v } }]\n", "invalid header"},
+	}
+	dir := t.TempDir()
+	for name, c := range cases {
+		write(t, dir, name+".yaml", c.body)
+	}
+	for name, c := range cases {
+		_, err := Loader{UserDir: dir}.Load(name)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want %q", name, err, c.want)
+		}
+	}
+	write(t, dir, "apikey.yaml", "extends: default\nagents: { claude: { auth: api-key } }\nenv: { ANTHROPIC_API_KEY: \"secret:K\" }\n")
+	if _, err := (Loader{UserDir: dir}).Load("apikey"); err != nil {
+		t.Errorf("api-key mode with ANTHROPIC_API_KEY env: %v", err)
+	}
+}

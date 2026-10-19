@@ -144,10 +144,30 @@ func (k Keys) Dial(ctx context.Context, port int, user string) (*ssh.Client, err
 	c, chans, reqs, err := ssh.NewClientConn(conn, addr, cfg)
 	if err != nil {
 		conn.Close()
-		return nil, err
+		if errors.Is(err, ErrHostKey) {
+			return nil, ErrHostKey
+		}
+		// Handshake errors can carry guest text (version string, disconnect message).
+		return nil, guestError{Printable(err.Error())}
 	}
 	_ = conn.SetDeadline(time.Time{})
 	return ssh.NewClient(c, chans, reqs), nil
+}
+
+// guestError holds an error message that came from the guest, already sanitized.
+type guestError struct{ msg string }
+
+func (e guestError) Error() string { return e.msg }
+
+// Printable drops control characters (except newline and tab) from guest text
+// before it reaches the host terminal.
+func Printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' || (r >= 0x20 && r != 0x7f && !(r >= 0x80 && r < 0xa0)) {
+			return r
+		}
+		return -1
+	}, s)
 }
 
 // ErrHostKey is returned when the guest presents a different host key.

@@ -87,18 +87,22 @@ func (p *Port) UnmarshalYAML(n *yaml.Node) error {
 }
 
 type Template struct {
-	Name        string    `yaml:"name" json:"name"`
-	Extends     string    `yaml:"extends,omitempty" json:"-"`
-	Description string    `yaml:"description,omitempty" json:"-"`
-	Distro      string    `yaml:"distro,omitempty" json:"distro,omitempty"`
-	Resources   Resources `yaml:"resources,omitempty" json:"resources"`
-	Packages    []string  `yaml:"packages,omitempty" json:"packages,omitempty"`
-	Docker      *bool     `yaml:"docker,omitempty" json:"docker,omitempty"`
-	Runtimes    Runtimes  `yaml:"runtimes,omitempty" json:"runtimes"`
-	Scripts     []string  `yaml:"scripts,omitempty" json:"scripts,omitempty"`
-	Files       []File    `yaml:"files,omitempty" json:"files,omitempty"`
-	Ports       []Port    `yaml:"ports,omitempty" json:"ports,omitempty"`
-	Network     Network   `yaml:"network,omitempty" json:"network"`
+	Name        string            `yaml:"name" json:"name"`
+	Extends     string            `yaml:"extends,omitempty" json:"-"`
+	Description string            `yaml:"description,omitempty" json:"-"`
+	Distro      string            `yaml:"distro,omitempty" json:"distro,omitempty"`
+	Resources   Resources         `yaml:"resources,omitempty" json:"resources"`
+	Packages    []string          `yaml:"packages,omitempty" json:"packages,omitempty"`
+	Docker      *bool             `yaml:"docker,omitempty" json:"docker,omitempty"`
+	Runtimes    Runtimes          `yaml:"runtimes,omitempty" json:"runtimes"`
+	Scripts     []string          `yaml:"scripts,omitempty" json:"scripts,omitempty"`
+	Files       []File            `yaml:"files,omitempty" json:"files,omitempty"`
+	Ports       []Port            `yaml:"ports,omitempty" json:"ports,omitempty"`
+	Network     Network           `yaml:"network,omitempty" json:"network"`
+	Agents      Agents            `yaml:"agents,omitempty" json:"agents"`
+	Env         map[string]string `yaml:"env,omitempty" json:"env,omitempty"` // pushed at each start; literal or secret:NAME
+	MCP         []MCP             `yaml:"mcp,omitempty" json:"mcp,omitempty"`
+	Sync        Sync              `yaml:"sync,omitempty" json:"sync"`
 
 	// Source is "builtin" or the file path; assets resolve relative to it.
 	Source string `yaml:"-" json:"-"`
@@ -252,6 +256,7 @@ func (t *Template) merge(o *Template) {
 	if o.Network.AllowPrivate != nil {
 		t.Network.AllowPrivate = o.Network.AllowPrivate
 	}
+	t.mergeAgents(o)
 	for k, v := range o.assets {
 		t.assets[k] = v
 	}
@@ -330,7 +335,7 @@ func (t *Template) Validate() error {
 			return fmt.Errorf("network.prompt_timeout: invalid duration %q", pt)
 		}
 	}
-	return nil
+	return t.validateAgents()
 }
 
 // ParseSize parses "512M", "8G", "1T" into MiB.

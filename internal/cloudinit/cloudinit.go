@@ -71,18 +71,43 @@ func BuildScript(t *tpl.Template, user string) (string, error) {
 	for i, s := range t.Scripts {
 		scripts = append(scripts, scriptTarget(i, s))
 	}
+	pkgs, bins, env := agentInstall(t.Agents)
 	var b bytes.Buffer
 	err := buildTmpl.Execute(&b, map[string]any{
-		"User":     user,
-		"Packages": t.Packages,
-		"Docker":   t.HasDocker(),
-		"Node":     t.Runtimes.Node,
-		"Go":       t.Runtimes.Go,
-		"UV":       t.Runtimes.Python == "uv",
-		"Scripts":  scripts,
-		"Proxy":    fmt.Sprintf("http://%s:%d", ProxyAddr, ProxyPort),
+		"AgentPkgs": pkgs,
+		"AgentBins": bins,
+		"AgentEnv":  env,
+		"User":      user,
+		"Packages":  t.Packages,
+		"Docker":    t.HasDocker(),
+		"Node":      t.Runtimes.Node,
+		"Go":        t.Runtimes.Go,
+		"UV":        t.Runtimes.Python == "uv",
+		"Scripts":   scripts,
+		"Proxy":     fmt.Sprintf("http://%s:%d", ProxyAddr, ProxyPort),
 	})
 	return b.String(), err
+}
+
+// agentInstall returns the npm packages, binaries to smoke-test and static
+// environment for the template's agents.
+func agentInstall(a tpl.Agents) (pkgs, bins, env []string) {
+	add := func(ag *tpl.Agent, pkg, bin string, e ...string) {
+		if ag == nil {
+			return
+		}
+		v := ag.Version
+		if v == "" {
+			v = "latest"
+		}
+		pkgs = append(pkgs, pkg+"@"+v)
+		bins = append(bins, bin)
+		env = append(env, e...)
+	}
+	add(a.Claude, "@anthropic-ai/claude-code", "claude", "DISABLE_AUTOUPDATER=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1")
+	add(a.OpenCode, "opencode-ai", "opencode", "OPENCODE_DISABLE_AUTOUPDATE=1", "OPENCODE_DISABLE_MODELS_FETCH=1", "OPENCODE_DISABLE_SHARE=1")
+	add(a.Pi, "@earendil-works/pi-coding-agent", "pi", "PI_OFFLINE=1", "PI_SKIP_VERSION_CHECK=1", "PI_TELEMETRY=0")
+	return pkgs, bins, env
 }
 
 func marshal(doc map[string]any) ([]byte, error) {
@@ -155,6 +180,8 @@ KbdInteractiveAuthentication no
 PermitRootLogin no
 AllowUsers %s
 X11Forwarding no
+# curral pushes agent credentials to ~/.ssh/environment (0600)
+PermitUserEnvironment yes
 `
 
 // InstanceUserData is the per-VM seed. It contains the VM's SSH host private key

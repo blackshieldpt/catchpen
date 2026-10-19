@@ -23,7 +23,7 @@ Install the binary somewhere stable: QEMU and ssh call it back (`egress-stdio`,
 ## Quick start
 
 ```
-curral up dev                 # default template: Docker, Node 24, uv
+curral up dev                 # default template: Docker, Node 24, uv, Claude Code, opencode, pi
 curral ssh dev                # shell
 curral ssh dev -- docker ps   # command
 curral ls
@@ -83,6 +83,53 @@ images:                      # custom apt-based cloud images
 
 A cached image is reused only while its URL (and pin, if any) is unchanged; editing
 either downloads and verifies the new image, and builds a new base.
+
+## Agents and credentials
+
+Templates install Claude Code, opencode and pi from npm into the base (no
+self-updates; rebuild the base for new versions). Credentials are resolved on the host
+and pushed over SSH after every start (`curral creds push <name>|--all` for running
+VMs); they never enter bases or seed images.
+
+```yaml
+agents:
+  claude: { auth: oauth-token }          # or api-key; per VM: curral up --claude-auth api-key
+  opencode: { keys: [ANTHROPIC_API_KEY, OPENROUTER_API_KEY] }
+  pi: { version: "1.3.0", keys: [ANTHROPIC_API_KEY] }
+env: { GH_TOKEN: "secret:GH_TOKEN", TZ: Europe/Lisbon }   # environment for every ssh session
+mcp:
+  - { name: docs, type: http, url: "https://mcp.example.com/mcp", headers: { Authorization: "secret:DOCS_AUTH" } }
+  - { name: fs, type: stdio, command: [npx, -y, "@modelcontextprotocol/server-filesystem", /workspace] }
+sync:
+  git_identity: true                     # host git user.name/email (default)
+  claude_config: false                   # host ~/.claude settings, CLAUDE.md, agents, skills, commands
+```
+
+- Claude Code: `oauth-token` uses `CLAUDE_CODE_OAUTH_TOKEN` (create it once with
+  `claude setup-token`); `api-key` uses `ANTHROPIC_API_KEY`. The subscription token is
+  only given to Claude Code.
+- opencode and pi get provider API keys (`keys:`) in their own auth files, so an
+  Anthropic API key for them doesn't override Claude's subscription token. Known keys:
+  `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`,
+  `GROQ_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`. Their API hosts,
+  and remote MCP hosts, are added to the VM's allowlist.
+- MCP servers are written to all three agents' configs (pi skips SSE servers).
+- `secret:NAME` values come from, in order: `secrets:` in config.yaml, the environment
+  variable `NAME`, or `~/.config/curral/secrets.env` (`NAME=value` lines, must be 0600).
+
+```yaml
+# config.yaml
+secrets:
+  CLAUDE_CODE_OAUTH_TOKEN: { command: [pass, show, claude/token] }
+  ANTHROPIC_API_KEY: { env: MY_ANTHROPIC_KEY }
+```
+
+In the guest: env in `~/.ssh/environment`, Claude in `~/.claude.json`, opencode in
+`~/.local/share/opencode/auth.json` and `~/.config/opencode/opencode.json`, pi in
+`~/.pi/agent/{auth,mcp}.json`, all 0600. Removing a secret on the host removes it from
+the environment on the next push; provider keys already in auth files stay until
+replaced. With `sync.claude_config`, the guest's `~/.claude/settings.json` is replaced
+on every push (minus `env`, hooks, credential helpers, status line and plugins).
 
 ## Egress
 

@@ -11,6 +11,7 @@ import (
 	"github.com/blackshieldpt/curral/internal/config"
 	"github.com/blackshieldpt/curral/internal/image"
 	"github.com/blackshieldpt/curral/internal/paths"
+	"github.com/blackshieldpt/curral/internal/sshx"
 	"github.com/blackshieldpt/curral/internal/template"
 )
 
@@ -51,7 +52,7 @@ func TestLastLine(t *testing.T) {
 func TestPrintable(t *testing.T) {
 	in := "ok\tline\n\x1b]0;title\x07\x1b[31mred\r\x7f\u009bcsi é"
 	want := "ok\tline\n]0;title[31mredcsi é"
-	if got := printable(in); got != want {
+	if got := sshx.Printable(in); got != want {
 		t.Fatalf("printable = %q, want %q", got, want)
 	}
 }
@@ -220,5 +221,52 @@ func TestDestroyBrokenVM(t *testing.T) {
 	}
 	if err := m.Destroy("../x"); err == nil {
 		t.Error("invalid name accepted")
+	}
+}
+
+func TestCreateWithAgents(t *testing.T) {
+	needQemuImg(t)
+	m := testManager(t)
+	writeFile(t, filepath.Join(m.P.Templates(), "ag.yaml"), `
+extends: minimal
+runtimes: { node: "24" }
+agents:
+  claude: {}
+  pi: { keys: [OPENROUTER_API_KEY, ANTHROPIC_API_KEY] }
+env: { FOO: "secret:FOO" }
+mcp:
+  - { name: docs, type: http, url: "https://mcp.example.com:8443/mcp" }
+  - { name: plain, type: sse, url: "http://sse.example.com/sse" }
+  - { name: fs, type: stdio, command: [npx, fs] }
+`)
+	r, err := m.Resolve("ag", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("qemu-img", "create", "-q", "-f", "qcow2", r.BasePath(m.P), "1G").CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if _, err := m.Create(context.Background(), "a", CreateOpts{Template: "ag", ClaudeAuth: "password"}); err == nil || !strings.Contains(err.Error(), "agents.claude.auth") {
+		t.Fatalf("invalid --claude-auth: %v", err)
+	}
+	s, err := m.Create(context.Background(), "a", CreateOpts{Template: "ag", ClaudeAuth: "api-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Agents.Claude == nil || s.Agents.Claude.Auth != "api-key" || s.Env["FOO"] != "secret:FOO" || len(s.MCP) != 3 {
+		t.Errorf("state = %+v", s)
+	}
+	b, _ := os.ReadFile(m.file("a", "allowlist"))
+	for _, want := range []string{"api.anthropic.com:443", "openrouter.ai:443", "mcp.example.com:8443", "sse.example.com:80"} {
+		if !strings.Contains(string(b), want+"\n") {
+			t.Errorf("allowlist lacks %s", want)
+		}
+	}
+	// The override applies to this VM only.
+	if tp, _ := m.Tpl.Load("ag"); tp.Agents.Claude.Auth != "" {
+		t.Errorf("template mutated: %+v", tp.Agents.Claude)
+	}
+	if _, err := m.Create(context.Background(), "b", CreateOpts{Template: "minimal", ClaudeAuth: "api-key"}); err == nil || !strings.Contains(err.Error(), "no claude agent") {
+		t.Errorf("claude-auth on template without claude: %v", err)
 	}
 }

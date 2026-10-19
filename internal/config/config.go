@@ -12,6 +12,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/blackshieldpt/curral/internal/creds"
 	"github.com/blackshieldpt/curral/internal/image"
 	"github.com/blackshieldpt/curral/internal/template"
 )
@@ -26,6 +27,8 @@ type Defaults struct {
 type Config struct {
 	Defaults Defaults              `yaml:"defaults"`
 	Images   map[string]image.Spec `yaml:"images"` // custom distros, by name
+	// Secrets maps a secret name to where it comes from (default: env var, then secrets.env).
+	Secrets map[string]creds.Source `yaml:"secrets"`
 }
 
 func Default() Config {
@@ -64,6 +67,12 @@ func Load(path string) (Config, error) {
 	}
 	c.Defaults.Resources = c.Defaults.Resources.Override(f.Defaults.Resources)
 	c.Images = f.Images
+	c.Secrets = f.Secrets
+	for name, s := range c.Secrets {
+		if (len(s.Command) == 0) == (s.Env == "") {
+			return c, fmt.Errorf("%s: secrets.%s: set exactly one of command or env", path, name)
+		}
+	}
 	if err := validUser(c.Defaults.User); err != nil {
 		return c, fmt.Errorf("%s: defaults.user: %w", path, err)
 	}

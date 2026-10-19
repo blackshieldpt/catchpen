@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/blackshieldpt/curral/internal/config"
 	"github.com/blackshieldpt/curral/internal/egress"
 	"github.com/blackshieldpt/curral/internal/paths"
@@ -24,7 +26,9 @@ import (
 	"github.com/blackshieldpt/curral/internal/template"
 )
 
-func TestLifecycle(t *testing.T) {
+// integrationManager sets up a throwaway CURRAL_HOME (reusing downloaded images) and builds curral.
+func integrationManager(t *testing.T) *Manager {
+	t.Helper()
 	root := t.TempDir()
 	t.Setenv("CURRAL_HOME", root)
 	p := paths.Default()
@@ -45,7 +49,22 @@ func TestLifecycle(t *testing.T) {
 	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/curral").CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
-	m := &Manager{P: p, Cfg: config.Default(), Tpl: template.Loader{UserDir: p.Templates()}, Out: testWriter{t}, Bin: bin}
+	return &Manager{P: p, Cfg: config.Default(), Tpl: template.Loader{UserDir: p.Templates()}, Out: testWriter{t}, Bin: bin}
+}
+
+func guestRunner(t *testing.T, ctx context.Context, c *ssh.Client) func(string) string {
+	return func(cmd string) string {
+		t.Helper()
+		out, err := sshx.Run(ctx, c, cmd, nil)
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", cmd, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+}
+
+func TestLifecycle(t *testing.T) {
+	m := integrationManager(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Minute)
 	defer cancel()
 
@@ -62,14 +81,7 @@ func TestLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	run := func(cmd string) string {
-		t.Helper()
-		out, err := sshx.Run(ctx, c, cmd, nil)
-		if err != nil {
-			t.Fatalf("%s: %v\n%s", cmd, err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
+	run := guestRunner(t, ctx, c)
 
 	if got := run("sudo sshd -T | grep -E '^passwordauthentication'"); got != "passwordauthentication no" {
 		t.Errorf("sshd: %q", got)
@@ -130,6 +142,80 @@ func TestLifecycle(t *testing.T) {
 	}
 	if _, err := m.Start(ctx, "it1"); err != nil {
 		t.Fatalf("restart: %v", err)
+	}
+}
+
+// TestAgents builds a base with all three agents and checks what the guest
+// sees after the credential push. Credentials are fake.
+func TestAgents(t *testing.T) {
+	m := integrationManager(t)
+	if err := os.WriteFile(filepath.Join(m.P.Templates(), "agents.yaml"), []byte(`
+extends: minimal
+runtimes: { node: "24" }
+agents:
+  claude: {}
+  opencode: { keys: [ANTHROPIC_API_KEY] }
+  pi: { keys: [ANTHROPIC_API_KEY] }
+env: { FOO: "literal value", BAR: "secret:IT_BAR" }
+mcp:
+  - { name: fs, type: stdio, command: [npx, -y, "@modelcontextprotocol/server-filesystem", /tmp] }
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const oauth, key = "sk-ant-oat01-curral-integration-fake", "sk-ant-api03-curral-integration-fake-key"
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", oauth)
+	t.Setenv("ANTHROPIC_API_KEY", key)
+	t.Setenv("IT_BAR", "bar from host")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	if _, err := m.Create(ctx, "ag1", CreateOpts{Template: "agents"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Destroy("ag1") })
+	rt, err := m.Start(ctx, "ag1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := m.keys("ag1").Dial(ctx, rt.SSHPort, "agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	run := guestRunner(t, ctx, c)
+
+	for _, bin := range []string{"claude", "opencode", "pi"} {
+		if got := run(bin + " --version"); got == "" {
+			t.Errorf("%s --version printed nothing", bin)
+		}
+	}
+	// ~/.ssh/environment reaches ssh sessions; the API key stays out of Claude's env.
+	for name, want := range map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": oauth, "FOO": "literal value", "BAR": "bar from host", "ANTHROPIC_API_KEY": "", "DISABLE_AUTOUPDATER": "1", "PI_OFFLINE": "1"} {
+		if got := run("printenv " + name + " || true"); got != want {
+			t.Errorf("guest %s = %q, want %q", name, got, want)
+		}
+	}
+	if got := run("stat -c %a ~/.ssh/environment ~/.claude.json ~/.local/share/opencode/auth.json ~/.pi/agent/auth.json | sort -u"); got != "600" {
+		t.Errorf("modes: %q", got)
+	}
+	if got := run("jq -r .anthropic.key ~/.local/share/opencode/auth.json ~/.pi/agent/auth.json | sort -u"); got != key {
+		t.Errorf("provider keys: %q", got)
+	}
+	if got := run("jq -r '.mcpServers.fs.command, .hasCompletedOnboarding' ~/.claude.json"); got != "npx\ntrue" {
+		t.Errorf("claude.json: %q", got)
+	}
+	// Claude reaches the API through the proxy with the (fake) subscription token and is rejected.
+	run("timeout 60 claude -p hi >/dev/null 2>&1 || true")
+	log, _ := os.ReadFile(filepath.Join(m.Dir("ag1"), egress.LogFile))
+	if !strings.Contains(string(log), `"host":"api.anthropic.com"`) {
+		t.Errorf("no api.anthropic.com request in the egress log:\n%s", log)
+	}
+	// Restart pushes again: a secret removed on the host disappears from the VM.
+	os.Unsetenv("IT_BAR")
+	if err := m.Push(ctx, "ag1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := run("grep -c ^BAR= ~/.ssh/environment || true"); got != "0" {
+		t.Errorf("removed secret still in the VM env file")
 	}
 }
 
