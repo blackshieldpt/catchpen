@@ -35,6 +35,7 @@ type Spec struct {
 	ClaudeDir string // host ~/.claude, for sync.claude_config
 	GitName   string // host git identity, for sync.git_identity
 	GitEmail  string
+	ExtraEnv  map[string]string // already-resolved values (e.g. forge tokens for gh)
 }
 
 // Result reports what could not be delivered.
@@ -53,7 +54,8 @@ const (
 	piMCP           = ".pi/agent/mcp.json"
 	claudeOAuthEnv  = "CLAUDE_CODE_OAUTH_TOKEN"
 	anthropicKeyEnv = "ANTHROPIC_API_KEY"
-	claudeKeySuffix = 20 // Claude Code records approved API keys by their last 20 characters
+	claudeKeySuffix = 20      // Claude Code records approved API keys by their last 20 characters
+	maxGuestJSON    = 4 << 20 // largest guest config file we read back
 )
 
 type pusher struct {
@@ -102,6 +104,9 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 		if ok {
 			env[k] = v
 		}
+	}
+	for k, v := range s.ExtraEnv {
+		env[k] = v
 	}
 	var claudeKey string
 	if c := s.Agents.Claude; c != nil {
@@ -162,7 +167,7 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 			return p.res, fmt.Errorf("claude config: %w", err)
 		}
 		for _, k := range skipped {
-			p.warn("claude config: dropped %s from settings.json (host-specific or credential-related)", k)
+			p.warn("claude config: not synced: %s", k)
 		}
 		if _, err := r.Run(ctx, `umask 077; mkdir -p "$HOME/.claude" && tar -xf - --no-same-owner -C "$HOME/.claude"`, tarball); err != nil {
 			return p.res, fmt.Errorf("claude config: %w", err)
@@ -366,7 +371,8 @@ func (p *pusher) pi(a *template.Agent, servers []template.MCP) error {
 // getJSON reads a guest JSON object; a missing file is empty. An unparsable
 // file is kept as <file>.curral-bak and replaced.
 func (p *pusher) getJSON(rel string) (map[string]any, error) {
-	out, err := p.r.Run(p.ctx, fmt.Sprintf(`cat "$HOME/%s" 2>/dev/null || true`, rel), nil)
+	// The file is guest-controlled: only regular files, size-capped on the guest side.
+	out, err := p.r.Run(p.ctx, fmt.Sprintf(`f="$HOME/%s"; [ -f "$f" ] && [ ! -L "$f" ] || exit 0; [ "$(stat -c %%s "$f")" -le %d ] || { echo too large >&2; exit 3; }; cat "$f"`, rel, maxGuestJSON), nil)
 	if err != nil {
 		return nil, fmt.Errorf("read ~/%s: %w", rel, err)
 	}
@@ -392,10 +398,16 @@ func (p *pusher) putJSON(rel string, doc map[string]any) error {
 	return p.put(rel, append(b, '\n'))
 }
 
-// put atomically writes a 0600 file under the guest user's home.
-func (p *pusher) put(rel string, data []byte) error {
-	cmd := fmt.Sprintf(`set -e; umask 077; f="$HOME/%s"; mkdir -p "$(dirname "$f")"; cat > "$f.curral-tmp"; chmod 600 "$f.curral-tmp"; mv -f "$f.curral-tmp" "$f"`, rel)
-	if _, err := p.r.Run(p.ctx, cmd, data); err != nil {
+func (p *pusher) put(rel string, data []byte) error { return WriteFile(p.ctx, p.r, rel, data) }
+
+// WriteFile atomically writes a 0600 file under the guest user's home. rel is
+// a curral-chosen path (no quotes or $).
+func WriteFile(ctx context.Context, r Remote, rel string, data []byte) error {
+	if strings.ContainsAny(rel, "\"'$`\\\n") || strings.Contains(rel, "..") {
+		return fmt.Errorf("invalid guest path %q", rel)
+	}
+	cmd := fmt.Sprintf(`set -e; umask 077; f="$HOME/%s"; mkdir -p "$(dirname "$f")"; rm -f "$f.curral-tmp"; cat > "$f.curral-tmp"; chmod 600 "$f.curral-tmp"; mv -f -T "$f.curral-tmp" "$f"`, rel)
+	if _, err := r.Run(ctx, cmd, data); err != nil {
 		return fmt.Errorf("write ~/%s: %w", rel, err)
 	}
 	return nil

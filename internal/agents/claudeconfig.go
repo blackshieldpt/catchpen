@@ -53,7 +53,7 @@ func claudeConfigTar(dir string) ([]byte, []string, error) {
 		for _, k := range settingsDrop {
 			if _, ok := doc[k]; ok {
 				delete(doc, k)
-				dropped = append(dropped, k)
+				dropped = append(dropped, "settings.json "+k)
 			}
 		}
 		out, _ := json.MarshalIndent(doc, "", "  ")
@@ -71,9 +71,22 @@ func claudeConfigTar(dir string) ([]byte, []string, error) {
 		return nil, nil, err
 	}
 	for _, sub := range []string{"agents", "skills", "commands"} {
-		if err := walk(filepath.Join(dir, sub), sub, map[string]bool{}, add); err != nil {
+		root, err := filepath.EvalSymlinks(filepath.Join(dir, sub))
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
 			return nil, nil, err
 		}
+		if sensitive(root) {
+			dropped = append(dropped, sub+" (points into a credentials directory)")
+			continue
+		}
+		w := walker{root: root, add: add, seen: map[string]bool{}}
+		if err := w.walk(root, sub); err != nil {
+			return nil, nil, err
+		}
+		dropped = append(dropped, w.skipped...)
 	}
 	if err := tw.Close(); err != nil {
 		return nil, nil, err
@@ -81,15 +94,46 @@ func claudeConfigTar(dir string) ([]byte, []string, error) {
 	return buf.Bytes(), dropped, nil
 }
 
-// walk adds regular files under path (following symlinks, skipping loops and
-// dot-directories like .git) with tar names under prefix.
-func walk(path, prefix string, seen map[string]bool, add func(string, []byte) error) error {
+// sensitiveDirs (relative to the host home) are never copied, even via a symlink.
+var sensitiveDirs = []string{".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".password-store",
+	".config/gh", ".config/gcloud", ".config/curral", ".local/share/curral"}
+
+func sensitive(real string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return true
+	}
+	if real == home {
+		return true
+	}
+	for _, d := range sensitiveDirs {
+		p := filepath.Join(home, d)
+		if real == p || strings.HasPrefix(real, p+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// walker adds the regular files under root. Symlinks are followed only while
+// they stay inside root; dotfiles and dot-directories (.git, .credentials.json,
+// .env, ...) are skipped.
+type walker struct {
+	root    string
+	add     func(string, []byte) error
+	seen    map[string]bool
+	skipped []string
+}
+
+func (w *walker) walk(path, name string) error {
 	real, err := filepath.EvalSymlinks(path)
-	if os.IsNotExist(err) {
+	if err != nil {
+		w.skipped = append(w.skipped, name+" (unreadable link)")
 		return nil
 	}
-	if err != nil {
-		return err
+	if real != w.root && !strings.HasPrefix(real, w.root+"/") {
+		w.skipped = append(w.skipped, name+" (links outside its directory)")
+		return nil
 	}
 	st, err := os.Stat(real)
 	if err != nil {
@@ -100,23 +144,23 @@ func walk(path, prefix string, seen map[string]bool, add func(string, []byte) er
 		if err != nil {
 			return err
 		}
-		return add(prefix, b)
+		return w.add(name, b)
 	}
-	if !st.IsDir() || seen[real] {
+	if !st.IsDir() || w.seen[real] {
 		return nil
 	}
-	seen[real] = true
-	defer delete(seen, real)
+	w.seen[real] = true
+	defer delete(w.seen, real)
 	ents, err := os.ReadDir(real)
 	if err != nil {
 		return err
 	}
 	slices.SortFunc(ents, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
 	for _, e := range ents {
-		if strings.HasPrefix(e.Name(), ".") && e.IsDir() {
+		if strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		if err := walk(filepath.Join(real, e.Name()), prefix+"/"+e.Name(), seen, add); err != nil {
+		if err := w.walk(filepath.Join(real, e.Name()), name+"/"+e.Name()); err != nil {
 			return err
 		}
 	}

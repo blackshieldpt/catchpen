@@ -14,6 +14,7 @@ import (
 	"io"
 	"io/fs"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -31,8 +32,8 @@ import (
 	"github.com/blackshieldpt/curral/internal/agents"
 	"github.com/blackshieldpt/curral/internal/cloudinit"
 	"github.com/blackshieldpt/curral/internal/config"
-	"github.com/blackshieldpt/curral/internal/creds"
 	"github.com/blackshieldpt/curral/internal/egress"
+	"github.com/blackshieldpt/curral/internal/forge"
 	"github.com/blackshieldpt/curral/internal/fsutil"
 	"github.com/blackshieldpt/curral/internal/image"
 	"github.com/blackshieldpt/curral/internal/paths"
@@ -46,6 +47,7 @@ const (
 	buildTimeout = 45 * time.Minute
 	bootTimeout  = 10 * time.Minute
 	stopTimeout  = 60 * time.Second
+	pushTimeout  = 3 * time.Minute
 	maxBuildLog  = 256 << 20 // a build whose serial logs grow past this is aborted
 	maxCPUs      = 256
 )
@@ -85,6 +87,10 @@ type State struct {
 	Env    map[string]string `json:"env,omitempty"`
 	MCP    []template.MCP    `json:"mcp,omitempty"`
 	Sync   template.Sync     `json:"sync"`
+
+	Repos      []RepoState            `json:"repos,omitempty"`
+	Forges     map[string]forge.Forge `json:"forges,omitempty"`      // snapshot of the forges Repos use
+	ForgeUsers map[string]string      `json:"forge_users,omitempty"` // token owner per forge (mode token)
 }
 
 // Runtime describes a running VM.
@@ -98,9 +104,10 @@ type Manager struct {
 	P     paths.Paths
 	Cfg   config.Config
 	Tpl   template.Loader
-	Out   io.Writer // progress messages
-	Bin   string    // absolute path of the curral binary (ProxyCommand, guestfwd)
-	Debug bool      // stream the whole build log; log the serial console; keep failed VMs running
+	Out   io.Writer    // progress messages
+	Bin   string       // absolute path of the curral binary (ProxyCommand, guestfwd)
+	Debug bool         // stream the whole build log; log the serial console; keep failed VMs running
+	HTTP  *http.Client // forge API client (nil: default)
 }
 
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}[a-z0-9]$|^[a-z]$`)
@@ -461,8 +468,10 @@ type CreateOpts struct {
 	Memory     string
 	Disk       string
 	Rebuild    bool
-	AllowOpen  bool   // template asks for unfiltered egress; caller confirmed
-	ClaudeAuth string // overrides agents.claude.auth
+	AllowOpen  bool     // template asks for unfiltered egress; caller confirmed
+	ClaudeAuth string   // overrides agents.claude.auth
+	Repos      []string // added to the template's repos
+	ReadOnly   bool     // deploy keys are read-only
 }
 
 func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *State, err error) {
@@ -510,6 +519,10 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 	if egressMode == egress.ModeOpen && !o.AllowOpen {
 		return nil, fmt.Errorf("template %s uses network.egress: open (unfiltered internet and the host's 127.0.0.1 services); pass --allow-open to confirm", r.T.Name)
 	}
+	repos, forges, err := m.planRepos(append(append([]string(nil), r.T.Repos...), o.Repos...), o.ReadOnly)
+	if err != nil {
+		return nil, err
+	}
 	var allow []string
 	if egressMode == egress.ModeAllowlist {
 		if allow, err = egress.ExpandPresets(r.T.Network.Presets); err != nil {
@@ -522,6 +535,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 			allow = append(allow, e)
 		}
 		allow = append(allow, agentHosts(r.T)...)
+		allow = append(allow, forgeHosts(forges)...)
 	}
 	base, err := m.EnsureBase(ctx, r, o.Rebuild)
 	if err != nil {
@@ -548,8 +562,10 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 	if err := os.Mkdir(m.dir(name), 0o700); err != nil {
 		return nil, err
 	}
+	s := &State{Name: name, Repos: repos, Forges: forges}
 	defer func() {
 		if err != nil {
+			m.releaseForges(s)
 			_ = os.RemoveAll(m.dir(name))
 		}
 	}()
@@ -580,11 +596,15 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 			return nil, err
 		}
 	}
-	s := &State{
+	if err := m.provisionForges(ctx, s); err != nil {
+		return nil, err
+	}
+	*s = State{
 		Name: name, Template: r.T.Name, Distro: r.Distro.Name, User: r.User, Base: base,
 		CPUs: res.CPUs, MemoryMB: memMB, DiskMB: max(diskMB, baseMB), Ports: r.T.Ports,
 		Egress: egressMode, Docker: r.T.HasDocker(), Created: time.Now().UTC(),
 		Agents: r.T.Agents, Env: r.T.Env, MCP: r.T.MCP, Sync: r.T.Sync,
+		Repos: s.Repos, Forges: s.Forges, ForgeUsers: s.ForgeUsers,
 	}
 	if err := m.save(s); err != nil {
 		return nil, err
@@ -791,8 +811,15 @@ func (m *Manager) push(ctx context.Context, c *ssh.Client, s *State) error {
 	if s.Sync.Git() {
 		spec.GitName, spec.GitEmail = hostGit("user.name"), hostGit("user.email")
 	}
-	sec := &creds.Resolver{Sources: m.Cfg.Secrets, File: m.P.SecretsFile()}
-	res, err := agents.Push(ctx, sshRemote{c}, spec, sec)
+	cloneCtx := ctx // clones can take longer than the config push
+	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
+	defer cancel()
+	gcreds, err := m.forgeCreds(ctx, s)
+	if err != nil {
+		return err
+	}
+	spec.ExtraEnv = forge.GitHubEnv(gcreds)
+	res, err := agents.Push(ctx, sshRemote{c}, spec, m.resolver())
 	for _, w := range res.Warnings {
 		m.logf("warning: %s", w)
 	}
@@ -800,7 +827,10 @@ func (m *Manager) push(ctx context.Context, c *ssh.Client, s *State) error {
 		m.logf("secrets not found on the host: %s (set them in the environment, %s, or config.yaml secrets)",
 			strings.Join(res.Missing, ", "), m.P.SecretsFile())
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return m.pushForges(cloneCtx, sshRemote{c}, s, gcreds)
 }
 
 func hostClaudeDir() string {
@@ -913,6 +943,11 @@ func (m *Manager) Destroy(name string) error {
 	defer unlock()
 	if err := m.stopLocked(name, true); err != nil {
 		return err
+	}
+	if s, err := m.Load(name); err == nil {
+		m.releaseForges(s)
+	} else if _, err := os.Stat(m.file(name, forgeDir)); err == nil {
+		m.logf("warning: %s has unreadable state; deploy keys or tokens it created may remain on the forge", name)
 	}
 	// Move the directory out of the way atomically first (while locked): a start
 	// waiting on the lock, or an egress edit, then finds the VM gone rather than

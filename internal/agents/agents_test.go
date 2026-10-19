@@ -242,10 +242,19 @@ func TestPushClaudeConfig(t *testing.T) {
 	write(t, filepath.Join(host, "projects", "p", "x.jsonl"), "history")
 	write(t, filepath.Join(host, "agents", "rev.md"), "reviewer")
 	write(t, filepath.Join(host, "commands", ".git", "config"), "skip dot dirs")
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	write(t, filepath.Join(fakeHome, ".ssh", "id_ed25519"), "PRIVATE KEY")
+	outside := t.TempDir()
+	write(t, filepath.Join(outside, "secret.txt"), "outside")
 	ext := t.TempDir()
 	write(t, filepath.Join(ext, "s1", "SKILL.md"), "skill one")
-	os.Symlink(ext, filepath.Join(host, "skills"))
-	os.Symlink(ext, filepath.Join(ext, "loop")) // must not recurse forever
+	write(t, filepath.Join(ext, "s1", ".env"), "TOKEN=x")
+	os.Symlink(ext, filepath.Join(host, "skills"))                                         // top-level link: allowed
+	os.Symlink(ext, filepath.Join(ext, "loop"))                                            // must not recurse forever
+	os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(ext, "s1", "leak.txt")) // escapes: skipped
+	os.RemoveAll(filepath.Join(host, "commands"))
+	os.Symlink(filepath.Join(fakeHome, ".ssh"), filepath.Join(host, "commands")) // credentials dir: refused
 
 	home := t.TempDir()
 	tru := true
@@ -263,12 +272,41 @@ func TestPushClaudeConfig(t *testing.T) {
 			t.Errorf("%s = %q, %v", f, b, err)
 		}
 	}
-	for _, f := range []string{".credentials.json", "projects", "commands/.git"} {
+	for _, f := range []string{".credentials.json", "projects", "commands", "skills/s1/leak.txt", "skills/s1/.env"} {
 		if _, err := os.Stat(filepath.Join(g, f)); err == nil {
 			t.Errorf("%s copied into the VM", f)
 		}
 	}
-	if !strings.Contains(strings.Join(res.Warnings, "\n"), "dropped env") {
-		t.Errorf("warnings = %v", res.Warnings)
+	warns := strings.Join(res.Warnings, "\n")
+	for _, want := range []string{"not synced: settings.json env", "skills/s1/leak.txt (links outside", "commands (points into a credentials directory)"} {
+		if !strings.Contains(warns, want) {
+			t.Errorf("warnings %q lack %q", warns, want)
+		}
+	}
+}
+
+func TestPushRefusesHugeGuestJSON(t *testing.T) {
+	home := t.TempDir()
+	big := strings.Repeat(" ", maxGuestJSON+1)
+	write(t, filepath.Join(home, ".claude.json"), "{"+big+"}")
+	_, err := Push(context.Background(), localRemote{home}, Spec{Agents: template.Agents{Claude: &template.Agent{}}}, fakeSecrets{})
+	if err == nil || !strings.Contains(err.Error(), ".claude.json") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestPushReplacesSymlinkedGuestFile(t *testing.T) {
+	home := t.TempDir()
+	target := filepath.Join(t.TempDir(), "elsewhere.json")
+	write(t, target, `{"keep":"me"}`)
+	os.Symlink(target, filepath.Join(home, ".claude.json"))
+	if _, err := Push(context.Background(), localRemote{home}, Spec{Agents: template.Agents{Claude: &template.Agent{}}}, fakeSecrets{}); err != nil {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Lstat(filepath.Join(home, ".claude.json")); fi.Mode()&os.ModeSymlink != 0 {
+		t.Error("symlink kept")
+	}
+	if b, _ := os.ReadFile(target); string(b) != `{"keep":"me"}` {
+		t.Errorf("symlink target written: %s", b)
 	}
 }

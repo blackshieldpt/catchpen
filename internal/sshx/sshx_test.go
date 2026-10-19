@@ -260,3 +260,15 @@ func TestDialSanitizesGuestErrors(t *testing.T) {
 		t.Fatalf("control characters in error: %q", err)
 	}
 }
+
+func TestCapWriter(t *testing.T) {
+	w := &capWriter{max: 10}
+	for _, s := range []string{"12345", "6789", "abcdef"} {
+		if n, err := w.Write([]byte(s)); err != nil || n != len(s) {
+			t.Fatalf("Write = %d, %v", n, err)
+		}
+	}
+	if w.b.String() != "123456789a" || !w.over {
+		t.Fatalf("buffer %q over=%v", w.b.String(), w.over)
+	}
+}

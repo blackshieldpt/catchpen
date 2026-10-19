@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -49,6 +50,9 @@ func genKey(comment string) (priv []byte, pub []byte, err error) {
 }
 
 // Generate creates the client key, host key and known_hosts for a VM.
+// GenerateKey returns a new ed25519 key pair (OpenSSH private key, authorized_keys line).
+func GenerateKey(comment string) (priv, pub []byte, err error) { return genKey(comment) }
+
 func (k Keys) Generate(vm string) error {
 	if err := os.MkdirAll(k.Dir, 0o700); err != nil {
 		return err
@@ -208,6 +212,76 @@ type ExitError struct {
 
 func (e *ExitError) Error() string { return fmt.Sprintf("%s: exited with status %d", e.Cmd, e.Status) }
 
+// Stream runs cmd and copies its stdout to w, failing once more than max bytes
+// arrive. Stderr (capped) is returned for diagnostics.
+func Stream(ctx context.Context, c *ssh.Client, cmd string, w io.Writer, max int64) (stderr []byte, err error) {
+	s, err := c.NewSession()
+	if err != nil {
+		return nil, err
+	}
+	defer s.Close()
+	stop := context.AfterFunc(ctx, func() { s.Close() })
+	defer stop()
+	lw := &limitWriter{w: w, left: max}
+	eb := &capWriter{max: 64 << 10}
+	s.Stdout, s.Stderr = lw, eb
+	err = s.Run(cmd)
+	if lw.over {
+		return eb.b.Bytes(), fmt.Errorf("%s: output exceeded %d MiB", cmd, max>>20)
+	}
+	if ctx.Err() != nil {
+		return eb.b.Bytes(), fmt.Errorf("%s: %w", cmd, ctx.Err())
+	}
+	var ee *ssh.ExitError
+	if errors.As(err, &ee) {
+		return eb.b.Bytes(), &ExitError{Cmd: cmd, Status: ee.ExitStatus()}
+	}
+	if err != nil {
+		return eb.b.Bytes(), fmt.Errorf("%s: %w", cmd, err)
+	}
+	return eb.b.Bytes(), nil
+}
+
+type limitWriter struct {
+	w    io.Writer
+	left int64
+	over bool
+}
+
+func (l *limitWriter) Write(p []byte) (int, error) {
+	if int64(len(p)) > l.left {
+		l.over = true
+		return 0, errors.New("output limit exceeded")
+	}
+	l.left -= int64(len(p))
+	return l.w.Write(p)
+}
+
+// MaxOutput is the most guest output Run keeps.
+const MaxOutput = 16 << 20
+
+var ErrOutputTooLarge = fmt.Errorf("guest output exceeded %d MiB", MaxOutput>>20)
+
+// capWriter keeps up to max bytes and discards the rest (so the remote side
+// isn't blocked), remembering that it overflowed.
+type capWriter struct {
+	mu   sync.Mutex
+	b    bytes.Buffer
+	max  int
+	over bool
+}
+
+func (w *capWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if room := w.max - w.b.Len(); len(p) > room {
+		w.b.Write(p[:max(room, 0)])
+		w.over = true
+		return len(p), nil
+	}
+	return w.b.Write(p)
+}
+
 // Run executes cmd and returns its combined output, which is guest-controlled:
 // errors never include it, so callers decide whether (and how safely) to show it.
 // Cancelling ctx ends the session.
@@ -220,7 +294,14 @@ func Run(ctx context.Context, c *ssh.Client, cmd string, stdin io.Reader) ([]byt
 	stop := context.AfterFunc(ctx, func() { s.Close() })
 	defer stop()
 	s.Stdin = stdin
-	out, err := s.CombinedOutput(cmd)
+	// Guest output is untrusted: cap what the host buffers.
+	buf := &capWriter{max: MaxOutput}
+	s.Stdout, s.Stderr = buf, buf
+	err = s.Run(cmd)
+	out := buf.b.Bytes()
+	if buf.over {
+		return out, fmt.Errorf("%s: %w", cmd, ErrOutputTooLarge)
+	}
 	if ctx.Err() != nil {
 		return out, fmt.Errorf("%s: %w", cmd, ctx.Err())
 	}

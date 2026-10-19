@@ -3,6 +3,7 @@ extends: base
 resources: { cpus: 4, memory: 8G, disk: 40G }
 packages: [build-essential, make, python3, python3-venv, pkg-config]
 docker: true
+tools: [gh]
 runtimes:
   node: "24"
   python: uv

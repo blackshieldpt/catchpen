@@ -37,7 +37,7 @@ func upCmd() *cobra.Command {
 					return err
 				}
 			} else {
-				for _, fl := range []string{"template", "distro", "cpus", "mem", "disk", "rebuild", "allow-open", "claude-auth"} {
+				for _, fl := range []string{"template", "distro", "cpus", "mem", "disk", "rebuild", "allow-open", "claude-auth", "repo", "ro"} {
 					if cmd.Flags().Changed(fl) {
 						return fmt.Errorf("VM %s already exists; --%s only applies on creation", name, fl)
 					}
@@ -55,6 +55,8 @@ func upCmd() *cobra.Command {
 	f.StringVar(&o.Disk, "disk", "", "disk size, e.g. 40G")
 	f.BoolVar(&o.Rebuild, "rebuild", false, "rebuild the template base first")
 	f.BoolVar(&o.AllowOpen, "allow-open", false, "confirm a template with network.egress: open")
+	f.StringArrayVar(&o.Repos, "repo", nil, "clone a repo into /workspace (forge:owner/repo or URL; repeatable)")
+	f.BoolVar(&o.ReadOnly, "ro", false, "make deploy keys read-only")
 	f.StringVar(&o.ClaudeAuth, "claude-auth", "", "Claude Code auth for this VM: oauth-token | api-key (default from template)")
 	return c
 }

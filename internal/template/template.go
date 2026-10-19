@@ -103,6 +103,8 @@ type Template struct {
 	Env         map[string]string `yaml:"env,omitempty" json:"env,omitempty"` // pushed at each start; literal or secret:NAME
 	MCP         []MCP             `yaml:"mcp,omitempty" json:"mcp,omitempty"`
 	Sync        Sync              `yaml:"sync,omitempty" json:"sync"`
+	Tools       []string          `yaml:"tools,omitempty" json:"tools,omitempty"` // gh, tea
+	Repos       []string          `yaml:"repos,omitempty" json:"repos,omitempty"` // cloned into /workspace at start
 
 	// Source is "builtin" or the file path; assets resolve relative to it.
 	Source string `yaml:"-" json:"-"`
@@ -257,6 +259,8 @@ func (t *Template) merge(o *Template) {
 		t.Network.AllowPrivate = o.Network.AllowPrivate
 	}
 	t.mergeAgents(o)
+	t.Tools = appendUniq(t.Tools, o.Tools...)
+	t.Repos = appendUniq(t.Repos, o.Repos...)
 	for k, v := range o.assets {
 		t.assets[k] = v
 	}
@@ -333,6 +337,16 @@ func (t *Template) Validate() error {
 	if pt := t.Network.PromptTimeout; pt != "" {
 		if d, err := time.ParseDuration(pt); err != nil || d <= 0 {
 			return fmt.Errorf("network.prompt_timeout: invalid duration %q", pt)
+		}
+	}
+	for _, tool := range t.Tools {
+		if tool != "gh" && tool != "tea" {
+			return fmt.Errorf("tools: unknown %q (gh, tea)", tool)
+		}
+	}
+	for _, r := range t.Repos {
+		if r == "" || strings.ContainsAny(r, " \t\n'\"") {
+			return fmt.Errorf("repos: invalid reference %q", r)
 		}
 	}
 	return t.validateAgents()

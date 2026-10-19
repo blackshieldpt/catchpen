@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 	"text/template"
 
@@ -74,6 +75,8 @@ func BuildScript(t *tpl.Template, user string) (string, error) {
 	pkgs, bins, env := agentInstall(t.Agents)
 	var b bytes.Buffer
 	err := buildTmpl.Execute(&b, map[string]any{
+		"GH":        slices.Contains(t.Tools, "gh"),
+		"Tea":       slices.Contains(t.Tools, "tea"),
 		"AgentPkgs": pkgs,
 		"AgentBins": bins,
 		"AgentEnv":  env,

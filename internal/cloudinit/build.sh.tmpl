@@ -83,6 +83,33 @@ tar -xzf /tmp/uv.tgz -C /usr/local/bin --strip-components=1 --no-same-owner
 rm -f /tmp/uv.tgz /tmp/uv.sha256
 uv --version
 {{- end}}
+{{- if .GH}}
+
+log "installing gh"
+ghver=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest | jq -r .tag_name | sed 's/^v//')
+case "$ghver" in [0-9]*.[0-9]*.[0-9]*) ;; *) log "bad gh version: $ghver"; exit 1;; esac
+ghbase="https://github.com/cli/cli/releases/download/v$ghver"
+curl -fsSL "$ghbase/gh_${ghver}_linux_amd64.tar.gz" -o /tmp/gh.tgz
+curl -fsSL "$ghbase/gh_${ghver}_checksums.txt" -o /tmp/gh.sums
+echo "$(awk -v f="gh_${ghver}_linux_amd64.tar.gz" '$2==f{print $1}' /tmp/gh.sums)  /tmp/gh.tgz" | sha256sum -c -
+tar -xzf /tmp/gh.tgz -C /usr/local --strip-components=1 --no-same-owner "gh_${ghver}_linux_amd64/bin/gh"
+rm -f /tmp/gh.tgz /tmp/gh.sums
+gh --version
+{{- end}}
+{{- if .Tea}}
+
+log "installing tea"
+teaver=$(curl -fsSL https://gitea.com/api/v1/repos/gitea/tea/releases/latest | jq -r .tag_name | sed 's/^v//')
+case "$teaver" in [0-9]*.[0-9]*.[0-9]*) ;; *) log "bad tea version: $teaver"; exit 1;; esac
+teabase="https://dl.gitea.com/tea/$teaver"
+curl -fsSL "$teabase/tea-$teaver-linux-amd64.xz" -o /tmp/tea.xz
+curl -fsSL "$teabase/tea-$teaver-linux-amd64.xz.sha256" -o /tmp/tea.sha256
+echo "$(awk '{print $1}' /tmp/tea.sha256)  /tmp/tea.xz" | sha256sum -c -
+xz -dc /tmp/tea.xz > /usr/local/bin/tea
+chmod 0755 /usr/local/bin/tea
+rm -f /tmp/tea.xz /tmp/tea.sha256
+tea --version
+{{- end}}
 {{- if .AgentPkgs}}
 
 log "installing agents"

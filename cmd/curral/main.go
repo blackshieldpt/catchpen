@@ -50,6 +50,7 @@ func main() {
 	root.AddCommand(
 		doctorCmd(), templateCmd(), upCmd(), startCmd(), stopCmd(), destroyCmd(), lsCmd(),
 		sshCmd(), sshProxyCmd(), consoleCmd(), egressCmd(), egressStdioCmd(), setupSSHCmd(), credsCmd(),
+		forgeCmd(), pullCmd(), prCmd(),
 	)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()

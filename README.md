@@ -131,6 +131,44 @@ the environment on the next push; provider keys already in auth files stay until
 replaced. With `sync.claude_config`, the guest's `~/.claude/settings.json` is replaced
 on every push (minus `env`, hooks, credential helpers, status line and plugins).
 
+## Forges and repos
+
+```
+curral forge add github --type github --host github.com --mode deploy-key --token-secret GH_ADMIN_TOKEN
+curral forge add acme --type gitea --host git.acme.example --ssh-port 2222 \
+    --mode minted-token --user bot --password-secret ACME_PASSWORD
+curral forge test acme
+curral up dev --repo github:acme/api --repo https://git.acme.example/team/web [--ro]
+```
+
+Forges live in `~/.config/curral/forges.yaml` (managed by `curral forge add/rm`). `forge
+add` pins the SSH host key: GitHub's from `api.github.com/meta`, others scanned and
+confirmed by you. Repos (`--repo`, or `repos:` in a template) are `forge:owner/repo` or a
+URL whose host matches a forge, and are cloned into `/workspace/<repo>` at start.
+
+| `--mode` | VM gets | Host-side token used for |
+|---|---|---|
+| `deploy-key` | a per-VM, per-repo SSH key (`--ro`: read-only) | adding/removing the key |
+| `minted-token` (Gitea) | a per-VM token, minted with the account's password | minting/deleting it |
+| `token` | your token (`--token-secret`), for HTTPS and `gh`/`tea` | — |
+| `none` | nothing; anonymous clone, work leaves via `pull`/`pr` | opening PRs |
+
+Deploy keys and minted tokens are removed when the VM is destroyed. In the VM, git SSH
+goes through the egress proxy (`~/.ssh/curral_config`, pinned `known_hosts`), HTTPS
+tokens sit in `~/.config/curral/git-credentials`, `gh` gets `GH_TOKEN` and `tea` a
+login. Forge hosts are added to the VM's allowlist. Install the CLIs with
+`tools: [gh, tea]` in a template (the default template has `gh`).
+
+Getting work out without giving the VM push access:
+
+```
+curral pull dev --repo api --into ~/src/api     # -> refs/curral/dev/<branch>, hooks off, fsck on
+curral pr dev --repo api --into ~/src/api       # pull, push with your git creds, open the PR
+```
+
+`pr` pushes `curral/<vm>/<branch>` through a remote of the host repo that points at the
+same forge repo, then opens the PR with the forge's API token.
+
 ## Egress
 
 In `allowlist` mode the VM has no direct network access: QEMU's user network runs with
