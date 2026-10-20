@@ -2,6 +2,7 @@
 package fsutil
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -13,6 +14,15 @@ func Lock(path string) (func(), error) { return lock(path, syscall.LOCK_EX) }
 
 // RLock takes a shared flock on path.
 func RLock(path string) (func(), error) { return lock(path, syscall.LOCK_SH) }
+
+// TryLock takes an exclusive flock without waiting; ok is false if it is held.
+func TryLock(path string) (unlock func(), ok bool, err error) {
+	u, err := lock(path, syscall.LOCK_EX|syscall.LOCK_NB)
+	if errors.Is(err, syscall.EWOULDBLOCK) {
+		return nil, false, nil
+	}
+	return u, err == nil, err
+}
 
 func lock(path string, how int) (func(), error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)

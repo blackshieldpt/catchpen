@@ -235,6 +235,22 @@ func Ensure(ctx context.Context, dir string, s Spec, progress io.Writer) (string
 	return dst, want, nil
 }
 
+// EnsureLatest is Ensure, but also checks upstream for a newer image (a
+// changed checksum) and fetches it.
+func EnsureLatest(ctx context.Context, dir string, s Spec, progress io.Writer) (string, Digest, error) {
+	dst := filepath.Join(dir, s.Name+".img")
+	if d, ok, err := cached(dst, s); err == nil && ok && s.pinned() == "" {
+		want, err := s.Expected(ctx)
+		if err != nil {
+			return "", "", fmt.Errorf("checksum for %s: %w", s.Name, err)
+		}
+		if want != d {
+			_ = os.Remove(dst + ".json") // makes Ensure fetch and verify it again
+		}
+	}
+	return Ensure(ctx, dir, s, progress)
+}
+
 // cached reports whether dst is a recorded download of s.
 func cached(dst string, s Spec) (Digest, bool, error) {
 	b, err := os.ReadFile(dst + ".json")

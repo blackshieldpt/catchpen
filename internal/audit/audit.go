@@ -41,6 +41,12 @@ const (
 	Copy            = "cp"
 	TaskSubmit      = "task.submit"
 	TaskEnd         = "task.end"
+	VMSnapshot      = "vm.snapshot"
+	VMRestore       = "vm.restore"
+	VMSnapshotRm    = "vm.snapshot.rm"
+	VMReset         = "vm.reset"
+	VMRebase        = "vm.rebase"
+	GC              = "gc"
 )
 
 // Event is one audit line.

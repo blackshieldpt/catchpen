@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -157,10 +156,8 @@ func destroyCmd() *cobra.Command {
 				return err
 			}
 			if !yes {
-				fmt.Fprintf(os.Stderr, "Destroy %s and delete all data inside? [y/N] ", strings.Join(args, ", "))
-				line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-				if a := strings.TrimSpace(strings.ToLower(line)); a != "y" && a != "yes" {
-					return errors.New("aborted")
+				if err := confirm(fmt.Sprintf("Destroy %s and delete all data inside?", strings.Join(args, ", "))); err != nil {
+					return err
 				}
 			}
 			var errs []error
@@ -188,6 +185,7 @@ func lsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			current := map[string]string{} // template+distro -> current base
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "NAME\tSTATE\tTEMPLATE\tDISTRO\tCPU\tMEM\tEGRESS\tSSH\tPORTS\tAGE")
 			for _, v := range vms {
@@ -200,6 +198,13 @@ func lsCmd() *cobra.Command {
 				}
 				if v.Task != "" {
 					state += ",task"
+				}
+				key := v.Template + "\x00" + v.Distro
+				if _, ok := current[key]; !ok {
+					current[key], _ = m.CurrentBase(v.Template, v.Distro)
+				}
+				if cur := current[key]; cur != "" && cur != v.Base {
+					state += ",stale-base"
 				}
 				if v.Running {
 					if v.Runtime != nil && v.Runtime.SSHPort != 0 {
@@ -367,7 +372,38 @@ func templateCmd() *cobra.Command {
 	}
 	build.Flags().StringVar(&distro, "distro", "", "guest distro")
 	build.Flags().BoolVar(&rebuild, "rebuild", false, "rebuild even if the base exists")
-	c.AddCommand(ls, show, build)
+	var all bool
+	rb := &cobra.Command{
+		Use:   "rebuild [<template>...] [--all]",
+		Short: "Build a new base generation with a fresh cloud image and current packages",
+		Long: `The cloud image is re-checked upstream (and re-downloaded if its checksum changed) and
+a new base generation is built. Existing VMs keep their base (curral ls marks them stale):
+curral reset --latest moves one to the new base, curral gc removes unused old bases.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			m, err := manager()
+			if err != nil {
+				return err
+			}
+			var targets [][2]string
+			switch {
+			case all && (len(args) > 0 || distro != ""):
+				return errors.New("--all takes no template names or --distro")
+			case all:
+				if targets, err = m.RebuildTargets(); err != nil {
+					return err
+				}
+			case len(args) == 0:
+				return errors.New("give template names or --all")
+			}
+			for _, a := range args {
+				targets = append(targets, [2]string{a, distro})
+			}
+			return m.Rebuild(cmd.Context(), targets)
+		},
+	}
+	rb.Flags().BoolVar(&all, "all", false, "every template with a base or a VM")
+	rb.Flags().StringVar(&distro, "distro", "", "guest distro")
+	c.AddCommand(ls, show, build, rb)
 	return c
 }
 

@@ -114,42 +114,40 @@ func TestCreateRejectsBadCPUs(t *testing.T) {
 	}
 }
 
-func TestRebuildRefusedWhileBaseInUse(t *testing.T) {
+func TestBaseGenerations(t *testing.T) {
 	m := testManager(t)
 	r, err := m.Resolve("minimal", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := r.BasePath(m.P)
-	writeFile(t, base, "base")
+	first := r.BasePath(m.P)
+	if r.baseGen(m.P) != 0 || !strings.HasSuffix(first, "-"+r.Hash+".qcow2") {
+		t.Fatalf("unbuilt: gen %d path %s", r.baseGen(m.P), first)
+	}
+	writeFile(t, first, "gen1")
+	if got, err := m.EnsureBase(context.Background(), r, false); err != nil || got != first {
+		t.Fatalf("EnsureBase = %q, %v", got, err)
+	}
+	third := r.basePath(m.P, 3)
+	writeFile(t, third, "gen3")
+	writeFile(t, strings.TrimSuffix(third, ".qcow2")+".build.log", "log") // not a generation
+	if r.baseGen(m.P) != 3 || r.BasePath(m.P) != third || !strings.HasSuffix(third, "-"+r.Hash+".3.qcow2") {
+		t.Errorf("gen %d, current %s", r.baseGen(m.P), r.BasePath(m.P))
+	}
+	if got, _ := m.EnsureBase(context.Background(), r, false); got != third {
+		t.Errorf("EnsureBase picked %s", got)
+	}
+	// Who uses a base: unreadable states count, tombstones don't.
 	os.MkdirAll(m.dir("user1"), 0o700)
-	if err := writeJSON(filepath.Join(m.dir("user1"), stateFile), State{Name: "user1", Base: base}); err != nil {
+	if err := writeJSON(filepath.Join(m.dir("user1"), stateFile), State{Name: "user1", Base: first}); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(m.dir("other"), stateFile), `{"name":"other","base":"/elsewhere"}`)
 	writeFile(t, filepath.Join(m.dir("broken"), stateFile), "{garbage")
 	writeFile(t, filepath.Join(m.P.VMs(), ".destroyed-x-1", stateFile), "{garbage")
-
-	// Without --rebuild the existing base is reused.
-	if got, err := m.EnsureBase(context.Background(), r, false); err != nil || got != base {
-		t.Fatalf("EnsureBase = %q, %v", got, err)
-	}
-	_, err = m.EnsureBase(context.Background(), r, true)
-	if err == nil {
-		t.Fatal("rebuild of a base in use was allowed")
-	}
-	for _, want := range []string{"user1", "broken (unreadable state)"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q does not name %s", err, want)
-		}
-	}
-	for _, not := range []string{"other", "destroyed"} {
-		if strings.Contains(err.Error(), not) {
-			t.Errorf("error %q wrongly names %s", err, not)
-		}
-	}
-	if b, _ := os.ReadFile(base); string(b) != "base" {
-		t.Error("base modified")
+	users, err := m.baseUsers(first)
+	if err != nil || strings.Join(users, ",") != "broken (unreadable state),user1" {
+		t.Errorf("users = %v, %v", users, err)
 	}
 }
 

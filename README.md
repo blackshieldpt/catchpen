@@ -303,6 +303,37 @@ extension (written at each start) POST to `10.0.2.101:80` in the guest, which re
 stripped of control characters, cut to 300 characters and limited to a burst of 5 per
 VM, then one per 30 s. Task VMs' hooks are ignored (the task's result is notified).
 
+## Snapshots, reset and base updates
+
+```
+curral snapshot dev [before-upgrade]    # running: memory + disk; --disk-only for the disk
+curral snapshots dev
+curral restore dev before-upgrade
+curral rmsnap dev before-upgrade
+curral template rebuild --all           # fresh cloud image + packages, as a new base
+curral reset dev [--latest]             # fresh disk, first boot again (--latest: new base)
+curral rebase dev                       # onto the current base, contents unchanged
+curral gc [--dry-run]
+```
+
+Snapshots are stored inside the VM's disk. Restoring a memory snapshot resumes the VM
+where it was (starting it if stopped), sets the guest clock and pushes credentials
+again; a disk-only snapshot needs the VM off, so a running VM is restarted. Memory is
+only loaded into the QEMU version and machine type it was saved from: after a QEMU
+upgrade, `restore --disk-only` still restores such a snapshot's disk. Restore and
+reset copy the agents' transcripts out first, and refuse while the VM runs a task.
+
+A rebuild never replaces a base in use: it adds a generation (`<tpl>-<hash>.2.qcow2`)
+that new VMs use (the one it supersedes is removed if no VM uses it), and `curral ls`
+marks VMs on an older one `stale-base`. `reset`
+discards the VM's disk (keys, forges and settings stay; repos are cloned again);
+`reset --latest` does so on the new base, which is how a VM gets the new packages.
+`rebase` copies what differs into the VM's disk so the guest sees exactly the same
+files, without new packages, and frees the old base; it deletes the VM's snapshots.
+`gc` removes bases no VM uses (each template's current base stays) and leftovers of
+interrupted builds, downloads, resets and destroys; recordings, transcripts, tasks and
+the audit log are never removed.
+
 ## Egress
 
 In `allowlist` mode the VM has no direct network access: QEMU's user network runs with
@@ -365,8 +396,9 @@ distinct destinations waiting (more are denied), so a guest can't bury you in pr
 - Allowlist entries match the requested name, not the resolved address, and CDN hosts
   on the allowlist (e.g. `*.githubusercontent.com`) can be used for domain fronting.
 - The agent user has passwordless sudo inside the VM; the VM is the boundary.
-- `--rebuild` refuses to replace a base that existing VMs use (their disks are overlays
-  on it); destroy those VMs first.
+- Memory snapshots contain whatever was in the guest's memory, credentials included;
+  they live inside the VM's disk (in its `0700` directory) and go away with it, `reset`
+  or `rebase`.
 
 ## Layout
 
@@ -374,7 +406,7 @@ distinct destinations waiting (more are denied), so a guest can't bury you in pr
 ~/.config/curral/            config.yaml, templates/, ssh_config
 ~/.local/share/curral/
   images/                    verified cloud images (+ .img.json: source URL and digest)
-  bases/                     template bases (+ build logs)
+  bases/                     template bases, one file per generation (+ build logs)
   vms/<name>/                disk overlay, seed, keys, allowlist, egress.log, qemu.log
   recordings/<name>/         host-side session recordings (asciicast v2)
   transcripts/<name>/        agent session stores copied from the VM

@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -264,35 +265,58 @@ func baseHash(spec image.Spec, user string, buildUserData []byte) string {
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
-func (r *Resolved) BasePath(p paths.Paths) string {
-	return filepath.Join(p.Bases(), fmt.Sprintf("%s-%s.qcow2", r.T.Name, r.Hash))
+// basePath is generation gen of the template base: <tpl>-<hash>.qcow2 for the
+// first, <tpl>-<hash>.<gen>.qcow2 for rebuilds. A rebuild never replaces a
+// file VMs may be overlays on.
+func (r *Resolved) basePath(p paths.Paths, gen int) string {
+	if gen <= 1 {
+		return filepath.Join(p.Bases(), fmt.Sprintf("%s-%s.qcow2", r.T.Name, r.Hash))
+	}
+	return filepath.Join(p.Bases(), fmt.Sprintf("%s-%s.%d.qcow2", r.T.Name, r.Hash, gen))
 }
+
+// baseGen returns the newest built generation (0 if none).
+func (r *Resolved) baseGen(p paths.Paths) int {
+	gen := 0
+	if _, err := os.Stat(r.basePath(p, 1)); err == nil {
+		gen = 1
+	}
+	matches, _ := filepath.Glob(filepath.Join(p.Bases(), fmt.Sprintf("%s-%s.*.qcow2", r.T.Name, r.Hash)))
+	for _, mt := range matches {
+		n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(filepath.Base(mt), r.T.Name+"-"+r.Hash+"."), ".qcow2"))
+		if err == nil && n > gen {
+			gen = n
+		}
+	}
+	return gen
+}
+
+// BasePath is the template's current base (it may not be built yet).
+func (r *Resolved) BasePath(p paths.Paths) string { return r.basePath(p, max(r.baseGen(p), 1)) }
 
 // EnsureBase builds the template base image if it does not exist yet.
 func (m *Manager) EnsureBase(ctx context.Context, r *Resolved, rebuild bool) (string, error) {
 	if err := m.P.Ensure(); err != nil {
 		return "", err
 	}
-	dst := r.BasePath(m.P)
-	unlock, err := fsutil.Lock(dst + ".lock")
+	// Builds of one template version serialize on their own lock, apart from
+	// the per-base locks VMs and gc take.
+	unlock, err := fsutil.Lock(strings.TrimSuffix(r.basePath(m.P, 1), ".qcow2") + ".build.lock")
 	if err != nil {
 		return "", err
 	}
 	defer unlock()
-	if _, err := os.Stat(dst); err == nil {
-		if !rebuild {
-			return dst, nil
-		}
-		// VM disks are overlays on this exact file; replacing it would corrupt them.
-		users, err := m.baseUsers(dst)
-		if err != nil {
-			return "", err
-		}
-		if len(users) > 0 {
-			return "", fmt.Errorf("base %s is used by VM(s) %s; destroy them before rebuilding", filepath.Base(dst), strings.Join(users, ", "))
-		}
+	gen := r.baseGen(m.P)
+	if gen > 0 && !rebuild {
+		return r.basePath(m.P, gen), nil
 	}
-	img, digest, err := image.Ensure(ctx, m.P.Images(), r.Distro, m.Out)
+	// A rebuild is a new generation: VM disks are overlays on the old file.
+	dst := r.basePath(m.P, gen+1)
+	ensure := image.Ensure
+	if rebuild {
+		ensure = image.EnsureLatest
+	}
+	img, digest, err := ensure(ctx, m.P.Images(), r.Distro, m.Out)
 	if err != nil {
 		return "", err
 	}
@@ -359,6 +383,13 @@ func (m *Manager) EnsureBase(ctx context.Context, r *Resolved, rebuild bool) (st
 		return "", err
 	}
 	m.logf("base ready: %s", dst)
+	// The generation this one supersedes goes if nothing uses it, so repeated
+	// rebuilds don't pile up bases.
+	if gen > 0 {
+		if prev := r.basePath(m.P, gen); m.removeBase(prev, false) {
+			m.logf("removed the unused previous base %s", filepath.Base(prev))
+		}
+	}
 	return dst, nil
 }
 
@@ -389,6 +420,8 @@ func lastLine(s string) string {
 
 // baseUsers lists VMs whose disk is an overlay on base. A VM directory whose
 // state can't be read counts as a user: its disk may well depend on base.
+func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
+
 func (m *Manager) baseUsers(base string) ([]string, error) {
 	ents, err := os.ReadDir(m.P.VMs())
 	if errors.Is(err, fs.ErrNotExist) {
@@ -405,7 +438,12 @@ func (m *Manager) baseUsers(base string) ([]string, error) {
 		s, err := m.Load(e.Name())
 		if err != nil {
 			users = append(users, e.Name()+" (unreadable state)")
-		} else if s.Base == base {
+			continue
+		}
+		// The disk is checked too: a reset or rebase interrupted between
+		// changing the disk and saving the state leaves them disagreeing.
+		backing, err := qemu.BackingFile(m.file(s.Name, diskFile))
+		if s.Base == base || backing == base || (err != nil && fileExists(m.file(s.Name, diskFile))) {
 			users = append(users, s.Name)
 		}
 	}
@@ -741,6 +779,15 @@ func (m *Manager) writeSeed(name, user, egressMode string, docker bool) error {
 // Start ----------------------------------------------------------------------
 
 func (m *Manager) Start(ctx context.Context, name string) (*Runtime, error) {
+	return m.start(ctx, name, nil)
+}
+
+// resume starts a VM from a memory snapshot, on the machine type it was
+// saved with.
+type resume struct{ snap, machine string }
+
+// start boots a VM, or with from resumes it from a memory snapshot.
+func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtime, error) {
 	s, err := m.Load(name)
 	if err != nil {
 		return nil, err
@@ -761,6 +808,9 @@ func (m *Manager) Start(ctx context.Context, name string) (*Runtime, error) {
 		return nil, err
 	}
 	if rt, ok := m.Running(name); ok {
+		if from != nil {
+			return nil, fmt.Errorf("%s was started meanwhile; run the restore again", name)
+		}
 		return rt, nil
 	}
 	if _, err := os.Stat(s.Base); err != nil {
@@ -792,6 +842,9 @@ func (m *Manager) Start(ctx context.Context, name string) (*Runtime, error) {
 		NotifyIP:  cloudinit.NotifyAddr, NotifyPort: cloudinit.NotifyPort,
 		QMP: m.file(name, qmpSock), Serial: m.file(name, serialSock), SerialLog: m.Debug,
 		Pidfile: m.file(name, pidFile),
+	}
+	if from != nil {
+		spec.LoadVM, spec.Machine = from.snap, from.machine
 	}
 	logFile, err := os.OpenFile(m.file(name, qemuLog), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
@@ -830,6 +883,9 @@ func (m *Manager) Start(ctx context.Context, name string) (*Runtime, error) {
 	defer c.Close()
 	if err := m.startAgent(ctx, s); err != nil {
 		return failed(fmt.Errorf("ssh agent: %w", err))
+	}
+	if from != nil {
+		m.syncClock(ctx, c)
 	}
 	if !s.Booted {
 		m.logf("waiting for first-boot setup")
@@ -1019,14 +1075,8 @@ func (m *Manager) destroy(name string, transcripts bool) error {
 	if _, err := os.Stat(m.dir(name)); err != nil {
 		return fmt.Errorf("no VM named %q (see: curral ls)", name)
 	}
-	if s, err := m.Load(name); transcripts && err == nil && s.Agents.Any() {
-		if _, ok := m.Running(name); ok {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-			if _, err := m.CopyTranscripts(ctx, name); err != nil {
-				m.logf("warning: %v", err)
-			}
-			cancel()
-		}
+	if transcripts {
+		m.saveTranscripts(name)
 	}
 	unlock, err := fsutil.Lock(m.file(name, lockFile))
 	if err != nil {
@@ -1054,6 +1104,23 @@ func (m *Manager) destroy(name string, transcripts bool) error {
 	m.logf("destroyed %s", name)
 	m.audit(audit.VMDestroy, name, nil)
 	return m.WriteSSHConfig()
+}
+
+// saveTranscripts copies a running VM's agent session stores to the host
+// before something discards them.
+func (m *Manager) saveTranscripts(name string) {
+	s, err := m.Load(name)
+	if err != nil || !s.Agents.Any() {
+		return
+	}
+	if _, ok := m.Running(name); !ok {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if _, err := m.CopyTranscripts(ctx, name); err != nil {
+		m.logf("warning: %v", err)
+	}
 }
 
 // Listing --------------------------------------------------------------------

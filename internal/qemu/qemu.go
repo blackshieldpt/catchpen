@@ -3,6 +3,7 @@ package qemu
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,6 +44,8 @@ type Spec struct {
 	SerialFile string
 	LogFile    string // second serial port (ttyS1) to a file; build log
 	Pidfile    string
+	LoadVM     string // start from this internal snapshot (RAM included)
+	Machine    string // machine type; default q35 (the newest pc-q35 version)
 }
 
 // esc escapes a value embedded in a QEMU comma-separated option string.
@@ -92,7 +95,7 @@ func (s Spec) Args() ([]string, error) {
 	}
 	a := []string{
 		"-name", "curral-" + s.Name,
-		"-machine", "q35,accel=kvm",
+		"-machine", cmp.Or(s.Machine, "q35") + ",accel=kvm",
 		"-cpu", "host",
 		"-smp", strconv.Itoa(s.CPUs),
 		"-m", fmt.Sprintf("%dM", s.MemoryMB),
@@ -128,6 +131,9 @@ func (s Spec) Args() ([]string, error) {
 	}
 	if s.Pidfile != "" {
 		a = append(a, "-pidfile", s.Pidfile)
+	}
+	if s.LoadVM != "" {
+		a = append(a, "-loadvm", s.LoadVM)
 	}
 	return a, nil
 }
@@ -240,12 +246,17 @@ func (q *QMP) Close() error { return q.conn.Close() }
 
 // Execute runs a command and returns its "return" payload, skipping async events.
 func (q *QMP) Execute(cmd string, args map[string]any) (json.RawMessage, error) {
+	return q.ExecuteTimeout(cmd, args, 30*time.Second)
+}
+
+// ExecuteTimeout is Execute with a deadline for slow commands (savevm).
+func (q *QMP) ExecuteTimeout(cmd string, args map[string]any, timeout time.Duration) (json.RawMessage, error) {
 	req := map[string]any{"execute": cmd}
 	if args != nil {
 		req["arguments"] = args
 	}
 	b, _ := json.Marshal(req)
-	_ = q.conn.SetDeadline(time.Now().Add(30 * time.Second))
+	_ = q.conn.SetDeadline(time.Now().Add(timeout))
 	defer q.conn.SetDeadline(time.Time{})
 	if _, err := q.conn.Write(append(b, '\n')); err != nil {
 		return nil, err
@@ -279,6 +290,124 @@ func (q *QMP) Execute(cmd string, args map[string]any) (json.RawMessage, error) 
 	}
 }
 
+// HMP runs a human monitor command and returns its output. savevm, loadvm
+// and delvm report errors only as text, which can also be a mere warning:
+// callers check the outcome themselves.
+func (q *QMP) HMP(line string, timeout time.Duration) (string, error) {
+	out, err := q.ExecuteTimeout("human-monitor-command", map[string]any{"command-line": line}, timeout)
+	if err != nil {
+		return "", err
+	}
+	var s string
+	if err := json.Unmarshal(out, &s); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(s), nil
+}
+
+// Status is the run state ("running", "paused", "restore-vm", ...).
+func (q *QMP) Status() (string, error) {
+	out, err := q.Execute("query-status", nil)
+	if err != nil {
+		return "", err
+	}
+	var st struct {
+		Status string `json:"status"`
+	}
+	return st.Status, json.Unmarshal(out, &st)
+}
+
+// Version is the running QEMU's version ("9.2.1").
+func (q *QMP) Version() (string, error) {
+	out, err := q.Execute("query-version", nil)
+	if err != nil {
+		return "", err
+	}
+	var v struct {
+		QEMU struct{ Major, Minor, Micro int } `json:"qemu"`
+	}
+	if err := json.Unmarshal(out, &v); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d.%d.%d", v.QEMU.Major, v.QEMU.Minor, v.QEMU.Micro), nil
+}
+
+// Machine is the running machine type, resolved ("pc-q35-9.2", not "q35").
+func (q *QMP) Machine() (string, error) {
+	out, err := q.Execute("qom-get", map[string]any{"path": "/machine", "property": "type"})
+	if err != nil {
+		return "", err
+	}
+	var t string
+	if err := json.Unmarshal(out, &t); err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(t, "-machine"), nil
+}
+
+// BlockDevice returns the QMP device name of the drive backed by file.
+func (q *QMP) BlockDevice(file string) (string, error) {
+	out, err := q.Execute("query-block", nil)
+	if err != nil {
+		return "", err
+	}
+	var devs []struct {
+		Device   string `json:"device"`
+		Inserted *struct {
+			File string `json:"file"`
+		} `json:"inserted"`
+	}
+	if err := json.Unmarshal(out, &devs); err != nil {
+		return "", err
+	}
+	for _, d := range devs {
+		if d.Inserted != nil && d.Inserted.File == file {
+			return d.Device, nil
+		}
+	}
+	return "", fmt.Errorf("no block device for %s", file)
+}
+
+// Snapshot is an internal qcow2 snapshot.
+type Snapshot struct {
+	Name      string
+	Created   time.Time
+	VMStateMB int64 // > 0: includes RAM and device state
+}
+
+// Snapshots lists a disk's internal snapshots (readable while the VM runs).
+func Snapshots(disk string) ([]Snapshot, error) {
+	out, err := exec.Command("qemu-img", "info", "--output=json", "-U", disk).Output()
+	if err != nil {
+		return nil, fmt.Errorf("qemu-img info %s: %w", disk, err)
+	}
+	var info struct {
+		Snapshots []struct {
+			Name    string `json:"name"`
+			DateSec int64  `json:"date-sec"`
+			VMState int64  `json:"vm-state-size"`
+		} `json:"snapshots"`
+	}
+	if err := json.Unmarshal(out, &info); err != nil {
+		return nil, err
+	}
+	var s []Snapshot
+	for _, x := range info.Snapshots {
+		s = append(s, Snapshot{Name: x.Name, Created: time.Unix(x.DateSec, 0), VMStateMB: (x.VMState + 1<<20 - 1) >> 20})
+	}
+	return s, nil
+}
+
+// SnapshotOffline creates (-c), applies (-a) or deletes (-d) a snapshot of a
+// disk no QEMU is using.
+func SnapshotOffline(op, name, disk string) error { return qemuImg("snapshot", op, name, disk) }
+
+// Rebase moves an overlay onto another backing file, keeping what the guest
+// sees (qemu-img's safe mode copies the differences into the overlay).
+func Rebase(disk, backing string) error {
+	return qemuImg("rebase", "-q", "-f", "qcow2", "-F", "qcow2", "-b", backing, disk)
+}
+
 // FreePort asks the kernel for an unused loopback TCP port.
 func FreePort() (int, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -289,13 +418,29 @@ func FreePort() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
-// CreateOverlay creates a qcow2 overlay on top of backing (absolute path).
+// CreateOverlay creates a qcow2 overlay on top of backing (absolute path),
+// readable only by the user: it holds the guest's data and memory snapshots.
 func CreateOverlay(path, backing string, sizeMB int64) error {
 	args := []string{"create", "-q", "-f", "qcow2", "-F", "qcow2", "-b", backing, path}
 	if sizeMB > 0 {
 		args = append(args, fmt.Sprintf("%dM", sizeMB))
 	}
-	return qemuImg(args...)
+	if err := qemuImg(args...); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
+}
+
+// BackingFile is the backing file an image refers to ("" for none).
+func BackingFile(path string) (string, error) {
+	out, err := exec.Command("qemu-img", "info", "--output=json", "-U", path).Output()
+	if err != nil {
+		return "", fmt.Errorf("qemu-img info %s: %w", path, err)
+	}
+	var info struct {
+		Backing string `json:"full-backing-filename"`
+	}
+	return info.Backing, json.Unmarshal(out, &info)
 }
 
 // Convert makes a standalone qcow2 copy of src resized to sizeMB. The source

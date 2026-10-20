@@ -55,6 +55,7 @@ func main() {
 		forgeCmd(), pullCmd(), prCmd(), forwardCmd(),
 		runCmd(), attachCmd(), recordingsCmd(), auditCmd(), tmuxCmd(), cpCmd(), notifyStdioCmd(),
 		taskCmd(), taskSuperviseCmd(), transcriptsCmd(),
+		snapshotCmd(), snapshotsCmd(), restoreCmd(), rmsnapCmd(), resetCmd(), rebaseCmd(), gcCmd(),
 	)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
