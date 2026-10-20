@@ -39,6 +39,8 @@ const (
 	SessionStart    = "session.start"
 	SessionEnd      = "session.end"
 	Copy            = "cp"
+	TaskSubmit      = "task.submit"
+	TaskEnd         = "task.end"
 )
 
 // Event is one audit line.

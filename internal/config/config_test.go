@@ -60,3 +60,25 @@ images:
 		}
 	}
 }
+
+func TestLoadRecordNotifyTasks(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	c, _ := Load(p)
+	if !c.Recording() || c.Tasks.MaxVMs != 2 {
+		t.Errorf("defaults: record %v max_vms %d", c.Recording(), c.Tasks.MaxVMs)
+	}
+	os.WriteFile(p, []byte("record: false\nnotify: { sinks: [desktop], events: [task.done] }\ntasks: { max_vms: 3, max_memory: 24G }\n"), 0o600)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Recording() || len(c.Notify.Sinks) != 1 || c.Tasks.MaxVMs != 3 || c.Tasks.MaxMemoryMB() != 24*1024 {
+		t.Errorf("loaded: %+v", c)
+	}
+	for _, bad := range []string{"notify: { events: [nope] }\n", "tasks: { max_memory: lots }\n", "tasks: { max_vms: -1 }\n"} {
+		os.WriteFile(p, []byte(bad), 0o600)
+		if _, err := Load(p); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

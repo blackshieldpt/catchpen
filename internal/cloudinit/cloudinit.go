@@ -22,6 +22,9 @@ import (
 const (
 	ProxyAddr = "10.0.2.100"
 	ProxyPort = 3128
+	// NotifyAddr:NotifyPort reaches curral notify-stdio on the host (agent hooks).
+	NotifyAddr = "10.0.2.101"
+	NotifyPort = 80
 )
 
 const (

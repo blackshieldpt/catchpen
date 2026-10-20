@@ -47,6 +47,8 @@ func (p Paths) SecretsFile() string   { return filepath.Join(p.Config, "secrets.
 func (p Paths) Forges() string        { return filepath.Join(p.Config, "forges.yaml") }
 func (p Paths) Audit() string         { return filepath.Join(p.Data, "audit.jsonl") }
 func (p Paths) Recordings() string    { return filepath.Join(p.Data, "recordings") }
+func (p Paths) Transcripts() string   { return filepath.Join(p.Data, "transcripts") }
+func (p Paths) Tasks() string         { return filepath.Join(p.Data, "tasks") }
 
 // Ensure creates the data/config directories with private permissions.
 func (p Paths) Ensure() error {

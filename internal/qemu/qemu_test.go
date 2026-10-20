@@ -35,6 +35,7 @@ func TestNetdevAllowlist(t *testing.T) {
 		CPUs: 1, MemoryMB: 512, Disk: "/d,isk.qcow2", Egress: "allowlist", SSHPort: 2222,
 		Forwards: []Forward{{Host: 8080, Guest: 80}},
 		ProxyCmd: []string{"/opt/my bin/curral", "egress-stdio", "--dir", "/v,m"}, ProxyIP: "10.0.2.100", ProxyPort: 3128,
+		NotifyCmd: []string{"/opt/my bin/curral", "notify-stdio", "--vm", "v"}, NotifyIP: "10.0.2.101", NotifyPort: 80,
 	})
 	for _, want := range []string{
 		"restrict=on",
@@ -42,6 +43,7 @@ func TestNetdevAllowlist(t *testing.T) {
 		"hostfwd=tcp:127.0.0.1:2222-:22",
 		"hostfwd=tcp:127.0.0.1:8080-:80",
 		"guestfwd=tcp:10.0.2.100:3128-cmd:'/opt/my bin/curral' 'egress-stdio' '--dir' '/v,,m'",
+		"guestfwd=tcp:10.0.2.101:80-cmd:'/opt/my bin/curral' 'notify-stdio' '--vm' 'v'",
 	} {
 		if !strings.Contains(nd, want) {
 			t.Errorf("netdev %q missing %q", nd, want)

@@ -339,3 +339,31 @@ func TestClaudeConfigSkipsCredentialsUnderSyncedParent(t *testing.T) {
 		t.Errorf("warnings = %v", res.Warnings)
 	}
 }
+
+func TestPushHooks(t *testing.T) {
+	home := t.TempDir()
+	write(t, filepath.Join(home, claudeSettings), `{"model":"opus","hooks":{"Stop":[{"hooks":[{"type":"command","command":"mine"}]}]}}`)
+	for i := 0; i < 2; i++ { // pushing again must not duplicate curral's hooks
+		if _, err := Push(context.Background(), localRemote{home}, fullSpec(), fakeSecrets{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, _ := os.ReadFile(filepath.Join(home, claudeSettings))
+	var doc struct {
+		Model string                      `json:"model"`
+		Hooks map[string][]map[string]any `json:"hooks"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	if doc.Model != "opus" || len(doc.Hooks["Stop"]) != 2 || len(doc.Hooks["Notification"]) != 1 || strings.Count(s, notifyURL) != 2 || !strings.Contains(s, `"mine"`) {
+		t.Errorf("settings.json:\n%s", s)
+	}
+	for _, f := range []string{opencodePlugin, piExtension} {
+		b, err := os.ReadFile(filepath.Join(home, f))
+		if err != nil || !strings.Contains(string(b), notifyURL) || !strings.Contains(string(b), "node:http") {
+			t.Errorf("%s: %v\n%s", f, err, b)
+		}
+	}
+}

@@ -29,10 +29,13 @@ type Spec struct {
 	SSHPort  int // 0 = no SSH forward (build VMs)
 	Forwards []Forward
 	// Egress: egress.ModeAllowlist (restrict + proxy guestfwd), ModeNone (restrict, no exit), ModeOpen.
-	Egress    string
-	ProxyCmd  []string // argv spawned by QEMU per guest proxy connection
-	ProxyIP   string
-	ProxyPort int
+	Egress     string
+	ProxyCmd   []string // argv spawned by QEMU per guest proxy connection
+	ProxyIP    string
+	ProxyPort  int
+	NotifyCmd  []string // argv spawned per connection to NotifyAddr (agent notifications)
+	NotifyIP   string
+	NotifyPort int
 
 	QMP        string // unix socket path
 	Serial     string // unix socket path (ignored when SerialFile is set)
@@ -74,6 +77,9 @@ func (s Spec) netdev() (string, error) {
 			return "", errors.New("allowlist egress needs a proxy command")
 		}
 		opts = append(opts, fmt.Sprintf("guestfwd=tcp:%s:%d-cmd:%s", s.ProxyIP, s.ProxyPort, esc(shellQuote(s.ProxyCmd))))
+	}
+	if len(s.NotifyCmd) > 0 {
+		opts = append(opts, fmt.Sprintf("guestfwd=tcp:%s:%d-cmd:%s", s.NotifyIP, s.NotifyPort, esc(shellQuote(s.NotifyCmd))))
 	}
 	return strings.Join(opts, ","), nil
 }

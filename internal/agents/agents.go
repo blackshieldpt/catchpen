@@ -178,6 +178,10 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 			return p.res, fmt.Errorf("claude config: %w", err)
 		}
 	}
+	// After the config sync, which may replace settings.json.
+	if err := p.hooks(s); err != nil {
+		return p.res, err
+	}
 	return p.res, nil
 }
 

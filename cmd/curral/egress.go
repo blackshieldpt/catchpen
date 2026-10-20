@@ -14,6 +14,7 @@ import (
 
 	"github.com/blackshieldpt/curral/internal/audit"
 	"github.com/blackshieldpt/curral/internal/egress"
+	"github.com/blackshieldpt/curral/internal/notify"
 )
 
 func egressCmd() *cobra.Command {
@@ -203,8 +204,16 @@ func egressCmd() *cobra.Command {
 			if desktop {
 				decide = egress.DesktopDecider()
 			}
-			inner, alog := decide, m.Audit()
+			inner, alog, nt := decide, m.Audit(), m.Notifier()
 			decide = func(ctx context.Context, r egress.Request) egress.Decision {
+				if nt.Wants(notify.EgressPrompt) {
+					go func() {
+						if err := nt.Send(context.Background(), notify.Event{Kind: notify.EgressPrompt, VM: r.VM,
+							Title: "curral " + r.VM + ": egress prompt", Message: fmt.Sprintf("%s %s:%d is waiting for an answer", r.Method, r.Host, r.Port)}); err != nil {
+							fmt.Fprintf(os.Stderr, "warning: notification: %v\n", err)
+						}
+					}()
+				}
 				d := inner(ctx, r)
 				// Only answers given by a person: timeouts are in the VM's egress log, and
 				// a guest could otherwise flood the audit log until it rotates.

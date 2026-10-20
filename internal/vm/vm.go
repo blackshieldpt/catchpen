@@ -38,6 +38,7 @@ import (
 	"github.com/blackshieldpt/curral/internal/fsutil"
 	"github.com/blackshieldpt/curral/internal/hosttmux"
 	"github.com/blackshieldpt/curral/internal/image"
+	"github.com/blackshieldpt/curral/internal/notify"
 	"github.com/blackshieldpt/curral/internal/paths"
 	"github.com/blackshieldpt/curral/internal/qemu"
 	"github.com/blackshieldpt/curral/internal/sshx"
@@ -95,6 +96,7 @@ type State struct {
 	ForgeUsers map[string]string      `json:"forge_users,omitempty"` // token owner per forge (mode token)
 	SSH        template.SSH           `json:"ssh"`
 	Ephemeral  bool                   `json:"ephemeral,omitempty"` // destroyed when its up --ephemeral session ends
+	Task       string                 `json:"task,omitempty"`      // id of the headless task it runs
 }
 
 // Runtime describes a running VM.
@@ -139,6 +141,28 @@ func (m *Manager) tmuxDo(fn func(hosttmux.Tmux) error) {
 	}
 	if err := fn(*m.Tmux); err != nil {
 		m.logf("warning: host tmux: %v", err)
+	}
+}
+
+func notifyCmd(bin, dir, name string, task bool) []string {
+	c := []string{bin, "notify-stdio", "--dir", dir, "--vm", name}
+	if task {
+		c = append(c, "--task") // headless: the task's own result is notified instead
+	}
+	return c
+}
+
+// Notifier delivers events to the sinks in config.yaml notify:.
+func (m *Manager) Notifier() *notify.Notifier {
+	return &notify.Notifier{Cfg: m.Cfg.Notify, Secrets: m.resolver()}
+}
+
+// notify sends an event; failures are warnings.
+func (m *Manager) notify(e notify.Event) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := m.Notifier().Send(ctx, e); err != nil {
+		m.logf("warning: notification: %v", err)
 	}
 }
 
@@ -500,6 +524,7 @@ type CreateOpts struct {
 	SSHAgent   string   // overrides ssh.agent
 	AgentKeys  []string // added to ssh.agent_keys
 	Ephemeral  bool
+	Task       string
 }
 
 func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *State, err error) {
@@ -644,7 +669,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		CPUs: res.CPUs, MemoryMB: memMB, DiskMB: max(diskMB, baseMB), Ports: r.T.Ports,
 		Egress: egressMode, Docker: r.T.HasDocker(), Created: time.Now().UTC(),
 		Agents: r.T.Agents, Env: r.T.Env, MCP: r.T.MCP, Sync: r.T.Sync,
-		Repos: s.Repos, Forges: s.Forges, ForgeUsers: s.ForgeUsers, SSH: r.T.SSH, Ephemeral: o.Ephemeral,
+		Repos: s.Repos, Forges: s.Forges, ForgeUsers: s.ForgeUsers, SSH: r.T.SSH, Ephemeral: o.Ephemeral, Task: o.Task,
 	}
 	if r.T.SSH.Mode() == template.AgentHost {
 		m.logf("warning: %s forwards your host ssh-agent: anything in the VM can use all its keys while you're connected", name)
@@ -763,6 +788,8 @@ func (m *Manager) Start(ctx context.Context, name string) (*Runtime, error) {
 		SSHPort: rt.SSHPort, Forwards: rt.Forwards, Egress: s.Egress,
 		ProxyCmd: []string{m.Bin, "egress-stdio", "--dir", m.dir(name), "--vm", name},
 		ProxyIP:  cloudinit.ProxyAddr, ProxyPort: cloudinit.ProxyPort,
+		NotifyCmd: notifyCmd(m.Bin, m.dir(name), name, s.Task != ""),
+		NotifyIP:  cloudinit.NotifyAddr, NotifyPort: cloudinit.NotifyPort,
 		QMP: m.file(name, qmpSock), Serial: m.file(name, serialSock), SerialLog: m.Debug,
 		Pidfile: m.file(name, pidFile),
 	}
@@ -983,12 +1010,23 @@ func (m *Manager) cleanupRuntime(name string) error {
 
 // Destroy stops and deletes a VM. It also works on a VM whose state file is
 // missing or corrupt (e.g. an interrupted create).
-func (m *Manager) Destroy(name string) error {
+func (m *Manager) Destroy(name string) error { return m.destroy(name, true) }
+
+func (m *Manager) destroy(name string, transcripts bool) error {
 	if err := ValidName(name); err != nil {
 		return err
 	}
 	if _, err := os.Stat(m.dir(name)); err != nil {
 		return fmt.Errorf("no VM named %q (see: curral ls)", name)
+	}
+	if s, err := m.Load(name); transcripts && err == nil && s.Agents.Any() {
+		if _, ok := m.Running(name); ok {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			if _, err := m.CopyTranscripts(ctx, name); err != nil {
+				m.logf("warning: %v", err)
+			}
+			cancel()
+		}
 	}
 	unlock, err := fsutil.Lock(m.file(name, lockFile))
 	if err != nil {

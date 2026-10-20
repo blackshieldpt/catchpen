@@ -53,7 +53,8 @@ func main() {
 		doctorCmd(), templateCmd(), upCmd(), startCmd(), stopCmd(), destroyCmd(), lsCmd(),
 		sshCmd(), sshProxyCmd(), consoleCmd(), egressCmd(), egressStdioCmd(), setupSSHCmd(), credsCmd(),
 		forgeCmd(), pullCmd(), prCmd(), forwardCmd(),
-		runCmd(), attachCmd(), recordingsCmd(), auditCmd(), tmuxCmd(), cpCmd(),
+		runCmd(), attachCmd(), recordingsCmd(), auditCmd(), tmuxCmd(), cpCmd(), notifyStdioCmd(),
+		taskCmd(), taskSuperviseCmd(), transcriptsCmd(),
 	)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()

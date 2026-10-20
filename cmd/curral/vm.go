@@ -198,6 +198,9 @@ func lsCmd() *cobra.Command {
 				if v.Ephemeral {
 					state += ",ephemeral"
 				}
+				if v.Task != "" {
+					state += ",task"
+				}
 				if v.Running {
 					if v.Runtime != nil && v.Runtime.SSHPort != 0 {
 						ssh = fmt.Sprintf("127.0.0.1:%d", v.Runtime.SSHPort)

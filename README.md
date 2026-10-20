@@ -242,6 +242,67 @@ removed, restricted agents, allowlist edits and answered prompts (timeouts are o
 the VM's egress log), forwards, `cp`, `pull`/`pr`, and the start and end of every
 `ssh`/`run`/`attach` session, with its recording id when recorded.
 
+## Headless tasks
+
+```
+curral task run --repo github:acme/api --prompt "fix issue #42" [--agent claude|opencode|pi]
+    [--prompt-file f.md] [--timeout 2h] [--max-budget-usd 5] [--out pr|bundle|patch|none]
+    [--into ~/src/api] [--rw] [--keep] [-f]
+curral task run --agent cmd --cmd 'make fix' --prompt "..."   # any command, prompt on stdin
+curral task run --file tasks.yaml [--parallel 2]
+curral task ls | show <id> | logs <id> [-f] [--raw] | cancel <id> | rm <id>
+```
+
+Each task runs in a new VM (`task-<id>`, read-only deploy keys unless `--rw`) under a
+background supervisor: the agent works on branch `curral/<id>` without permission
+prompts (claude `-p --output-format stream-json`, `opencode run --format json --auto`,
+`pi -p --mode json`), whatever it leaves uncommitted is committed, and the work leaves
+from the host: `--out pr` (the default with a repo) pushes `curral/task-<id>/curral/<id>`
+through a remote of `--into` (default: the current directory) with your credentials and
+opens a PR with the prompt and result; `bundle` fetches into `refs/curral/...` of that
+repo; `patch` writes an mbox next to the task. The VM is then destroyed (`--keep`
+leaves it), except when the export fails: then it is kept with the commits and the
+task's error says how to pull them. A task whose supervisor died shows as `lost`;
+`cancel` or `rm` destroys its VM. The agent's output is captured on the host in
+`tasks/<id>/output.jsonl`, its final message in `result.md`, and turns, tokens and cost
+in `task.json`. Tasks wait for the budget in `config.yaml`:
+
+```yaml
+tasks: { max_vms: 2, max_memory: 24G }   # all running curral VMs count
+```
+
+A batch file has `defaults:`, `tasks:` (each with `prompt` or `prompt_file`, and any of
+`agent`, `repo`, `template`, `timeout`, `out`, `into`, `title`, `rw`, `keep`, `cmd`,
+`max_budget_usd`) and an optional `matrix: { agent: [...], repo: [...] }` that runs each
+task once per combination.
+
+## Transcripts
+
+The agents' session stores (claude `~/.claude/projects`, opencode's `opencode.db`, pi
+`~/.pi/agent/sessions`; not their credentials) are copied to
+`transcripts/<vm>/<time>/` when a task ends, before `destroy`, and on
+`curral transcripts <vm>`, which also lists earlier copies. They come from the guest,
+so only regular files and directories are unpacked (no symlinks, nothing outside the
+directory, at most 1 GiB and 200,000 entries).
+
+## Notifications
+
+```yaml
+notify:
+  sinks:
+    - desktop                                   # notify-send
+    - { ntfy: { url: https://ntfy.sh, topic: my-curral, token: secret:NTFY_TOKEN } }
+    - { webhook: { url: https://hooks.example/curral, headers: { Authorization: secret:HOOK_AUTH } } }
+  events: [task.done, task.failed, egress.prompt, agent.waiting]   # default: all
+```
+
+`egress.prompt` fires while `curral egress watch` waits for your answer. For
+`agent.waiting`, Claude's `Notification`/`Stop` hooks, an opencode plugin and a pi
+extension (written at each start) POST to `10.0.2.101:80` in the guest, which reaches
+`curral notify-stdio` on the host. The guest holds no sink credentials; its text is
+stripped of control characters, cut to 300 characters and limited to a burst of 5 per
+VM, then one per 30 s. Task VMs' hooks are ignored (the task's result is notified).
+
 ## Egress
 
 In `allowlist` mode the VM has no direct network access: QEMU's user network runs with
@@ -316,6 +377,8 @@ distinct destinations waiting (more are denied), so a guest can't bury you in pr
   bases/                     template bases (+ build logs)
   vms/<name>/                disk overlay, seed, keys, allowlist, egress.log, qemu.log
   recordings/<name>/         host-side session recordings (asciicast v2)
+  transcripts/<name>/        agent session stores copied from the VM
+  tasks/<id>/                task.json, prompt.md, output.jsonl, result.md, supervisor.log
   audit.jsonl                host audit log
 ```
 
