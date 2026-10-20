@@ -82,3 +82,24 @@ func TestLoadRecordNotifyTasks(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadDaemonSettings(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	os.WriteFile(p, []byte("idle_stop: 30m\nrebuild: weekly\npool:\n  - { template: default, size: 2 }\n  - { template: default, distro: debian-13, size: 1 }\n"), 0o600)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.IdleStop != "30m" || c.Rebuild != "weekly" || len(c.Pool) != 2 || c.Pool[1].Distro != "debian-13" {
+		t.Errorf("loaded: %+v", c)
+	}
+	for _, bad := range []string{
+		"idle_stop: 10s\n", "rebuild: monthly\n", "pool: [{ size: 1 }]\n", "pool: [{ template: a, size: 99 }]\n",
+		"pool: [{ template: a, size: 1 }, { template: a, size: 2 }]\n",
+	} {
+		os.WriteFile(p, []byte(bad), 0o600)
+		if _, err := Load(p); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

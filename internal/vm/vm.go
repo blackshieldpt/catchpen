@@ -98,6 +98,10 @@ type State struct {
 	SSH        template.SSH           `json:"ssh"`
 	Ephemeral  bool                   `json:"ephemeral,omitempty"` // destroyed when its up --ephemeral session ends
 	Task       string                 `json:"task,omitempty"`      // id of the headless task it runs
+	IdleStop   string                 `json:"idle_stop,omitempty"` // the template's idle_stop
+	Instance   string                 `json:"instance,omitempty"`  // cloud-init instance-id
+	Pool       bool                   `json:"pool,omitempty"`      // a warm pool VM, not claimed yet
+	Resume     string                 `json:"resume,omitempty"`    // memory snapshot the next start resumes
 }
 
 // Runtime describes a running VM.
@@ -563,6 +567,7 @@ type CreateOpts struct {
 	AgentKeys  []string // added to ssh.agent_keys
 	Ephemeral  bool
 	Task       string
+	pool       bool // a warm pool VM: no repos, agents or credentials
 }
 
 func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *State, err error) {
@@ -619,6 +624,9 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 			return nil, err
 		}
 	}
+	if o.pool {
+		r.T.Repos, r.T.Agents, r.T.Env, r.T.MCP, r.T.Sync, r.T.SSH = nil, template.Agents{}, nil, nil, template.Sync{}, template.SSH{}
+	}
 	repos, forges, err := m.planRepos(append(append([]string(nil), r.T.Repos...), o.Repos...), o.ReadOnly)
 	if err != nil {
 		return nil, err
@@ -627,7 +635,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		return nil, err
 	}
 	var allow []string
-	if egressMode == egress.ModeAllowlist {
+	if egressMode == egress.ModeAllowlist && !o.pool {
 		if allow, err = egress.ExpandPresets(r.T.Network.Presets); err != nil {
 			return nil, err
 		}
@@ -672,14 +680,29 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 			_ = os.RemoveAll(m.dir(name))
 		}
 	}()
-	k := m.keys(name)
-	if err := k.Generate(name); err != nil {
-		return nil, err
+	var pooled *State
+	if !o.pool && !o.Rebuild {
+		key := poolKey{r.T.Name, r.Distro.Name, base, res.CPUs, memMB, max(diskMB, baseMB), egressMode, r.User, r.T.HasDocker()}
+		if pooled, err = m.claimPool(name, key); err != nil {
+			return nil, err
+		}
 	}
-	if err := qemu.CreateOverlay(m.file(name, diskFile), base, max(diskMB, baseMB)); err != nil {
-		return nil, err
+	instance := ""
+	if pooled == nil {
+		if err := m.keys(name).Generate(name); err != nil {
+			return nil, err
+		}
+		if err := qemu.CreateOverlay(m.file(name, diskFile), base, max(diskMB, baseMB)); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := m.keys(name).Rename(name); err != nil {
+			return nil, err
+		}
+		_ = os.Remove(filepath.Join(m.dir(name), egress.DenylistFile))
+		instance = pooled.Instance
 	}
-	if err := m.writeSeed(name, r.User, egressMode, r.T.HasDocker()); err != nil {
+	if instance, err = m.writeSeed(name, instance, r.User, egressMode, r.T.HasDocker()); err != nil {
 		return nil, err
 	}
 	if egressMode == egress.ModeAllowlist {
@@ -687,6 +710,9 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 			return nil, err
 		}
 		ec := egress.Config{OnDeny: r.T.Network.OnDeny}
+		if o.pool { // denied while unclaimed: logged, never prompted
+			ec.OnDeny = egress.OnDenyLog
+		}
 		if r.T.Network.PromptTimeout != "" {
 			if ec.PromptTimeout, err = time.ParseDuration(r.T.Network.PromptTimeout); err != nil {
 				return nil, err
@@ -708,6 +734,10 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		Egress: egressMode, Docker: r.T.HasDocker(), Created: time.Now().UTC(),
 		Agents: r.T.Agents, Env: r.T.Env, MCP: r.T.MCP, Sync: r.T.Sync,
 		Repos: s.Repos, Forges: s.Forges, ForgeUsers: s.ForgeUsers, SSH: r.T.SSH, Ephemeral: o.Ephemeral, Task: o.Task,
+		IdleStop: r.T.IdleStop, Instance: instance, Pool: o.pool,
+	}
+	if pooled != nil {
+		s.Booted, s.Resume = true, pooled.Resume
 	}
 	if r.T.SSH.Mode() == template.AgentHost {
 		m.logf("warning: %s forwards your host ssh-agent: anything in the VM can use all its keys while you're connected", name)
@@ -718,9 +748,17 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 	if err := m.WriteSSHConfig(); err != nil {
 		return nil, err
 	}
-	m.logf("created %s (template %s, %s, %d CPU, %s RAM, %s disk, egress %s)",
-		name, r.T.Name, r.Distro.Name, res.CPUs, res.Memory, res.Disk, egressMode)
-	m.audit(audit.VMCreate, name, map[string]any{"template": r.T.Name, "distro": r.Distro.Name, "egress": egressMode, "repos": len(s.Repos), "ssh_agent": s.SSH.Mode()})
+	from := ""
+	if pooled != nil {
+		from = ", from pool VM " + pooled.Name
+	}
+	m.logf("created %s (template %s, %s, %d CPU, %s RAM, %s disk, egress %s%s)",
+		name, r.T.Name, r.Distro.Name, res.CPUs, res.Memory, res.Disk, egressMode, from)
+	detail := map[string]any{"template": r.T.Name, "distro": r.Distro.Name, "egress": egressMode, "repos": len(s.Repos), "ssh_agent": s.SSH.Mode()}
+	if pooled != nil {
+		detail["pool_vm"] = pooled.Name
+	}
+	m.audit(audit.VMCreate, name, detail)
 	return s, nil
 }
 
@@ -750,27 +788,31 @@ func agentHosts(t *template.Template) []string {
 	return slices.Compact(hosts)
 }
 
-func (m *Manager) writeSeed(name, user, egressMode string, docker bool) error {
+// writeSeed writes the NoCloud seed; id "" makes a new instance (cloud-init
+// runs first boot again), the same id keeps it and just renames the host.
+func (m *Manager) writeSeed(name, id, user, egressMode string, docker bool) (string, error) {
 	k := m.keys(name)
 	pub, err := k.ClientPub()
 	if err != nil {
-		return err
+		return "", err
 	}
 	hpriv, hpub, err := k.HostKeyPair()
 	if err != nil {
-		return err
+		return "", err
 	}
-	rnd := make([]byte, 4)
-	_, _ = rand.Read(rnd)
-	id := fmt.Sprintf("curral-%s-%s", name, hex.EncodeToString(rnd))
+	if id == "" {
+		rnd := make([]byte, 4)
+		_, _ = rand.Read(rnd)
+		id = fmt.Sprintf("curral-%s-%s", name, hex.EncodeToString(rnd))
+	}
 	ud, err := cloudinit.InstanceUserData(cloudinit.Instance{
 		Name: name, User: user, AuthorizedKey: pub,
 		HostKey: hpriv, HostPub: hpub, Egress: egressMode, Docker: docker,
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
-	return cloudinit.WriteSeed(m.file(name, seedFile), map[string][]byte{
+	return id, cloudinit.WriteSeed(m.file(name, seedFile), map[string][]byte{
 		"user-data": ud,
 		"meta-data": cloudinit.MetaData(id, name),
 	})
@@ -779,6 +821,9 @@ func (m *Manager) writeSeed(name, user, egressMode string, docker bool) error {
 // Start ----------------------------------------------------------------------
 
 func (m *Manager) Start(ctx context.Context, name string) (*Runtime, error) {
+	if s, err := m.Load(name); err == nil && s.Pool {
+		return nil, fmt.Errorf("%s is a warm pool VM; curral up claims one (curral pool drain removes them)", name)
+	}
 	return m.start(ctx, name, nil)
 }
 
@@ -815,6 +860,30 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 	}
 	if _, err := os.Stat(s.Base); err != nil {
 		return nil, fmt.Errorf("base image %s missing: %w", s.Base, err)
+	}
+	claimed := "" // the pool snapshot this start resumes
+	switch {
+	case s.Resume != "" && from == nil:
+		if from, err = m.takeResume(s); err != nil {
+			return nil, err
+		}
+		if from != nil {
+			claimed = from.snap
+		}
+	case s.Resume != "": // restored by hand: never resume the pool's memory twice
+		if from.snap == s.Resume {
+			claimed = from.snap
+		}
+		s.Resume = ""
+		if err := m.save(s); err != nil {
+			return nil, err
+		}
+	}
+	dropClaimed := func() { // after a failed resume, which won't be retried
+		if claimed != "" {
+			_ = qemu.SnapshotOffline("-d", claimed, m.file(name, diskFile))
+			_ = m.setSnapMeta(name, claimed, nil)
+		}
 	}
 	rt := &Runtime{}
 	if rt.SSHPort, err = qemu.FreePort(); err != nil {
@@ -854,6 +923,7 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 	fmt.Fprintf(logFile, "--- %s start\n", time.Now().Format(time.RFC3339))
 	pid, err := qemu.Launch(spec, m.dir(name), logFile)
 	if err != nil {
+		dropClaimed()
 		return nil, fmt.Errorf("%w (see %s)", err, m.file(name, qemuLog))
 	}
 	rt.PID = pid
@@ -874,6 +944,7 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 			return nil, fmt.Errorf("%s: %w (VM left running for debugging; serial log: %s)", name, err, m.file(name, serialSock+".log"))
 		}
 		_ = m.Stop(name, true)
+		dropClaimed()
 		return nil, fmt.Errorf("%s: %w (VM stopped; retry with --debug to keep it running and log the console)", name, err)
 	}
 	c, err := m.keys(name).WaitReady(wctx, rt.SSHPort, s.User, alive)
@@ -887,6 +958,9 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 	if from != nil {
 		m.syncClock(ctx, c)
 	}
+	if claimed != "" {
+		m.claimed(wctx, c, name, claimed)
+	}
 	if !s.Booted {
 		m.logf("waiting for first-boot setup")
 		out, err := sshx.Run(wctx, c, "cloud-init status --wait >/dev/null; rc=$?; cloud-init status --long; exit $rc", nil)
@@ -898,6 +972,9 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 		if err := m.markBooted(name); err != nil {
 			return nil, err
 		}
+	}
+	if s.Pool {
+		return rt, nil
 	}
 	if err := m.push(ctx, c, s); err != nil {
 		return rt, fmt.Errorf("%s is running, but pushing credentials failed: %w (retry: curral creds push %s)", name, err, name)
@@ -1169,6 +1246,9 @@ func (m *Manager) WriteSSHConfig() error {
 	}
 	var es []sshx.Entry
 	for _, v := range vms {
+		if v.Pool {
+			continue
+		}
 		e := sshx.Entry{Name: v.Name, User: v.User, Keys: m.keys(v.Name)}
 		switch v.SSH.Mode() {
 		case template.AgentRestricted:

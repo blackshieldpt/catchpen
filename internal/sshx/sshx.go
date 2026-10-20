@@ -82,6 +82,16 @@ func (k Keys) Generate(vm string) error {
 	return nil
 }
 
+// Rename pins the host key under the alias of vm, for a VM that was renamed.
+func (k Keys) Rename(vm string) error {
+	pub, err := k.hostKey()
+	if err != nil {
+		return err
+	}
+	known := fmt.Sprintf("%s %s", AliasPrefix+vm, ssh.MarshalAuthorizedKey(pub))
+	return fsutil.WriteFileAtomic(k.KnownHosts(), []byte(known), 0o600)
+}
+
 func (k Keys) ClientPub() (string, error) {
 	b, err := os.ReadFile(k.Identity() + ".pub")
 	return string(b), err

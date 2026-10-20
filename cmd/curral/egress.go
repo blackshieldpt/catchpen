@@ -15,6 +15,7 @@ import (
 	"github.com/blackshieldpt/curral/internal/audit"
 	"github.com/blackshieldpt/curral/internal/egress"
 	"github.com/blackshieldpt/curral/internal/notify"
+	"github.com/blackshieldpt/curral/internal/vm"
 )
 
 func egressCmd() *cobra.Command {
@@ -178,7 +179,7 @@ func egressCmd() *cobra.Command {
 					return err
 				}
 				for _, v := range vms {
-					if v.Egress == egress.ModeAllowlist {
+					if v.Egress == egress.ModeAllowlist && !v.Pool {
 						names = append(names, v.Name)
 					}
 				}
@@ -204,24 +205,7 @@ func egressCmd() *cobra.Command {
 			if desktop {
 				decide = egress.DesktopDecider()
 			}
-			inner, alog, nt := decide, m.Audit(), m.Notifier()
-			decide = func(ctx context.Context, r egress.Request) egress.Decision {
-				if nt.Wants(notify.EgressPrompt) {
-					go func() {
-						if err := nt.Send(context.Background(), notify.Event{Kind: notify.EgressPrompt, VM: r.VM,
-							Title: "curral " + r.VM + ": egress prompt", Message: fmt.Sprintf("%s %s:%d is waiting for an answer", r.Method, r.Host, r.Port)}); err != nil {
-							fmt.Fprintf(os.Stderr, "warning: notification: %v\n", err)
-						}
-					}()
-				}
-				d := inner(ctx, r)
-				// Only answers given by a person: timeouts are in the VM's egress log, and
-				// a guest could otherwise flood the audit log until it rotates.
-				if ctx.Err() == nil {
-					_ = alog.Record(audit.EgressPrompt, r.VM, map[string]any{"host": r.Host, "port": r.Port, "method": r.Method, "decision": string(d)})
-				}
-				return d
-			}
+			decide = promptDecider(m, decide)
 			fmt.Fprintf(os.Stderr, "watching %d VM(s); Ctrl-C to stop\n", len(dirs))
 			err = egress.Watch(cmd.Context(), dirs, decide)
 			if errors.Is(err, cmd.Context().Err()) {
@@ -239,6 +223,31 @@ func egressCmd() *cobra.Command {
 		edit("undeny", "Remove entries from a VM's denylist", egress.DenylistFile, false),
 	)
 	return c
+}
+
+// promptDecider wraps a decider with the prompt notification and the
+// audit record of the answer.
+func promptDecider(m *vm.Manager, inner egress.Decider) egress.Decider {
+	alog, nt := m.Audit(), m.Notifier()
+	return func(ctx context.Context, r egress.Request) egress.Decision {
+		if nt.Wants(notify.EgressPrompt) {
+			go func() {
+				if err := nt.Send(context.Background(), notify.Event{Kind: notify.EgressPrompt, VM: r.VM,
+					Title: "curral " + r.VM + ": egress prompt", Message: fmt.Sprintf("%s %s:%d is waiting for an answer", r.Method, r.Host, r.Port)}); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: notification: %v\n", err)
+				}
+			}()
+		}
+		start := time.Now()
+		d := inner(ctx, r)
+		// Only answers given by a person: timeouts are in the VM's egress log, and
+		// a guest could otherwise flood the audit log until it rotates. So could
+		// a decider failing at once (notify-send without a notification server).
+		if ctx.Err() == nil && time.Since(start) > 300*time.Millisecond {
+			_ = alog.Record(audit.EgressPrompt, r.VM, map[string]any{"host": r.Host, "port": r.Port, "method": r.Method, "decision": string(d)})
+		}
+		return d
+	}
 }
 
 func egressStdioCmd() *cobra.Command {

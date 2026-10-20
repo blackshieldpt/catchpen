@@ -300,3 +300,18 @@ func TestWriteConfigForwardAgent(t *testing.T) {
 		t.Error("percent token in agent socket path accepted")
 	}
 }
+
+func TestRenamePinsTheSameHostKey(t *testing.T) {
+	k := Keys{Dir: filepath.Join(t.TempDir(), "ssh")}
+	if err := k.Generate("pool-1"); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(k.KnownHosts())
+	if err := k.Rename("work"); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(k.KnownHosts())
+	if string(after) != strings.Replace(string(before), "curral-pool-1 ", "curral-work ", 1) {
+		t.Errorf("known_hosts %q -> %q", before, after)
+	}
+}

@@ -189,6 +189,9 @@ func lsCmd() *cobra.Command {
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "NAME\tSTATE\tTEMPLATE\tDISTRO\tCPU\tMEM\tEGRESS\tSSH\tPORTS\tAGE")
 			for _, v := range vms {
+				if v.Pool { // curral pool ls
+					continue
+				}
 				state, ssh, ports := "stopped", "-", "-"
 				if v.Running {
 					state = "running"

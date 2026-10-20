@@ -134,6 +134,9 @@ func TestRebaseKeepsContents(t *testing.T) {
 	}
 	qio(t, gen2, 0xbb, "0")
 	qio(t, gen2, 0xbb, "128k")
+	ps, _ := m.Load("v1") // a claimed pool VM not started yet
+	ps.Resume = poolSnap
+	m.save(ps)
 	if err := m.Rebase(ctx, "v1"); err != nil {
 		t.Fatal(err)
 	}
@@ -141,8 +144,8 @@ func TestRebaseKeepsContents(t *testing.T) {
 		t.Error("rebase changed what the guest sees")
 	}
 	ns, _ := m.Load("v1")
-	if ns.Base != gen2 {
-		t.Errorf("base %s, want %s", ns.Base, gen2)
+	if ns.Base != gen2 || ns.Resume != "" {
+		t.Errorf("base %s, want %s; resume %q", ns.Base, gen2, ns.Resume)
 	}
 	if ss, _ := m.Snapshots("v1"); len(ss) != 0 {
 		t.Errorf("snapshots survived the rebase: %+v", ss)

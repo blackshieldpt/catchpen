@@ -46,6 +46,8 @@ const (
 	VMSnapshotRm    = "vm.snapshot.rm"
 	VMReset         = "vm.reset"
 	VMRebase        = "vm.rebase"
+	VMIdleStop      = "vm.idle_stop"
+	PoolFill        = "pool.fill"
 	GC              = "gc"
 )
 

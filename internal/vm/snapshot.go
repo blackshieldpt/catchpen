@@ -198,6 +198,9 @@ func (m *Manager) Restore(ctx context.Context, name, snap string, diskOnly bool)
 	if err := m.busyTask(s); err != nil {
 		return err
 	}
+	if s.Pool {
+		return fmt.Errorf("%s is a warm pool VM", name)
+	}
 	sn, err := m.findSnap(name, snap)
 	if err != nil {
 		return err
@@ -461,7 +464,8 @@ func (m *Manager) Reset(ctx context.Context, name string, latest bool) error {
 		if err := qemu.CreateOverlay(tmp, base, max(s.DiskMB, baseMB)); err != nil {
 			return err
 		}
-		if err := m.writeSeed(name, s.User, s.Egress, s.Docker); err != nil {
+		id, err := m.writeSeed(name, "", s.User, s.Egress, s.Docker)
+		if err != nil {
 			os.Remove(tmp)
 			return err
 		}
@@ -472,7 +476,7 @@ func (m *Manager) Reset(ctx context.Context, name string, latest bool) error {
 			os.Remove(tmp)
 			return err
 		}
-		ns.Base, ns.DiskMB, ns.Booted = base, max(s.DiskMB, baseMB), false
+		ns.Base, ns.DiskMB, ns.Booted, ns.Instance, ns.Resume = base, max(s.DiskMB, baseMB), false, id, ""
 		if err := m.save(ns); err != nil {
 			os.Remove(tmp)
 			return err
@@ -535,7 +539,7 @@ func (m *Manager) Rebase(ctx context.Context, name string) error {
 		if err != nil {
 			return err
 		}
-		ns.Base = base
+		ns.Base, ns.Resume = base, ""
 		err = m.save(ns) // if this fails, gc still sees the disk's backing file
 		release()
 		return err

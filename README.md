@@ -293,10 +293,10 @@ notify:
     - desktop                                   # notify-send
     - { ntfy: { url: https://ntfy.sh, topic: my-curral, token: secret:NTFY_TOKEN } }
     - { webhook: { url: https://hooks.example/curral, headers: { Authorization: secret:HOOK_AUTH } } }
-  events: [task.done, task.failed, egress.prompt, agent.waiting]   # default: all
+  events: [task.done, task.failed, egress.prompt, agent.waiting, vm.idle_stop]   # default: all
 ```
 
-`egress.prompt` fires while `curral egress watch` waits for your answer. For
+`egress.prompt` fires while `curral egress watch` (or the daemon) waits for your answer. For
 `agent.waiting`, Claude's `Notification`/`Stop` hooks, an opencode plugin and a pi
 extension (written at each start) POST to `10.0.2.101:80` in the guest, which reaches
 `curral notify-stdio` on the host. The guest holds no sink credentials; its text is
@@ -333,6 +333,44 @@ files, without new packages, and frees the old base; it deletes the VM's snapsho
 `gc` removes bases no VM uses (each template's current base stays) and leftovers of
 interrupted builds, downloads, resets and destroys; recordings, transcripts, tasks and
 the audit log are never removed.
+
+## Daemon, warm pool and idle stop
+
+```yaml
+# config.yaml
+idle_stop: 30m          # stop VMs idle this long (default off; templates: idle_stop: 2h | off)
+rebuild: weekly         # rebuild the bases in use: off (default), daily, weekly or e.g. 72h
+pool:
+  - { template: default, size: 2 }
+  - { template: go, distro: debian-13, size: 1 }
+```
+
+```
+curral daemon install   # systemd user service (curral daemon runs it in the foreground)
+curral daemon status | uninstall
+curral pool ls | fill | drain
+```
+
+The daemon refills the pool, stops idle VMs, rebuilds bases on schedule and answers
+egress prompts of VMs with `on_deny: prompt` through desktop notifications (VMs a
+`curral egress watch` started earlier serves are left to it; one started later fails
+for the VMs the daemon serves). Everything works without it; it reads config.yaml
+again each round. The service doesn't see your shell's environment: notification
+tokens it needs belong in `secrets.env` or a `command:` source.
+
+Pool VMs go through first boot with their own keys but no repos, agents, credentials
+or allowlist, then are saved with their memory and stopped, so they use disk, not RAM.
+`up` and `task` claim one when the template, distro, resources and base match (not
+with `--rebuild`): it is renamed, gets its allowlist, forges and credentials, and
+resumes in seconds with the new hostname; each saved memory is resumed once. After a
+QEMU upgrade a pool VM boots normally instead. `pool fill` (and the daemon) replaces
+pool VMs on an old base or template version; `curral ls` doesn't list them. After a
+scheduled rebuild the daemon also runs `gc`.
+
+A VM is idle when nothing is connected to its ssh or forwarded ports (sessions, `run`,
+`forward`, editors over ssh), it runs no task and QEMU used under 5% of a core since
+the previous check (every minute). It is shut down gracefully; ephemeral VMs are left
+alone.
 
 ## Egress
 
@@ -408,6 +446,8 @@ distinct destinations waiting (more are denied), so a guest can't bury you in pr
   images/                    verified cloud images (+ .img.json: source URL and digest)
   bases/                     template bases, one file per generation (+ build logs)
   vms/<name>/                disk overlay, seed, keys, allowlist, egress.log, qemu.log
+  vms/pool-<id>/             warm pool VMs
+  daemon.lock, rebuild.stamp curral daemon
   recordings/<name>/         host-side session recordings (asciicast v2)
   transcripts/<name>/        agent session stores copied from the VM
   tasks/<id>/                task.json, prompt.md, output.jsonl, result.md, supervisor.log

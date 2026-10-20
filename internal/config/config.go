@@ -34,6 +34,19 @@ type Config struct {
 	Record *bool         `yaml:"record"`
 	Notify notify.Config `yaml:"notify"`
 	Tasks  TaskLimits    `yaml:"tasks"`
+	// IdleStop stops VMs idle this long (curral daemon); templates may override it.
+	IdleStop string `yaml:"idle_stop"`
+	// Rebuild is how often curral daemon rebuilds the bases in use.
+	Rebuild string      `yaml:"rebuild"`
+	Pool    []PoolEntry `yaml:"pool"`
+}
+
+// PoolEntry asks for Size booted, stopped VMs of a template, ready for up
+// and task to claim.
+type PoolEntry struct {
+	Template string `yaml:"template"`
+	Distro   string `yaml:"distro"` // default: the template's, then defaults.distro
+	Size     int    `yaml:"size"`
 }
 
 // TaskLimits is the budget headless tasks queue for: VMs running at once
@@ -92,6 +105,23 @@ func Load(path string) (Config, error) {
 	c.Record = f.Record
 	c.Notify = f.Notify
 	c.Tasks = f.Tasks
+	c.IdleStop, c.Rebuild, c.Pool = f.IdleStop, f.Rebuild, f.Pool
+	if _, err := template.ParseInterval(c.IdleStop); err != nil {
+		return c, fmt.Errorf("%s: idle_stop: %w", path, err)
+	}
+	if _, err := template.ParseInterval(c.Rebuild); err != nil {
+		return c, fmt.Errorf("%s: rebuild: %w", path, err)
+	}
+	seen := map[[2]string]bool{}
+	for _, e := range c.Pool {
+		if e.Template == "" || e.Size < 0 || e.Size > 32 {
+			return c, fmt.Errorf("%s: pool: each entry needs a template and a size of 0-32", path)
+		}
+		if seen[[2]string{e.Template, e.Distro}] {
+			return c, fmt.Errorf("%s: pool: template %s (distro %q) listed twice", path, e.Template, e.Distro)
+		}
+		seen[[2]string{e.Template, e.Distro}] = true
+	}
 	if c.Tasks.MaxVMs == 0 {
 		c.Tasks.MaxVMs = 2
 	}

@@ -104,8 +104,9 @@ type Template struct {
 	MCP         []MCP             `yaml:"mcp,omitempty" json:"mcp,omitempty"`
 	Sync        Sync              `yaml:"sync,omitempty" json:"sync"`
 	SSH         SSH               `yaml:"ssh,omitempty" json:"ssh"`
-	Tools       []string          `yaml:"tools,omitempty" json:"tools,omitempty"` // gh, tea
-	Repos       []string          `yaml:"repos,omitempty" json:"repos,omitempty"` // cloned into /workspace at start
+	Tools       []string          `yaml:"tools,omitempty" json:"tools,omitempty"`         // gh, tea
+	Repos       []string          `yaml:"repos,omitempty" json:"repos,omitempty"`         // cloned into /workspace at start
+	IdleStop    string            `yaml:"idle_stop,omitempty" json:"idle_stop,omitempty"` // overrides config idle_stop
 
 	// Source is "builtin" or the file path; assets resolve relative to it.
 	Source string `yaml:"-" json:"-"`
@@ -269,6 +270,9 @@ func (t *Template) merge(o *Template) {
 		t.SSH.Confirm = o.SSH.Confirm
 	}
 	t.Repos = appendUniq(t.Repos, o.Repos...)
+	if o.IdleStop != "" {
+		t.IdleStop = o.IdleStop
+	}
 	for k, v := range o.assets {
 		t.assets[k] = v
 	}
@@ -350,6 +354,9 @@ func (t *Template) Validate() error {
 	if err := t.SSH.Validate(); err != nil {
 		return err
 	}
+	if _, err := ParseInterval(t.IdleStop); err != nil {
+		return fmt.Errorf("idle_stop: %w", err)
+	}
 	for _, tool := range t.Tools {
 		if tool != "gh" && tool != "tea" {
 			return fmt.Errorf("tools: unknown %q (gh, tea)", tool)
@@ -361,6 +368,24 @@ func (t *Template) Validate() error {
 		}
 	}
 	return t.validateAgents()
+}
+
+// ParseInterval parses an interval setting: "" or "off" (0), "daily",
+// "weekly" or a duration of at least a minute.
+func ParseInterval(s string) (time.Duration, error) {
+	switch s {
+	case "", "off":
+		return 0, nil
+	case "daily":
+		return 24 * time.Hour, nil
+	case "weekly":
+		return 7 * 24 * time.Hour, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d < time.Minute {
+		return 0, fmt.Errorf("invalid interval %q (off, daily, weekly or a duration of at least 1m, e.g. 30m)", s)
+	}
+	return d, nil
 }
 
 // ParseSize parses "512M", "8G", "1T" into MiB.

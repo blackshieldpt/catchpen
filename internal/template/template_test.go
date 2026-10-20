@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func write(t *testing.T, dir, name, content string) {
@@ -249,5 +250,18 @@ func TestAgentYolo(t *testing.T) {
 	write(t, dir, "c.yaml", "runtimes: { node: \"24\" }\nagents: { pi: { yolo: true } }\n")
 	if _, err := (Loader{UserDir: dir}).Load("c"); err == nil || !strings.Contains(err.Error(), "agents.pi.yolo") {
 		t.Errorf("pi yolo: %v", err)
+	}
+}
+
+func TestParseInterval(t *testing.T) {
+	for s, want := range map[string]time.Duration{"": 0, "off": 0, "daily": 24 * time.Hour, "weekly": 168 * time.Hour, "90m": 90 * time.Minute} {
+		if d, err := ParseInterval(s); err != nil || d != want {
+			t.Errorf("ParseInterval(%q) = %s, %v", s, d, err)
+		}
+	}
+	for _, s := range []string{"30s", "-1h", "soon", "0"} {
+		if _, err := ParseInterval(s); err == nil {
+			t.Errorf("ParseInterval(%q) accepted", s)
+		}
 	}
 }
