@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/blackshieldpt/curral/internal/agents"
+	"github.com/blackshieldpt/curral/internal/audit"
 	"github.com/blackshieldpt/curral/internal/cloudinit"
 	"github.com/blackshieldpt/curral/internal/creds"
 	"github.com/blackshieldpt/curral/internal/forge"
@@ -142,6 +143,7 @@ func (m *Manager) provisionForges(ctx context.Context, s *State) error {
 				return err
 			}
 			m.logf("minted a %s token for %s", name, s.Name)
+			m.audit(audit.TokenMint, s.Name, map[string]any{"forge": name, "id": id, "user": f.Auth.User})
 		case forge.ModeToken:
 			tok, err := secretRef(ctx, sec, f.Auth.Token)
 			if err != nil {
@@ -184,6 +186,7 @@ func (m *Manager) provisionForges(ctx context.Context, s *State) error {
 			mode = "read-only"
 		}
 		m.logf("added a %s deploy key to %s", mode, r.Repo)
+		m.audit(audit.DeployKeyAdd, s.Name, map[string]any{"repo": r.Repo.String(), "id": id, "mode": mode})
 	}
 	return nil
 }
@@ -209,6 +212,7 @@ func (m *Manager) releaseForges(s *State) {
 		if err != nil {
 			m.logf("warning: could not remove deploy key %d from %s: %v (remove it in the forge's repo settings)", r.DeployKeyID, r.Repo, err)
 		}
+		m.audit(audit.DeployKeyRemove, s.Name, map[string]any{"repo": r.Repo.String(), "id": r.DeployKeyID, "ok": err == nil})
 	}
 	tokens, _ := m.mintedTokens(s.Name)
 	for name, t := range tokens {
@@ -220,6 +224,7 @@ func (m *Manager) releaseForges(s *State) {
 		if err != nil {
 			m.logf("warning: could not delete %s token %d for %s: %v (delete it in the user's settings)", name, t.ID, t.User, err)
 		}
+		m.audit(audit.TokenDelete, s.Name, map[string]any{"forge": name, "id": t.ID, "ok": err == nil})
 	}
 }
 
@@ -365,6 +370,11 @@ func (m *Manager) startAgent(ctx context.Context, s *State) error {
 			how = "confirming each use"
 		}
 		m.logf("restricted ssh-agent for %s: %d key(s), usable only for %d forge(s), %s", s.Name, len(s.SSH.AgentKeys), len(agentForges(s.Forges)), how)
+		var fs []string
+		for _, f := range agentForges(s.Forges) {
+			fs = append(fs, f.Name)
+		}
+		m.audit(audit.AgentStart, s.Name, map[string]any{"keys": s.SSH.AgentKeys, "forges": fs, "confirm": s.SSH.ConfirmEach()})
 	}
 	return err
 }

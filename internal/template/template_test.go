@@ -231,3 +231,23 @@ func TestSSHAgentConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentYolo(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "a.yaml", "runtimes: { node: \"24\" }\nagents: { claude: { yolo: true }, opencode: { yolo: true } }\n")
+	write(t, dir, "b.yaml", "extends: a\nagents: { opencode: { yolo: false } }\n")
+	tp, err := Loader{UserDir: dir}.Load("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tp.Agents.Claude.SkipPermissions() || tp.Agents.OpenCode.SkipPermissions() {
+		t.Errorf("yolo merge: claude %v opencode %v", tp.Agents.Claude.SkipPermissions(), tp.Agents.OpenCode.SkipPermissions())
+	}
+	if (*Agent)(nil).SkipPermissions() {
+		t.Error("nil agent")
+	}
+	write(t, dir, "c.yaml", "runtimes: { node: \"24\" }\nagents: { pi: { yolo: true } }\n")
+	if _, err := (Loader{UserDir: dir}).Load("c"); err == nil || !strings.Contains(err.Error(), "agents.pi.yolo") {
+		t.Errorf("pi yolo: %v", err)
+	}
+}

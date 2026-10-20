@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blackshieldpt/curral/internal/audit"
 	"github.com/blackshieldpt/curral/internal/forge"
 	"github.com/blackshieldpt/curral/internal/sshx"
 )
@@ -146,6 +147,7 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 		}
 	}
 	m.logf("fetched %s:%s into %s (%s)", name, branch, into, ref)
+	m.audit(audit.ExportPull, name, map[string]any{"repo": rs.Repo.String(), "branch": branch, "into": into, "ref": ref})
 	return &Pulled{Repo: rs, Branch: branch, Ref: ref, Into: into}, nil
 }
 
@@ -218,6 +220,7 @@ func (m *Manager) PR(ctx context.Context, name string, o PROpts) (string, error)
 		return "", err
 	}
 	m.logf("opened %s", url)
+	m.audit(audit.ExportPR, name, map[string]any{"repo": p.Repo.Repo.String(), "branch": head, "base": base, "url": url})
 	return url, nil
 }
 

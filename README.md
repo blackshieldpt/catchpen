@@ -26,6 +26,9 @@ Install the binary somewhere stable: QEMU and ssh call it back (`egress-stdio`,
 curral up dev                 # default template: Docker, Node 24, uv, Claude Code, opencode, pi
 curral ssh dev                # shell
 curral ssh dev -- docker ps   # command
+curral run dev claude         # agent in a guest tmux session (reattaches if running)
+curral attach dev             # the guest's main tmux session
+curral cp ./notes.md dev:/tmp/  # scp, either direction (-r for directories)
 curral ls
 curral stop dev
 curral destroy dev
@@ -204,6 +207,41 @@ curral forward dev --list | --stop
 Each `forward` is a background `ssh -N` (log in `vms/<name>/forward.log`); all end when
 the VM stops. `-R` bypasses the egress proxy, so it is recorded in the VM's egress log.
 
+## Sessions, recordings and audit
+
+`curral run <vm> claude|opencode|pi [-- args]` starts the agent in a guest tmux
+session named after it, in the VM's repo when it has exactly one (`/workspace` with
+several, home with none), and reattaches to it later (new arguments and `yolo` only
+apply when the session starts); `curral attach <vm>` does the same for a `main` shell
+session. VMs created before `curral run` existed need recreating for it. The guest tmux prefix is `C-a`, so it doesn't clash
+with a host tmux. `agents.<name>.yolo: true` in a template starts claude
+(`--dangerously-skip-permissions`) or opencode (`--auto`) without permission prompts;
+pi doesn't ask.
+
+`curral tmux [<vm>...]` opens a host tmux session `curral` with a window per running
+VM, each running `curral attach`; `start`/`stop` add and close windows while it exists,
+`curral tmux --sync` reconciles it. Windows you open there yourself are left alone.
+
+`curral up <vm> --ephemeral [-- command]` creates a new VM, attaches (or runs the
+command) and destroys it, with its deploy keys and tokens, when the session ends or
+curral gets SIGINT/SIGTERM/SIGHUP. `ls` marks ephemeral VMs, so one left by a crash is
+easy to spot.
+
+Interactive `ssh`, `run` and `attach` sessions run the system ssh on a host pty and
+record its output (not your keystrokes) as asciicast v2 in
+`recordings/<vm>/<id>.cast` (0600, 256 MiB cap per session, kept after `destroy`).
+The guest can't alter them. `curral recordings <vm>` lists them,
+`curral recordings <vm> play <id> [--speed 2]` replays one with title and clipboard
+sequences dropped. `asciinema play` also reads them but replays guest escape sequences
+(window title, clipboard writes) unfiltered. `record: false` in `config.yaml` turns
+recording off.
+
+`curral audit [<vm>] [-f]` shows the host audit log (`audit.jsonl`, rotated at 32 MiB):
+VM lifecycle, credentials pushed (secret names only), deploy keys and tokens added and
+removed, restricted agents, allowlist edits and answered prompts (timeouts are only in
+the VM's egress log), forwards, `cp`, `pull`/`pr`, and the start and end of every
+`ssh`/`run`/`attach` session, with its recording id when recorded.
+
 ## Egress
 
 In `allowlist` mode the VM has no direct network access: QEMU's user network runs with
@@ -277,6 +315,8 @@ distinct destinations waiting (more are denied), so a guest can't bury you in pr
   images/                    verified cloud images (+ .img.json: source URL and digest)
   bases/                     template bases (+ build logs)
   vms/<name>/                disk overlay, seed, keys, allowlist, egress.log, qemu.log
+  recordings/<name>/         host-side session recordings (asciicast v2)
+  audit.jsonl                host audit log
 ```
 
 Build problems: `curral --debug up ...` streams the whole build-script log instead of

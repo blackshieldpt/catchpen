@@ -131,6 +131,25 @@ log "running {{.}}"
 bash "/var/lib/curral/build/scripts/{{.}}"
 {{- end}}
 
+# curral run starts agents through curral-env, so a long-lived tmux server
+# still gives them the environment pushed at the latest start.
+cat > /usr/local/bin/curral-env <<'CURRAL_SCRIPT'
+#!/bin/sh
+if [ -r "$HOME/.ssh/environment" ]; then
+  while IFS= read -r l; do
+    case $l in ''|'#'*) ;; *=*) export "$l" ;; esac
+  done < "$HOME/.ssh/environment"
+fi
+exec "$@"
+CURRAL_SCRIPT
+chmod 755 /usr/local/bin/curral-env
+# Prefix C-a so the guest's tmux doesn't clash with a host tmux on C-b.
+cat > /etc/tmux.conf <<'CURRAL_TMUX'
+set -g prefix C-a
+unbind C-b
+bind C-a send-prefix
+CURRAL_TMUX
+
 log "cleaning up"
 aptq -y autoremove
 apt-get clean

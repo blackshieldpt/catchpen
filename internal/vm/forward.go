@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/blackshieldpt/curral/internal/audit"
 	"github.com/blackshieldpt/curral/internal/egress"
 	"github.com/blackshieldpt/curral/internal/fsutil"
 	"github.com/blackshieldpt/curral/internal/sshx"
@@ -168,6 +169,7 @@ func (m *Manager) Forward(ctx context.Context, name string, local, remote, dynam
 		return nil, ctx.Err()
 	}
 	fs := &ForwardSession{PID: cmd.Process.Pid, Specs: pairs(specs), Started: time.Now().UTC()}
+	m.audit(audit.ForwardOpen, name, map[string]any{"pid": fs.PID, "specs": fs.Specs})
 	if err := m.updateForwards(name, func(l []ForwardSession) []ForwardSession { return append(l, *fs) }); err != nil {
 		_ = cmd.Process.Kill()
 		return nil, err
@@ -242,6 +244,7 @@ func (m *Manager) stopForwards(name string) {
 	_ = m.updateForwards(name, func(l []ForwardSession) []ForwardSession {
 		for _, f := range l {
 			_ = syscall.Kill(f.PID, syscall.SIGTERM)
+			m.audit(audit.ForwardStop, name, map[string]any{"pid": f.PID, "specs": f.Specs})
 		}
 		return nil
 	})

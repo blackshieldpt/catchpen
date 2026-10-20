@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/blackshieldpt/curral/internal/audit"
 	"github.com/blackshieldpt/curral/internal/egress"
 )
 
@@ -64,6 +66,11 @@ func egressCmd() *cobra.Command {
 					if err != nil {
 						return err
 					}
+					ev := audit.EgressAllow
+					if file == egress.DenylistFile {
+						ev = audit.EgressDeny
+					}
+					_ = m.Audit().Record(ev, s.Name, map[string]any{"entry": e, "add": add})
 				}
 				return nil
 			},
@@ -195,6 +202,16 @@ func egressCmd() *cobra.Command {
 			decide := egress.TerminalDecider(os.Stdin, os.Stderr)
 			if desktop {
 				decide = egress.DesktopDecider()
+			}
+			inner, alog := decide, m.Audit()
+			decide = func(ctx context.Context, r egress.Request) egress.Decision {
+				d := inner(ctx, r)
+				// Only answers given by a person: timeouts are in the VM's egress log, and
+				// a guest could otherwise flood the audit log until it rotates.
+				if ctx.Err() == nil {
+					_ = alog.Record(audit.EgressPrompt, r.VM, map[string]any{"host": r.Host, "port": r.Port, "method": r.Method, "decision": string(d)})
+				}
+				return d
 			}
 			fmt.Fprintf(os.Stderr, "watching %d VM(s); Ctrl-C to stop\n", len(dirs))
 			err = egress.Watch(cmd.Context(), dirs, decide)

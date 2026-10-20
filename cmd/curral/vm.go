@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -20,15 +19,23 @@ import (
 func upCmd() *cobra.Command {
 	var o vm.CreateOpts
 	c := &cobra.Command{
-		Use:   "up <name>",
+		Use:   "up <name> [--ephemeral [-- command...]]",
 		Short: "Create (if needed) and start a VM",
-		Args:  cobra.ExactArgs(1),
+		Long: `--ephemeral creates a new VM, attaches to it (or runs the command), and destroys it,
+with its deploy keys and tokens, when the session ends or curral is signalled.`,
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()
 			if err != nil {
 				return err
 			}
 			name := args[0]
+			if o.Ephemeral {
+				return upEphemeral(cmd, m, name, o, args[1:])
+			}
+			if len(args) > 1 {
+				return errors.New("a command after the name needs --ephemeral (else use curral ssh)")
+			}
 			if _, err := m.Load(name); err != nil {
 				if _, statErr := os.Stat(m.Dir(name)); statErr == nil {
 					return err
@@ -60,7 +67,44 @@ func upCmd() *cobra.Command {
 	f.StringVar(&o.SSHAgent, "ssh-agent", "", "agent forwarding: off | restricted | host (default from template)")
 	f.StringArrayVar(&o.AgentKeys, "agent-key", nil, "host key file for the restricted agent (repeatable)")
 	f.StringVar(&o.ClaudeAuth, "claude-auth", "", "Claude Code auth for this VM: oauth-token | api-key (default from template)")
+	f.BoolVar(&o.Ephemeral, "ephemeral", false, "destroy the VM when the session ends")
 	return c
+}
+
+func upEphemeral(cmd *cobra.Command, m *vm.Manager, name string, o vm.CreateOpts, command []string) error {
+	if _, err := os.Stat(m.Dir(name)); err == nil {
+		return fmt.Errorf("VM %s exists; --ephemeral needs a new name", name)
+	}
+	ctx := cmd.Context()
+	created := false // Create cleans up after itself; never destroy a VM it didn't make
+	defer func() {
+		if !created {
+			return
+		}
+		if err := m.Destroy(name); err != nil {
+			fmt.Fprintf(os.Stderr, "curral: destroying ephemeral %s: %v (retry: curral destroy -y %s)\n", name, err, name)
+		}
+	}()
+	s, err := m.Create(ctx, name, o)
+	if err != nil {
+		return err
+	}
+	created = true
+	if _, err := m.Start(ctx, name); err != nil {
+		return err
+	}
+	if len(command) > 0 {
+		q := make([]string, len(command))
+		for i, a := range command {
+			q[i] = shellQuote(a)
+		}
+		remote := strings.Join(q, " ")
+		if d := vm.WorkDir(s); d != "" {
+			remote = "cd " + shellQuote(d) + " && " + remote
+		}
+		return exitCode(m.Session(ctx, name, vm.KindSSH, remote))
+	}
+	return exitCode(m.Session(ctx, name, vm.KindAttach, vm.AttachCommand(s)))
 }
 
 func startCmd() *cobra.Command {
@@ -150,6 +194,11 @@ func lsCmd() *cobra.Command {
 				state, ssh, ports := "stopped", "-", "-"
 				if v.Running {
 					state = "running"
+				}
+				if v.Ephemeral {
+					state += ",ephemeral"
+				}
+				if v.Running {
 					if v.Runtime != nil && v.Runtime.SSHPort != 0 {
 						ssh = fmt.Sprintf("127.0.0.1:%d", v.Runtime.SSHPort)
 						var ps []string
@@ -178,39 +227,6 @@ func age(t time.Time) string {
 		return fmt.Sprintf("%dh", int(d.Hours()))
 	default:
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
-	}
-}
-
-func sshCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "ssh <name> [-- command...]",
-		Short: "Open a shell (or run a command) in a VM",
-		Args:  cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			m, err := manager()
-			if err != nil {
-				return err
-			}
-			if _, err := m.SSHPort(args[0]); err != nil {
-				return err
-			}
-			sshArgs := []string{"-F", m.P.SSHConfig()}
-			if len(args) == 1 {
-				sshArgs = append(sshArgs, "-t")
-			}
-			sshArgs = append(sshArgs, sshx.AliasPrefix+args[0])
-			sshArgs = append(sshArgs, args[1:]...)
-			c := exec.CommandContext(cmd.Context(), "ssh", sshArgs...)
-			c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
-			if err := c.Run(); err != nil {
-				var ee *exec.ExitError
-				if errors.As(err, &ee) {
-					return exitError(ee.ExitCode())
-				}
-				return err
-			}
-			return nil
-		},
 	}
 }
 
@@ -351,3 +367,5 @@ func templateCmd() *cobra.Command {
 	c.AddCommand(ls, show, build)
 	return c
 }
+
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }

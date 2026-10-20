@@ -19,7 +19,12 @@ type Agent struct {
 	Version string   `yaml:"version,omitempty" json:"version,omitempty"`
 	Auth    string   `yaml:"auth,omitempty" json:"auth,omitempty"` // claude only
 	Keys    []string `yaml:"keys,omitempty" json:"keys,omitempty"` // opencode/pi: provider API key secrets
+	// Yolo makes curral run skip permission prompts (claude, opencode); the VM is the sandbox.
+	Yolo *bool `yaml:"yolo,omitempty" json:"yolo,omitempty"`
 }
+
+// SkipPermissions reports whether curral run starts the agent without permission prompts.
+func (a *Agent) SkipPermissions() bool { return a != nil && a.Yolo != nil && *a.Yolo }
 
 type Agents struct {
 	Claude   *Agent `yaml:"claude,omitempty" json:"claude,omitempty"`
@@ -83,6 +88,9 @@ func mergeAgent(a, o *Agent) *Agent {
 	}
 	if o.Auth != "" {
 		c.Auth = o.Auth
+	}
+	if o.Yolo != nil {
+		c.Yolo = o.Yolo
 	}
 	c.Keys = appendUniq(append([]string(nil), a.Keys...), o.Keys...)
 	return &c
@@ -160,6 +168,9 @@ func (t *Template) validateAgents() error {
 			}
 		} else if a.Auth != "" {
 			return fmt.Errorf("agents.%s.auth is not supported (subscription tokens are for Claude Code only); use keys", name)
+		}
+		if name == "pi" && a.Yolo != nil {
+			return fmt.Errorf("agents.pi.yolo is not supported (pi has no permission prompts)")
 		}
 		for _, k := range a.Keys {
 			if _, ok := Providers[k]; !ok {

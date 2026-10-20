@@ -29,7 +29,12 @@ type Config struct {
 	Images   map[string]image.Spec `yaml:"images"` // custom distros, by name
 	// Secrets maps a secret name to where it comes from (default: env var, then secrets.env).
 	Secrets map[string]creds.Source `yaml:"secrets"`
+	// Record turns host-side session recording off when false (default on).
+	Record *bool `yaml:"record"`
 }
+
+// Recording reports whether interactive sessions are recorded.
+func (c Config) Recording() bool { return c.Record == nil || *c.Record }
 
 func Default() Config {
 	return Config{Defaults: Defaults{

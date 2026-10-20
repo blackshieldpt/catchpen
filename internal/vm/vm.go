@@ -30,11 +30,13 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/blackshieldpt/curral/internal/agents"
+	"github.com/blackshieldpt/curral/internal/audit"
 	"github.com/blackshieldpt/curral/internal/cloudinit"
 	"github.com/blackshieldpt/curral/internal/config"
 	"github.com/blackshieldpt/curral/internal/egress"
 	"github.com/blackshieldpt/curral/internal/forge"
 	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/curral/internal/hosttmux"
 	"github.com/blackshieldpt/curral/internal/image"
 	"github.com/blackshieldpt/curral/internal/paths"
 	"github.com/blackshieldpt/curral/internal/qemu"
@@ -92,6 +94,7 @@ type State struct {
 	Forges     map[string]forge.Forge `json:"forges,omitempty"`      // snapshot of the forges Repos use
 	ForgeUsers map[string]string      `json:"forge_users,omitempty"` // token owner per forge (mode token)
 	SSH        template.SSH           `json:"ssh"`
+	Ephemeral  bool                   `json:"ephemeral,omitempty"` // destroyed when its up --ephemeral session ends
 }
 
 // Runtime describes a running VM.
@@ -105,11 +108,12 @@ type Manager struct {
 	P     paths.Paths
 	Cfg   config.Config
 	Tpl   template.Loader
-	Out   io.Writer    // progress messages
-	In    io.Reader    // terminal input for key passphrases (nil: none)
-	Bin   string       // absolute path of the curral binary (ProxyCommand, guestfwd)
-	Debug bool         // stream the whole build log; log the serial console; keep failed VMs running
-	HTTP  *http.Client // forge API client (nil: default)
+	Out   io.Writer      // progress messages
+	In    io.Reader      // terminal input for key passphrases (nil: none)
+	Tmux  *hosttmux.Tmux // host tmux session to keep in sync (nil: none)
+	Bin   string         // absolute path of the curral binary (ProxyCommand, guestfwd)
+	Debug bool           // stream the whole build log; log the serial console; keep failed VMs running
+	HTTP  *http.Client   // forge API client (nil: default)
 }
 
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}[a-z0-9]$|^[a-z]$`)
@@ -128,6 +132,25 @@ func (m *Manager) logf(format string, a ...any) {
 }
 
 func (m *Manager) dir(name string) string { return m.P.VM(name) }
+
+func (m *Manager) tmuxDo(fn func(hosttmux.Tmux) error) {
+	if m.Tmux == nil {
+		return
+	}
+	if err := fn(*m.Tmux); err != nil {
+		m.logf("warning: host tmux: %v", err)
+	}
+}
+
+// Audit is the host audit log.
+func (m *Manager) Audit() audit.Log { return audit.Log{Path: m.P.Audit()} }
+
+// audit records an event in the host audit log; failures are warnings.
+func (m *Manager) audit(event, vm string, detail map[string]any) {
+	if err := (audit.Log{Path: m.P.Audit()}).Record(event, vm, detail); err != nil {
+		m.logf("warning: audit log: %v", err)
+	}
+}
 func (m *Manager) keys(name string) sshx.Keys {
 	return sshx.Keys{Dir: filepath.Join(m.dir(name), sshDir)}
 }
@@ -476,6 +499,7 @@ type CreateOpts struct {
 	ReadOnly   bool     // deploy keys are read-only
 	SSHAgent   string   // overrides ssh.agent
 	AgentKeys  []string // added to ssh.agent_keys
+	Ephemeral  bool
 }
 
 func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *State, err error) {
@@ -620,7 +644,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		CPUs: res.CPUs, MemoryMB: memMB, DiskMB: max(diskMB, baseMB), Ports: r.T.Ports,
 		Egress: egressMode, Docker: r.T.HasDocker(), Created: time.Now().UTC(),
 		Agents: r.T.Agents, Env: r.T.Env, MCP: r.T.MCP, Sync: r.T.Sync,
-		Repos: s.Repos, Forges: s.Forges, ForgeUsers: s.ForgeUsers, SSH: r.T.SSH,
+		Repos: s.Repos, Forges: s.Forges, ForgeUsers: s.ForgeUsers, SSH: r.T.SSH, Ephemeral: o.Ephemeral,
 	}
 	if r.T.SSH.Mode() == template.AgentHost {
 		m.logf("warning: %s forwards your host ssh-agent: anything in the VM can use all its keys while you're connected", name)
@@ -633,6 +657,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 	}
 	m.logf("created %s (template %s, %s, %d CPU, %s RAM, %s disk, egress %s)",
 		name, r.T.Name, r.Distro.Name, res.CPUs, res.Memory, res.Disk, egressMode)
+	m.audit(audit.VMCreate, name, map[string]any{"template": r.T.Name, "distro": r.Distro.Name, "egress": egressMode, "repos": len(s.Repos), "ssh_agent": s.SSH.Mode()})
 	return s, nil
 }
 
@@ -760,6 +785,7 @@ func (m *Manager) Start(ctx context.Context, name string) (*Runtime, error) {
 	unlock()
 
 	m.logf("started %s (pid %d), waiting for ssh", name, pid)
+	m.audit(audit.VMStart, name, map[string]any{"pid": pid})
 	wctx, cancel := context.WithTimeout(ctx, bootTimeout)
 	defer cancel()
 	alive := func() bool { _, ok := qemu.Pid(m.file(name, pidFile), name); return ok }
@@ -794,6 +820,7 @@ func (m *Manager) Start(ctx context.Context, name string) (*Runtime, error) {
 		return rt, fmt.Errorf("%s is running, but pushing credentials failed: %w (retry: curral creds push %s)", name, err, name)
 	}
 	m.logf("%s is ready: curral ssh %s", name, name)
+	m.tmuxDo(func(t hosttmux.Tmux) error { return t.Add(name) })
 	return rt, nil
 }
 
@@ -849,6 +876,7 @@ func (m *Manager) push(ctx context.Context, c *ssh.Client, s *State) error {
 		m.logf("secrets not found on the host: %s (set them in the environment, %s, or config.yaml secrets)",
 			strings.Join(res.Missing, ", "), m.P.SecretsFile())
 	}
+	m.audit(audit.CredsPush, s.Name, map[string]any{"secrets": res.Found, "missing": res.Missing, "ok": err == nil})
 	if err != nil {
 		return err
 	}
@@ -905,6 +933,7 @@ func (m *Manager) stopLocked(name string, force bool) error {
 	if !ok {
 		return nil
 	}
+	m.audit(audit.VMStop, name, map[string]any{"pid": pid, "force": force})
 	wait := func(d time.Duration) bool {
 		deadline := time.Now().Add(d)
 		for time.Now().Before(deadline) {
@@ -944,6 +973,7 @@ func (m *Manager) stopLocked(name string, force bool) error {
 
 func (m *Manager) cleanupRuntime(name string) error {
 	m.stopForwards(name)
+	m.tmuxDo(func(t hosttmux.Tmux) error { return t.Close(name) })
 	_ = m.agent(name).Stop()
 	for _, f := range []string{runtimeFile, qmpSock, serialSock, pidFile} {
 		_ = os.Remove(m.file(name, f))
@@ -984,6 +1014,7 @@ func (m *Manager) Destroy(name string) error {
 		return err
 	}
 	m.logf("destroyed %s", name)
+	m.audit(audit.VMDestroy, name, nil)
 	return m.WriteSSHConfig()
 }
 

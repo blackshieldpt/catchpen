@@ -41,6 +41,7 @@ type Spec struct {
 // Result reports what could not be delivered.
 type Result struct {
 	Missing  []string // secrets not found on the host
+	Found    []string // names of secrets pushed (for the audit log)
 	Warnings []string
 }
 
@@ -80,9 +81,13 @@ func (p *pusher) secret(name string) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	if !ok && !p.missed[name] {
+	if !p.missed[name] {
 		p.missed[name] = true
-		p.res.Missing = append(p.res.Missing, name)
+		if ok {
+			p.res.Found = append(p.res.Found, name)
+		} else {
+			p.res.Missing = append(p.res.Missing, name)
+		}
 	}
 	return v, ok, nil
 }

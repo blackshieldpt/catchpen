@@ -45,6 +45,8 @@ func (p Paths) ConfigFile() string    { return filepath.Join(p.Config, "config.y
 func (p Paths) SSHConfig() string     { return filepath.Join(p.Config, "ssh_config") }
 func (p Paths) SecretsFile() string   { return filepath.Join(p.Config, "secrets.env") }
 func (p Paths) Forges() string        { return filepath.Join(p.Config, "forges.yaml") }
+func (p Paths) Audit() string         { return filepath.Join(p.Data, "audit.jsonl") }
+func (p Paths) Recordings() string    { return filepath.Join(p.Data, "recordings") }
 
 // Ensure creates the data/config directories with private permissions.
 func (p Paths) Ensure() error {
