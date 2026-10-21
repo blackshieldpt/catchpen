@@ -368,17 +368,9 @@ func (s *Server) fetch(ctx context.Context, r *http.Request, rt *route, hdrs []s
 	if err != nil {
 		return nil, err
 	}
-	port, _ := strconv.Atoi(u.Port())
-	if port == 0 {
-		port = map[string]int{"http": 80, "https": 443}[u.Scheme]
-	}
-	// curral egress deny applies here too (the allowlist doesn't: cached
-	// hosts need no entry).
-	if deny, err := egress.LoadList(filepath.Join(s.Dir, egress.DenylistFile)); err != nil || egress.Match(deny, u.Hostname(), port) {
-		s.log(r, rt, u, port, egress.ActionDeny)
+	if !s.allowed(r.Method, rt.kind, u) {
 		return nil, errDenied
 	}
-	s.log(r, rt, u, port, egress.ActionCache)
 	repo := ""
 	if m := registryRe.FindStringSubmatch(u.Path); rt.kind == "docker" && m != nil {
 		repo = m[1]
@@ -460,6 +452,9 @@ func (s *Server) token(ctx context.Context, challenge string) (string, error) {
 		}
 	}
 	u.RawQuery = q.Encode()
+	if !s.allowed(http.MethodGet, "docker token", u) {
+		return "", errDenied
+	}
 	ctx, cancel := context.WithTimeout(ctx, upstreamIdle)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -481,16 +476,29 @@ func (s *Server) token(ctx context.Context, challenge string) (string, error) {
 	return cmp.Or(t.Token, t.AccessToken), nil
 }
 
-// log records an upstream fetch (or its refusal) in the VM's egress log.
-func (s *Server) log(r *http.Request, rt *route, u *url.URL, port int, action string) {
+// allowed logs a fetch of u (what: the cache kind, or why it's fetched) in
+// the VM's egress log, refusing it when curral egress deny names its host.
+// (The allowlist doesn't apply: cached hosts need no entry.)
+func (s *Server) allowed(method, what string, u *url.URL) bool {
+	port, _ := strconv.Atoi(u.Port())
+	if port == 0 {
+		port = map[string]int{"http": 80, "https": 443}[u.Scheme]
+	}
+	action := egress.ActionCache
+	if deny, err := egress.LoadList(filepath.Join(s.Dir, egress.DenylistFile)); err != nil || egress.Match(deny, u.Hostname(), port) {
+		action = egress.ActionDeny
+	}
 	p := u.EscapedPath()
 	if len(p) > 200 {
 		p = p[:200] + "..."
 	}
-	_ = egress.Append(s.Dir, egress.LogEntry{Time: time.Now().UTC(), VM: s.VM, Method: r.Method, Host: u.Hostname(), Port: port,
-		Action: action, Reason: rt.kind + " " + p})
+	_ = egress.Append(s.Dir, egress.LogEntry{Time: time.Now().UTC(), VM: s.VM, Method: method, Host: u.Hostname(), Port: port,
+		Action: action, Reason: what + " " + p})
+	return action == egress.ActionCache
 }
 
+// client is the upstream client: redirects (to CDNs) are followed over
+// HTTPS only, at most 10, each logged and checked against the denylist.
 func (s *Server) client() *http.Client {
 	if s.Client == nil {
 		s.Client = &http.Client{Transport: &http.Transport{
@@ -498,7 +506,19 @@ func (s *Server) client() *http.Client {
 			TLSHandshakeTimeout: 30 * time.Second, ResponseHeaderTimeout: upstreamIdle, MaxIdleConnsPerHost: 4,
 		}}
 	}
-	return s.Client
+	c := *s.Client
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		switch {
+		case len(via) >= 10:
+			return errors.New("stopped after 10 redirects")
+		case req.URL.Scheme != "https":
+			return fmt.Errorf("redirect to %s:// refused", req.URL.Scheme)
+		case !s.allowed(req.Method, "redirect", req.URL):
+			return errDenied
+		}
+		return nil
+	}
+	return &c
 }
 
 // dialPublic dials a host's public addresses only (redirects included).

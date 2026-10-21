@@ -442,3 +442,34 @@ func TestFetchesTrimTheStore(t *testing.T) {
 		t.Errorf("usage %+v", us)
 	}
 }
+
+func TestRedirectsChecked(t *testing.T) {
+	up, c := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/x/@v/v1.0.0.zip":
+			http.Redirect(w, r, "https://cdn.example/blob", http.StatusTemporaryRedirect)
+		case "/x/@v/v2.0.0.zip":
+			http.Redirect(w, r, "http://cdn.example/blob", http.StatusTemporaryRedirect)
+		default:
+			io.WriteString(w, "blob")
+		}
+	})
+	s := newServer(t, t.TempDir(), c, "go")
+	if w := get(s, "/go/x/@v/v1.0.0.zip"); w.Body.String() != "blob" {
+		t.Errorf("redirect: %d %q", w.Code, w.Body)
+	}
+	if w := get(s, "/go/x/@v/v2.0.0.zip"); w.Code != http.StatusBadGateway {
+		t.Errorf("redirect to http: %d", w.Code)
+	}
+	if err := egress.WriteList(s.Dir, egress.DenylistFile, []string{"cdn.example"}); err != nil {
+		t.Fatal(err)
+	}
+	s.Store.Clear()
+	before := up.count("cdn.example/blob")
+	if w := get(s, "/go/x/@v/v1.0.0.zip"); w.Code != http.StatusForbidden || up.count("cdn.example/blob") != before {
+		t.Errorf("redirect to a denied host: %d", w.Code)
+	}
+	if b, _ := os.ReadFile(filepath.Join(s.Dir, egress.LogFile)); !strings.Contains(string(b), `"host":"cdn.example","port":443,"action":"cache","reason":"redirect /blob"`) {
+		t.Errorf("redirect hop not logged: %s", b)
+	}
+}
