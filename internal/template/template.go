@@ -18,6 +18,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/blackshieldpt/curral/internal/cache"
 	"github.com/blackshieldpt/curral/internal/egress"
 )
 
@@ -107,6 +108,7 @@ type Template struct {
 	Tools       []string          `yaml:"tools,omitempty" json:"tools,omitempty"`         // gh, tea
 	Repos       []string          `yaml:"repos,omitempty" json:"repos,omitempty"`         // cloned into /workspace at start
 	IdleStop    string            `yaml:"idle_stop,omitempty" json:"idle_stop,omitempty"` // overrides config idle_stop
+	Cache       []string          `yaml:"cache,omitempty" json:"cache,omitempty"`         // host pull-through caches; replaces the parent's list
 
 	// Source is "builtin" or the file path; assets resolve relative to it.
 	Source string `yaml:"-" json:"-"`
@@ -273,6 +275,9 @@ func (t *Template) merge(o *Template) {
 	if o.IdleStop != "" {
 		t.IdleStop = o.IdleStop
 	}
+	if o.Cache != nil { // cache: [] turns them off
+		t.Cache = o.Cache
+	}
 	for k, v := range o.assets {
 		t.assets[k] = v
 	}
@@ -356,6 +361,11 @@ func (t *Template) Validate() error {
 	}
 	if _, err := ParseInterval(t.IdleStop); err != nil {
 		return fmt.Errorf("idle_stop: %w", err)
+	}
+	for _, c := range t.Cache {
+		if err := cache.Valid(c); err != nil {
+			return fmt.Errorf("cache: %w", err)
+		}
 	}
 	for _, tool := range t.Tools {
 		if tool != "gh" && tool != "tea" {

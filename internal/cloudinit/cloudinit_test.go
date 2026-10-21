@@ -1,6 +1,7 @@
 package cloudinit
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -31,11 +32,11 @@ func parse(t *testing.T, b []byte) map[string]any {
 }
 
 func TestBuildScriptSections(t *testing.T) {
-	min, err := BuildScript(load(t, "minimal"), "agent")
+	min, err := BuildScript(load(t, "minimal"), "agent", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	def, err := BuildScript(load(t, "default"), "agent")
+	def, err := BuildScript(load(t, "default"), "agent", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +60,7 @@ func TestBuildScriptSections(t *testing.T) {
 }
 
 func TestBuildUserData(t *testing.T) {
-	m := parse(t, mustB(BuildUserData(load(t, "minimal"), "agent")))
+	m := parse(t, mustB(BuildUserData(load(t, "minimal"), "agent", nil)))
 	users := m["users"].([]any)
 	u := users[0].(map[string]any)
 	if u["name"] != "agent" || u["lock_passwd"] != true {
@@ -102,9 +103,96 @@ func TestInstanceUserData(t *testing.T) {
 			t.Errorf("instance user-data missing %q", want)
 		}
 	}
+	if strings.Contains(raw, "10.0.2.102") || strings.Contains(raw, "daemon.json") {
+		t.Error("no caches configured without any")
+	}
 	in.Egress, in.Docker = "open", false
 	raw = string(mustB(InstanceUserData(in)))
 	if strings.Contains(raw, "10.0.2.100") {
 		t.Error("open egress must not configure the proxy")
+	}
+}
+
+func writeFiles(t *testing.T, m map[string]any) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, f := range m["write_files"].([]any) {
+		f := f.(map[string]any)
+		out[f["path"].(string)] += f["content"].(string)
+	}
+	return out
+}
+
+func TestInstanceUserDataCaches(t *testing.T) {
+	in := Instance{Name: "vm1", User: "agent", AuthorizedKey: "k", HostKey: "PRIV", HostPub: "p", Egress: "allowlist", Docker: true,
+		Cache: []string{"apt", "docker", "go", "npm", "pypi"}}
+	m := parse(t, mustB(InstanceUserData(in)))
+	files := writeFiles(t, m)
+	env := files["/etc/environment"]
+	for _, want := range []string{"no_proxy=localhost,127.0.0.1,::1,10.0.2.102\n", "GOPROXY=http://10.0.2.102/go,direct\n",
+		"npm_config_registry=http://10.0.2.102/npm/\n", "PIP_INDEX_URL=http://10.0.2.102/pypi/simple/\n", "PIP_TRUSTED_HOST=10.0.2.102\n",
+		"UV_DEFAULT_INDEX=http://10.0.2.102/pypi/simple/\n"} {
+		if !strings.Contains(env, want) {
+			t.Errorf("/etc/environment missing %q:\n%s", want, env)
+		}
+	}
+	if apt := files["/etc/apt/apt.conf.d/94curral-cache"]; !strings.Contains(apt, `Acquire::http::Proxy::deb.debian.org "http://10.0.2.102";`) ||
+		!strings.Contains(apt, `Acquire::http::Proxy::archive.ubuntu.com "http://10.0.2.102";`) {
+		t.Errorf("apt cache config %q", apt)
+	}
+	run := m["runcmd"].([]any)
+	if mirror := strings.Join(toStrings(run[0].([]any)), " "); !strings.Contains(mirror, `."registry-mirrors" = ["http://10.0.2.102"]`) ||
+		strings.Join(toStrings(run[len(run)-1].([]any)), " ") != "systemctl try-restart containerd docker" {
+		t.Errorf("runcmd %v", run)
+	}
+	if !strings.Contains(files["/etc/systemd/system/docker.service.d/curral-proxy.conf"], "NO_PROXY=localhost,127.0.0.1,::1,10.0.2.102") {
+		t.Error("docker must reach the mirror directly")
+	}
+
+	// Open egress: the caches without the proxy, and docker restarted for its mirror.
+	in.Egress, in.Cache = "open", []string{"docker", "npm"}
+	m = parse(t, mustB(InstanceUserData(in)))
+	files = writeFiles(t, m)
+	if env := files["/etc/environment"]; strings.Contains(env, "10.0.2.100") || !strings.Contains(env, "npm_config_registry=") || strings.Contains(env, "GOPROXY") {
+		t.Errorf("open /etc/environment %q", env)
+	}
+	if _, ok := files["/etc/apt/apt.conf.d/94curral-cache"]; ok {
+		t.Error("apt cache configured without apt")
+	}
+	if run := m["runcmd"].([]any); len(run) != 2 || strings.Join(toStrings(run[1].([]any)), " ") != "systemctl try-restart docker" {
+		t.Errorf("runcmd %v", run)
+	}
+}
+
+func toStrings(a []any) []string {
+	var out []string
+	for _, v := range a {
+		out = append(out, v.(string))
+	}
+	return out
+}
+
+func TestBuildScriptCaches(t *testing.T) {
+	def := load(t, "default")
+	plain, err := BuildScript(def, "agent", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := BuildScript(def, "agent", []string{"apt", "npm"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"export no_proxy=localhost,127.0.0.1,10.0.2.102 ", "\nexport npm_config_registry=http://10.0.2.102/npm/\n",
+		"<<'CURRAL_CACHE'\nAcquire::http::Proxy::archive.ubuntu.com \"http://10.0.2.102\";\n", "\nCURRAL_CACHE\n",
+		"\nrm -f /etc/apt/apt.conf.d/94curral-build-cache\n"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("build script with caches missing %q", want)
+		}
+	}
+	if strings.Contains(plain, "10.0.2.102") || strings.Contains(plain, "CURRAL_CACHE") {
+		t.Error("build script without caches mentions them")
+	}
+	if out, err := exec.Command("bash", "-n", "-c", s).CombinedOutput(); err != nil {
+		t.Errorf("bash -n: %v %s", err, out)
 	}
 }

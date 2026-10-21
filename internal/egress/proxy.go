@@ -70,7 +70,7 @@ func (p *Proxy) ServeConn(ctx context.Context, c io.ReadWriteCloser) error {
 	defer cancel()
 	go func() { <-ctx.Done(); c.Close() }()
 
-	release, ok := acquireSlot(p.Dir)
+	release, ok := AcquireSlot(p.Dir, "egress.slots")
 	if !ok {
 		writeStatus(c, http.StatusServiceUnavailable, "curral: too many concurrent proxy connections\n")
 		return errors.New("connection limit reached")
@@ -190,10 +190,10 @@ func checkHost(h string, port int) (string, int, error) {
 	return n, port, nil
 }
 
-// acquireSlot takes one of MaxConns flock slots for the VM; the lock is
+// AcquireSlot takes one of MaxConns flock slots in dir/name; the lock is
 // released on return or when the process exits.
-func acquireSlot(dir string) (func(), bool) {
-	sd := filepath.Join(dir, "egress.slots")
+func AcquireSlot(dir, name string) (func(), bool) {
+	sd := filepath.Join(dir, name)
 	if err := os.MkdirAll(sd, 0o700); err != nil {
 		return nil, false
 	}
@@ -348,7 +348,8 @@ var reservedNets = func() []*net.IPNet {
 	return nets
 }()
 
-func isPrivate(ip net.IP) bool {
+// IsPrivate reports addresses no fetch on a guest's behalf may reach.
+func IsPrivate(ip net.IP) bool {
 	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
 		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
 		return true
@@ -379,7 +380,7 @@ func (p *Proxy) connect(ctx context.Context, host string, port int) (net.Conn, e
 	}
 	if !cfg.AllowPrivate {
 		for _, ip := range ips {
-			if isPrivate(ip) {
+			if IsPrivate(ip) {
 				return nil, privateError{ip}
 			}
 		}

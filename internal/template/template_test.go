@@ -85,6 +85,7 @@ func TestLoadErrors(t *testing.T) {
 		"unknown":  {"frobnicate: true\n", "field frobnicate not found"},
 		"named":    {"name: other\n", "does not match file name"},
 		"missing":  {"scripts: [nope.sh]\n", "asset \"nope.sh\""},
+		"cachex":   {"cache: [maven]\n", "unknown cache \"maven\""},
 	}
 	dir := t.TempDir()
 	write(t, dir, "cycle2.yaml", "extends: cycle\n")
@@ -100,6 +101,25 @@ func TestLoadErrors(t *testing.T) {
 	}
 	if _, err := (Loader{UserDir: dir}).Load("../x"); err == nil || !strings.Contains(err.Error(), "invalid template name") {
 		t.Errorf("bad name: %v", err)
+	}
+}
+
+func TestCacheMerge(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "inherit.yaml", "extends: default\n")
+	write(t, dir, "some.yaml", "extends: default\ncache: [npm]\n")
+	write(t, dir, "off.yaml", "extends: default\ncache: []\n")
+	for name, want := range map[string][]string{
+		"default": {"apt", "go", "npm", "pypi", "docker"}, "inherit": {"apt", "go", "npm", "pypi", "docker"},
+		"some": {"npm"}, "off": {}, "minimal": nil,
+	} {
+		tp, err := Loader{UserDir: dir}.Load(name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !slices.Equal(tp.Cache, want) {
+			t.Errorf("%s: cache = %v, want %v", name, tp.Cache, want)
+		}
 	}
 }
 

@@ -49,6 +49,7 @@ func (p Paths) Audit() string         { return filepath.Join(p.Data, "audit.json
 func (p Paths) Recordings() string    { return filepath.Join(p.Data, "recordings") }
 func (p Paths) Transcripts() string   { return filepath.Join(p.Data, "transcripts") }
 func (p Paths) Tasks() string         { return filepath.Join(p.Data, "tasks") }
+func (p Paths) Pkg() string           { return filepath.Join(p.Cache, "pkg") } // package caches
 
 // Ensure creates the data/config directories with private permissions.
 func (p Paths) Ensure() error {

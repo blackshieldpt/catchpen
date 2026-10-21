@@ -7,8 +7,15 @@ aptq() { apt-get -q -o DPkg::Lock::Timeout=600 "$@"; }
 . /etc/os-release
 # The build VM's only exit is curral's egress proxy (public hosts only).
 export http_proxy={{.Proxy}} https_proxy={{.Proxy}} HTTP_PROXY={{.Proxy}} HTTPS_PROXY={{.Proxy}}
-export no_proxy=localhost,127.0.0.1 NO_PROXY=localhost,127.0.0.1
+export no_proxy=localhost,127.0.0.1{{if .Caches}},{{.CacheAddr}}{{end}} NO_PROXY=localhost,127.0.0.1{{if .Caches}},{{.CacheAddr}}{{end}}
 printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";\n' {{.Proxy}} {{.Proxy}} > /etc/apt/apt.conf.d/95curral-build-proxy
+{{- range .CacheEnv}}
+export {{.}}
+{{- end}}
+{{- if .CacheApt}}
+cat > /etc/apt/apt.conf.d/94curral-build-cache <<'CURRAL_CACHE'
+{{.CacheApt}}CURRAL_CACHE
+{{- end}}
 
 log "disabling background package jobs"
 systemctl disable --now unattended-upgrades.service apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
@@ -154,6 +161,9 @@ log "cleaning up"
 aptq -y autoremove
 apt-get clean
 rm -f /etc/apt/apt.conf.d/95curral-build-proxy
+{{- if .CacheApt}}
+rm -f /etc/apt/apt.conf.d/94curral-build-cache
+{{- end}}
 cloud-init clean --logs --machine-id
 rm -f /etc/ssh/ssh_host_*
 fstrim -av || true

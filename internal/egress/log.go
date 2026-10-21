@@ -21,6 +21,7 @@ const (
 	ActionPromptDeny  = "prompt-deny"
 	ActionError       = "error"
 	ActionForward     = "forward" // host service exposed to the guest with curral forward -R
+	ActionCache       = "cache"   // fetched upstream by a package cache
 )
 
 // Append writes an entry to a VM's egress log.

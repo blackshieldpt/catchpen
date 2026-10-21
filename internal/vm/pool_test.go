@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/blackshieldpt/curral/internal/egress"
 	"github.com/blackshieldpt/curral/internal/fsutil"
 	"github.com/blackshieldpt/curral/internal/qemu"
+	"github.com/blackshieldpt/curral/internal/template"
 )
 
 // poolManager has template "ag" (agents, a repo-less allowlist) with a fake
@@ -192,5 +194,60 @@ func TestTakeResume(t *testing.T) {
 		if name == "pool-b" && (from != nil || len(ss) != 0) {
 			t.Errorf("other QEMU: resume %+v, snapshots %v", from, ss)
 		}
+	}
+}
+
+func TestCachesAndThePool(t *testing.T) {
+	m := poolManager(t, "pool-a")
+	before, err := m.Resolve("ag", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(m.P.Templates(), "ag.yaml"), "extends: minimal\nruntimes: { node: \"24\" }\nagents:\n  claude: {}\nidle_stop: 2h\ncache: [npm, docker, apt]\n")
+	after, err := m.Resolve("ag", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Hash != after.Hash {
+		t.Error("listing caches made another base")
+	}
+	s, err := m.Create(context.Background(), "work", CreateOpts{Template: "ag"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Resume != "" || !slices.Equal(s.Cache, []string{"apt", "npm"}) { // docker: the template has none
+		t.Errorf("state = %+v", s)
+	}
+	if seed, _ := os.ReadFile(m.file("work", seedFile)); !bytes.Contains(seed, []byte("npm_config_registry=http://10.0.2.102/npm/")) {
+		t.Error("seed lacks the npm cache")
+	}
+	wants, err := m.poolWants()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.recyclePool(wants, true); err != nil {
+		t.Fatal(err)
+	}
+	if vms, _ := m.PoolVMs(); len(vms) != 0 {
+		t.Errorf("pool VM without the caches kept: %+v", vms)
+	}
+}
+
+func TestVMCaches(t *testing.T) {
+	yes := true
+	for _, c := range []struct {
+		t    template.Template
+		want []string
+	}{
+		{template.Template{Cache: []string{"npm", "docker", "apt", "npm"}}, []string{"apt", "npm"}},
+		{template.Template{Cache: []string{"npm", "docker"}, Docker: &yes}, []string{"docker", "npm"}},
+		{template.Template{Cache: []string{"npm"}, Network: template.Network{Egress: "none"}}, nil},
+	} {
+		if got := vmCaches(&c.t); !slices.Equal(got, c.want) {
+			t.Errorf("%v: %v, want %v", c.t.Cache, got, c.want)
+		}
+	}
+	if got := buildCaches(&template.Template{Cache: []string{"docker", "go"}, Docker: &yes}); !slices.Equal(got, []string{"go"}) {
+		t.Errorf("build caches %v", got)
 	}
 }

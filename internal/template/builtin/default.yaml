@@ -13,3 +13,4 @@ agents:
   pi: {}                          # provider keys: agents.pi.keys
 network:
   presets: [github, npm, pypi, go, apt-ubuntu, apt-debian, docker-apt, docker-hub, ghcr]
+cache: [apt, go, npm, pypi, docker]   # host pull-through caches (docker: with docker: true)

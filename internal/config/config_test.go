@@ -93,9 +93,16 @@ func TestLoadDaemonSettings(t *testing.T) {
 	if c.IdleStop != "30m" || c.Rebuild != "weekly" || len(c.Pool) != 2 || c.Pool[1].Distro != "debian-13" {
 		t.Errorf("loaded: %+v", c)
 	}
+	if c.CacheMaxBytes() != 20<<30 {
+		t.Errorf("default cache_max %d", c.CacheMaxBytes())
+	}
+	os.WriteFile(p, []byte("cache_max: 512M\n"), 0o600)
+	if c, err := Load(p); err != nil || c.CacheMaxBytes() != 512<<20 {
+		t.Errorf("cache_max: %d %v", c.CacheMaxBytes(), err)
+	}
 	for _, bad := range []string{
 		"idle_stop: 10s\n", "rebuild: monthly\n", "pool: [{ size: 1 }]\n", "pool: [{ template: a, size: 99 }]\n",
-		"pool: [{ template: a, size: 1 }, { template: a, size: 2 }]\n",
+		"pool: [{ template: a, size: 1 }, { template: a, size: 2 }]\n", "cache_max: 20GB\n",
 	} {
 		os.WriteFile(p, []byte(bad), 0o600)
 		if _, err := Load(p); err == nil {

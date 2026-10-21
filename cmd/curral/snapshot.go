@@ -194,8 +194,8 @@ func gcCmd() *cobra.Command {
 		Use:   "gc",
 		Short: "Remove unused bases and leftovers of interrupted work",
 		Long: `Removes bases no VM uses (each template's current base stays), and leftovers of
-interrupted builds, downloads, resets and destroys. Recordings, transcripts, tasks and
-the audit log are kept.`,
+interrupted builds, downloads, resets and destroys, and trims the package caches to
+cache_max. Recordings, transcripts, tasks and the audit log are kept.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()
@@ -209,7 +209,10 @@ the audit log are kept.`,
 			var total int64
 			for _, it := range items {
 				total += it.Bytes
-				rel, _ := filepath.Rel(m.P.Data, it.Path)
+				rel, err := filepath.Rel(m.P.Data, it.Path)
+				if err != nil || strings.HasPrefix(rel, "..") {
+					rel = it.Path
+				}
 				fmt.Printf("%-9s %s (%s)\n", humanBytes(it.Bytes), rel, it.Why)
 			}
 			verb := "freed"

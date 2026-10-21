@@ -14,6 +14,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/blackshieldpt/curral/internal/cache"
 	"github.com/blackshieldpt/curral/internal/egress"
 	tpl "github.com/blackshieldpt/curral/internal/template"
 )
@@ -69,8 +70,9 @@ func homePath(dst, user string) string {
 	return dst
 }
 
-// BuildScript renders the provisioning script for a template.
-func BuildScript(t *tpl.Template, user string) (string, error) {
+// BuildScript renders the provisioning script for a template; caches are
+// used during the build only.
+func BuildScript(t *tpl.Template, user string, caches []string) (string, error) {
 	var scripts []string
 	for i, s := range t.Scripts {
 		scripts = append(scripts, scriptTarget(i, s))
@@ -91,6 +93,10 @@ func BuildScript(t *tpl.Template, user string) (string, error) {
 		"UV":        t.Runtimes.Python == "uv",
 		"Scripts":   scripts,
 		"Proxy":     fmt.Sprintf("http://%s:%d", ProxyAddr, ProxyPort),
+		"Caches":    len(caches) > 0,
+		"CacheAddr": cache.Addr,
+		"CacheEnv":  cacheEnv(caches),
+		"CacheApt":  cacheApt(caches),
 	})
 	return b.String(), err
 }
@@ -126,8 +132,8 @@ func marshal(doc map[string]any) ([]byte, error) {
 
 // BuildUserData is the seed for building a template base. The second serial port
 // receives the build log and a final OK/FAIL marker; the VM powers off after.
-func BuildUserData(t *tpl.Template, user string) ([]byte, error) {
-	script, err := BuildScript(t, user)
+func BuildUserData(t *tpl.Template, user string, caches []string) ([]byte, error) {
+	script, err := BuildScript(t, user, caches)
 	if err != nil {
 		return nil, err
 	}
@@ -169,6 +175,36 @@ func BuildUserData(t *tpl.Template, user string) ([]byte, error) {
 	})
 }
 
+// cacheEnv points package managers at the caches.
+func cacheEnv(kinds []string) []string {
+	var env []string
+	for _, k := range kinds {
+		switch k {
+		case "go":
+			env = append(env, "GOPROXY="+cache.Base+"/go,direct")
+		case "npm":
+			env = append(env, "npm_config_registry="+cache.Base+"/npm/", "YARN_NPM_REGISTRY_SERVER="+cache.Base+"/npm",
+				"YARN_UNSAFE_HTTP_WHITELIST="+cache.Addr)
+		case "pypi":
+			env = append(env, "PIP_INDEX_URL="+cache.Base+"/pypi/simple/", "PIP_TRUSTED_HOST="+cache.Addr,
+				"UV_DEFAULT_INDEX="+cache.Base+"/pypi/simple/")
+		}
+	}
+	return env
+}
+
+// cacheApt is the apt configuration fetching the cached mirrors through the cache.
+func cacheApt(kinds []string) string {
+	if !slices.Contains(kinds, "apt") {
+		return ""
+	}
+	var b strings.Builder
+	for _, h := range cache.AptHosts {
+		fmt.Fprintf(&b, "Acquire::http::Proxy::%s \"%s\";\n", h, cache.Base)
+	}
+	return b.String()
+}
+
 // Instance holds per-VM first-boot settings.
 type Instance struct {
 	Name          string
@@ -178,6 +214,7 @@ type Instance struct {
 	HostPub       string // ed25519 public key, authorized_keys format
 	Egress        string // allowlist | open | none
 	Docker        bool
+	Cache         []string // cache kinds the VM uses
 }
 
 const sshdConf = `# curral: key-only access
@@ -197,9 +234,12 @@ func InstanceUserData(in Instance) ([]byte, error) {
 		Path: "/etc/ssh/sshd_config.d/00-curral.conf", Content: fmt.Sprintf(sshdConf, in.User), Permissions: "0644",
 	}}
 	var run [][]string
+	noProxy := "localhost,127.0.0.1,::1"
+	if len(in.Cache) > 0 {
+		noProxy += "," + cache.Addr
+	}
 	if in.Egress == egress.ModeAllowlist {
 		proxy := fmt.Sprintf("http://%s:%d", ProxyAddr, ProxyPort)
-		noProxy := "localhost,127.0.0.1,::1"
 		env := fmt.Sprintf("http_proxy=%[1]s\nhttps_proxy=%[1]s\nHTTP_PROXY=%[1]s\nHTTPS_PROXY=%[1]s\nno_proxy=%[2]s\nNO_PROXY=%[2]s\n", proxy, noProxy)
 		files = append(files,
 			writeFile{Path: "/etc/environment", Content: env, Append: true},
@@ -215,6 +255,21 @@ func InstanceUserData(in Instance) ([]byte, error) {
 					Content: fmt.Sprintf(`{"proxies":{"default":{"httpProxy":"%[1]s","httpsProxy":"%[1]s","noProxy":"%[2]s"}}}`+"\n", proxy, noProxy)},
 			)
 			run = append(run, []string{"systemctl", "daemon-reload"}, []string{"systemctl", "try-restart", "containerd", "docker"})
+		}
+	}
+	if env := cacheEnv(in.Cache); len(env) > 0 {
+		files = append(files, writeFile{Path: "/etc/environment", Content: strings.Join(env, "\n") + "\n", Append: true})
+	}
+	if apt := cacheApt(in.Cache); apt != "" {
+		files = append(files, writeFile{Path: "/etc/apt/apt.conf.d/94curral-cache", Content: apt, Permissions: "0644"})
+	}
+	if in.Docker && slices.Contains(in.Cache, "docker") {
+		// Merged into what the template's base may have in daemon.json.
+		mirror := fmt.Sprintf(`f=/etc/docker/daemon.json; [ -s $f ] || echo {} >$f; `+
+			`jq '."registry-mirrors" = ["%[1]s"] + ((."registry-mirrors" // []) - ["%[1]s"])' $f >$f.new && mv $f.new $f`, cache.Base)
+		run = append([][]string{{"sh", "-c", mirror}}, run...)
+		if len(run) == 1 {
+			run = append(run, []string{"systemctl", "try-restart", "docker"})
 		}
 	}
 	doc := map[string]any{

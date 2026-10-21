@@ -3,6 +3,7 @@ package config
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -39,6 +40,8 @@ type Config struct {
 	// Rebuild is how often curral daemon rebuilds the bases in use.
 	Rebuild string      `yaml:"rebuild"`
 	Pool    []PoolEntry `yaml:"pool"`
+	// CacheMax caps the package caches (default 20G); the least recently used objects go first.
+	CacheMax string `yaml:"cache_max"`
 }
 
 // PoolEntry asks for Size booted, stopped VMs of a template, ready for up
@@ -60,6 +63,14 @@ type TaskLimits struct {
 func (t TaskLimits) MaxMemoryMB() int64 {
 	mb, _ := template.ParseSize(t.MaxMemory)
 	return mb
+}
+
+const defaultCacheMax = "20G"
+
+// CacheMaxBytes is the package caches' size limit.
+func (c Config) CacheMaxBytes() int64 {
+	mb, _ := template.ParseSize(cmp.Or(c.CacheMax, defaultCacheMax))
+	return mb << 20
 }
 
 // Recording reports whether interactive sessions are recorded.
@@ -106,6 +117,10 @@ func Load(path string) (Config, error) {
 	c.Notify = f.Notify
 	c.Tasks = f.Tasks
 	c.IdleStop, c.Rebuild, c.Pool = f.IdleStop, f.Rebuild, f.Pool
+	c.CacheMax = f.CacheMax
+	if _, err := template.ParseSize(cmp.Or(c.CacheMax, defaultCacheMax)); err != nil {
+		return c, fmt.Errorf("%s: cache_max: %w", path, err)
+	}
 	if _, err := template.ParseInterval(c.IdleStop); err != nil {
 		return c, fmt.Errorf("%s: idle_stop: %w", path, err)
 	}

@@ -464,7 +464,7 @@ func (m *Manager) Reset(ctx context.Context, name string, latest bool) error {
 		if err := qemu.CreateOverlay(tmp, base, max(s.DiskMB, baseMB)); err != nil {
 			return err
 		}
-		id, err := m.writeSeed(name, "", s.User, s.Egress, s.Docker)
+		id, err := m.writeSeed(name, "", s.User, s.Egress, s.Docker, s.Cache)
 		if err != nil {
 			os.Remove(tmp)
 			return err

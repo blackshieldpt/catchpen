@@ -37,6 +37,9 @@ type Spec struct {
 	NotifyCmd  []string // argv spawned per connection to NotifyAddr (agent notifications)
 	NotifyIP   string
 	NotifyPort int
+	CacheCmd   []string // argv spawned per connection to CacheIP (package caches)
+	CacheIP    string
+	CachePort  int
 
 	QMP        string // unix socket path
 	Serial     string // unix socket path (ignored when SerialFile is set)
@@ -83,6 +86,9 @@ func (s Spec) netdev() (string, error) {
 	}
 	if len(s.NotifyCmd) > 0 {
 		opts = append(opts, fmt.Sprintf("guestfwd=tcp:%s:%d-cmd:%s", s.NotifyIP, s.NotifyPort, esc(shellQuote(s.NotifyCmd))))
+	}
+	if len(s.CacheCmd) > 0 {
+		opts = append(opts, fmt.Sprintf("guestfwd=tcp:%s:%d-cmd:%s", s.CacheIP, s.CachePort, esc(shellQuote(s.CacheCmd))))
 	}
 	return strings.Join(opts, ","), nil
 }

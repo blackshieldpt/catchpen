@@ -286,8 +286,8 @@ func TestIsPrivate(t *testing.T) {
 		"::ffff:127.0.0.1": true, "::ffff:10.0.0.1": true, "64:ff9b::7f00:1": true, "2002:7f00:1::": true, "::7f00:1": true,
 		"8.8.8.8": false, "93.184.215.14": false, "100.128.0.1": false, "2606:4700::1111": false, "::ffff:1.1.1.1": false,
 	} {
-		if got := isPrivate(net.ParseIP(ip)); got != want {
-			t.Errorf("isPrivate(%s) = %v, want %v", ip, got, want)
+		if got := IsPrivate(net.ParseIP(ip)); got != want {
+			t.Errorf("IsPrivate(%s) = %v, want %v", ip, got, want)
 		}
 	}
 }

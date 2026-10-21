@@ -32,6 +32,7 @@ import (
 
 	"github.com/blackshieldpt/curral/internal/agents"
 	"github.com/blackshieldpt/curral/internal/audit"
+	"github.com/blackshieldpt/curral/internal/cache"
 	"github.com/blackshieldpt/curral/internal/cloudinit"
 	"github.com/blackshieldpt/curral/internal/config"
 	"github.com/blackshieldpt/curral/internal/egress"
@@ -102,6 +103,7 @@ type State struct {
 	Instance   string                 `json:"instance,omitempty"`  // cloud-init instance-id
 	Pool       bool                   `json:"pool,omitempty"`      // a warm pool VM, not claimed yet
 	Resume     string                 `json:"resume,omitempty"`    // memory snapshot the next start resumes
+	Cache      []string               `json:"cache,omitempty"`     // package caches it uses
 }
 
 // Runtime describes a running VM.
@@ -147,6 +149,33 @@ func (m *Manager) tmuxDo(fn func(hosttmux.Tmux) error) {
 	if err := fn(*m.Tmux); err != nil {
 		m.logf("warning: host tmux: %v", err)
 	}
+}
+
+// vmCaches are the caches a VM of t uses: none with egress none, docker
+// only with docker.
+func vmCaches(t *template.Template) []string {
+	if t.Network.Egress == egress.ModeNone {
+		return nil
+	}
+	var out []string
+	for _, c := range t.Cache {
+		if c != "docker" || t.HasDocker() {
+			out = append(out, c)
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// buildCaches are the caches a base build of t uses: docker isn't running
+// with the mirror configured during it.
+func buildCaches(t *template.Template) []string {
+	return slices.DeleteFunc(vmCaches(t), func(c string) bool { return c == "docker" })
+}
+
+func (m *Manager) cacheCmd(dir, name string, caches []string) []string {
+	return []string{m.Bin, "cache-stdio", "--dir", dir, "--vm", name, "--store", m.P.Pkg(), "--kinds", strings.Join(caches, ","),
+		"--max", strconv.FormatInt(m.Cfg.CacheMaxBytes(), 10)}
 }
 
 func notifyCmd(bin, dir, name string, task bool) []string {
@@ -252,7 +281,8 @@ func (m *Manager) Resolve(tplName, distro string) (*Resolved, error) {
 	}
 	t.Distro = d
 	user := m.Cfg.Defaults.User
-	ud, err := cloudinit.BuildUserData(t, user)
+	// The caches a build uses aren't baked in: they don't make another base.
+	ud, err := cloudinit.BuildUserData(t, user, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -335,7 +365,8 @@ func (m *Manager) EnsureBase(ctx context.Context, r *Resolved, rebuild bool) (st
 	if err := qemu.Convert(img, work, buildDiskMB); err != nil {
 		return "", err
 	}
-	ud, err := cloudinit.BuildUserData(r.T, r.User)
+	caches := buildCaches(r.T)
+	ud, err := cloudinit.BuildUserData(r.T, r.User, caches)
 	if err != nil {
 		return "", err
 	}
@@ -363,6 +394,9 @@ func (m *Manager) EnsureBase(ctx context.Context, r *Resolved, rebuild bool) (st
 		Disk: work, Seed: seed, Egress: egress.ModeAllowlist, SerialFile: consolef, LogFile: logf,
 		ProxyCmd: []string{m.Bin, "egress-stdio", "--dir", edir, "--vm", "build-" + r.T.Name},
 		ProxyIP:  cloudinit.ProxyAddr, ProxyPort: cloudinit.ProxyPort,
+	}
+	if len(caches) > 0 {
+		spec.CacheCmd, spec.CacheIP, spec.CachePort = m.cacheCmd(edir, "build-"+r.T.Name, caches), cache.Addr, cache.Port
 	}
 	err = m.runForeground(ctx, spec, logf, consolef, buildTimeout)
 	_ = os.Rename(filepath.Join(edir, egress.LogFile), stem+".egress.log")
@@ -682,7 +716,8 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 	}()
 	var pooled *State
 	if !o.pool && !o.Rebuild {
-		key := poolKey{r.T.Name, r.Distro.Name, base, res.CPUs, memMB, max(diskMB, baseMB), egressMode, r.User, r.T.HasDocker()}
+		key := poolKey{r.T.Name, r.Distro.Name, base, res.CPUs, memMB, max(diskMB, baseMB), egressMode, r.User, r.T.HasDocker(),
+			strings.Join(vmCaches(r.T), ",")}
 		if pooled, err = m.claimPool(name, key); err != nil {
 			return nil, err
 		}
@@ -702,7 +737,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		_ = os.Remove(filepath.Join(m.dir(name), egress.DenylistFile))
 		instance = pooled.Instance
 	}
-	if instance, err = m.writeSeed(name, instance, r.User, egressMode, r.T.HasDocker()); err != nil {
+	if instance, err = m.writeSeed(name, instance, r.User, egressMode, r.T.HasDocker(), vmCaches(r.T)); err != nil {
 		return nil, err
 	}
 	if egressMode == egress.ModeAllowlist {
@@ -734,7 +769,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		Egress: egressMode, Docker: r.T.HasDocker(), Created: time.Now().UTC(),
 		Agents: r.T.Agents, Env: r.T.Env, MCP: r.T.MCP, Sync: r.T.Sync,
 		Repos: s.Repos, Forges: s.Forges, ForgeUsers: s.ForgeUsers, SSH: r.T.SSH, Ephemeral: o.Ephemeral, Task: o.Task,
-		IdleStop: r.T.IdleStop, Instance: instance, Pool: o.pool,
+		IdleStop: r.T.IdleStop, Instance: instance, Pool: o.pool, Cache: vmCaches(r.T),
 	}
 	if pooled != nil {
 		s.Booted, s.Resume = true, pooled.Resume
@@ -790,7 +825,7 @@ func agentHosts(t *template.Template) []string {
 
 // writeSeed writes the NoCloud seed; id "" makes a new instance (cloud-init
 // runs first boot again), the same id keeps it and just renames the host.
-func (m *Manager) writeSeed(name, id, user, egressMode string, docker bool) (string, error) {
+func (m *Manager) writeSeed(name, id, user, egressMode string, docker bool, caches []string) (string, error) {
 	k := m.keys(name)
 	pub, err := k.ClientPub()
 	if err != nil {
@@ -807,7 +842,7 @@ func (m *Manager) writeSeed(name, id, user, egressMode string, docker bool) (str
 	}
 	ud, err := cloudinit.InstanceUserData(cloudinit.Instance{
 		Name: name, User: user, AuthorizedKey: pub,
-		HostKey: hpriv, HostPub: hpub, Egress: egressMode, Docker: docker,
+		HostKey: hpriv, HostPub: hpub, Egress: egressMode, Docker: docker, Cache: caches,
 	})
 	if err != nil {
 		return "", err
@@ -911,6 +946,9 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 		NotifyIP:  cloudinit.NotifyAddr, NotifyPort: cloudinit.NotifyPort,
 		QMP: m.file(name, qmpSock), Serial: m.file(name, serialSock), SerialLog: m.Debug,
 		Pidfile: m.file(name, pidFile),
+	}
+	if len(s.Cache) > 0 {
+		spec.CacheCmd, spec.CacheIP, spec.CachePort = m.cacheCmd(m.dir(name), name, s.Cache), cache.Addr, cache.Port
 	}
 	if from != nil {
 		spec.LoadVM, spec.Machine = from.snap, from.machine

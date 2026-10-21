@@ -64,10 +64,11 @@ network:
   presets: [go]
   allow: [registry.example.com:443]
   on_deny: log               # log | prompt
+cache: [apt, go, npm]        # host package caches (default: all five); [] turns them off
 ```
 
 Lists (packages, scripts, presets, allow, ...) append to the parent template; scalars
-override. Software is baked into the base image; changing it triggers a rebuild on the
+override, and so does `cache`. Software is baked into the base image; changing it triggers a rebuild on the
 next `up` of a new VM (`curral template build <name> --rebuild` to force).
 
 Global defaults go in `~/.config/curral/config.yaml`:
@@ -331,8 +332,8 @@ discards the VM's disk (keys, forges and settings stay; repos are cloned again);
 `rebase` copies what differs into the VM's disk so the guest sees exactly the same
 files, without new packages, and frees the old base; it deletes the VM's snapshots.
 `gc` removes bases no VM uses (each template's current base stays) and leftovers of
-interrupted builds, downloads, resets and destroys; recordings, transcripts, tasks and
-the audit log are never removed.
+interrupted builds, downloads, resets and destroys, and trims the package caches to
+`cache_max`; recordings, transcripts, tasks and the audit log are never removed.
 
 ## Daemon, warm pool and idle stop
 
@@ -371,6 +372,34 @@ A VM is idle when nothing is connected to its ssh or forwarded ports (sessions, 
 `forward`, editors over ssh), it runs no task and QEMU used under 5% of a core since
 the previous check (every minute). It is shut down gracefully; ephemeral VMs are left
 alone.
+
+## Package caches
+
+```yaml
+# config.yaml
+cache_max: 20G          # default; least recently used objects are removed past it
+```
+
+```
+curral cache            # what each cache holds
+curral cache clear [apt|go|npm|pypi|docker ...]
+```
+
+VMs of templates listing `cache:` fetch packages through curral on the host at
+`10.0.2.102`, which keeps what never changes in `~/.cache/curral/pkg/` for every other VM
+and base build: `.deb` files (from the Ubuntu and Debian archive and security mirrors),
+Go module files and checksum database tiles, npm tarballs, PyPI files and Docker Hub
+layers and manifests by digest. Indexes (apt lists, npm and PyPI metadata, tags, Go
+version lists) are fetched every time. The guest is preconfigured: apt, `GOPROXY`,
+npm, yarn and pnpm, pip and uv, and Docker's registry mirror (added to the base's
+`daemon.json`). Cached hosts need no allowlist entry, but `egress deny` applies; their
+fetches appear in `egress log` as `CACHE`. Other mirrors, registries and private indexes
+still go through the egress proxy. Base builds use the template's caches too (Docker
+excepted) without changing the base; VMs with `egress: none` use none.
+
+The caches trim themselves to `cache_max` every 10 minutes while fetching (and `gc`
+does), and store nothing that would leave less than 5% of the filesystem free; objects
+the server sends without a length are passed through, not stored.
 
 ## Egress
 
@@ -433,6 +462,13 @@ distinct destinations waiting (more are denied), so a guest can't bury you in pr
   Docker's apt key is fingerprint-pinned.
 - Allowlist entries match the requested name, not the resolved address, and CDN hosts
   on the allowlist (e.g. `*.githubusercontent.com`) can be used for domain fronting.
+- The package caches fetch over HTTPS from their fixed upstreams and the CDNs those
+  redirect to, never from private addresses, and accept only GET and HEAD: a cache is
+  about as open as allowlisting its preset. proxy.golang.org and sum.golang.org fetch
+  any module path they're asked for, as with the `go` preset. Guests can't put anything
+  in the store; Docker objects and apt by-hash files are checked against their digest,
+  the rest by the clients (apt signatures, Go checksum database, lockfile hashes). The
+  store is shared by all VMs: a VM can tell whether a package was cached (timing).
 - The agent user has passwordless sudo inside the VM; the VM is the boundary.
 - Memory snapshots contain whatever was in the guest's memory, credentials included;
   they live inside the VM's disk (in its `0700` directory) and go away with it, `reset`
@@ -452,6 +488,7 @@ distinct destinations waiting (more are denied), so a guest can't bury you in pr
   transcripts/<name>/        agent session stores copied from the VM
   tasks/<id>/                task.json, prompt.md, output.jsonl, result.md, supervisor.log
   audit.jsonl                host audit log
+~/.cache/curral/pkg/         package caches (apt, go, npm, pypi, docker)
 ```
 
 Build problems: `curral --debug up ...` streams the whole build-script log instead of
