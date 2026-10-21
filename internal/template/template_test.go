@@ -86,6 +86,10 @@ func TestLoadErrors(t *testing.T) {
 		"named":    {"name: other\n", "does not match file name"},
 		"missing":  {"scripts: [nope.sh]\n", "asset \"nope.sh\""},
 		"cachex":   {"cache: [maven]\n", "unknown cache \"maven\""},
+		"canaryx":  {"canaries: [ssh]\n", "unknown canary \"ssh\""},
+		"ompyolo":  {"agents: { omp: { yolo: true } }\n", "agents.omp.yolo is not supported"},
+		"ompkey":   {"agents: { omp: { keys: [FOO_KEY] } }\n", "agents.omp.keys: unknown provider key"},
+		"pinode":   {"agents: { pi: {} }\n", "agents need runtimes.node"},
 	}
 	dir := t.TempDir()
 	write(t, dir, "cycle2.yaml", "extends: cycle\n")
@@ -120,6 +124,21 @@ func TestCacheMerge(t *testing.T) {
 		if !slices.Equal(tp.Cache, want) {
 			t.Errorf("%s: cache = %v, want %v", name, tp.Cache, want)
 		}
+	}
+	write(t, dir, "nocanary.yaml", "extends: default\ncanaries: []\n")
+	for name, want := range map[string][]string{"default": {"aws", "env", "git"}, "nocanary": {}, "minimal": nil} {
+		if tp, err := (Loader{UserDir: dir}).Load(name); err != nil || !slices.Equal(tp.Canaries, want) {
+			t.Errorf("%s: canaries %v %v", name, tp.Canaries, err)
+		}
+	}
+}
+
+func TestOMPNeedsNoNode(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "o.yaml", "extends: minimal\nagents: { omp: { version: 18.12.5, keys: [ANTHROPIC_API_KEY] } }\n")
+	tp, err := (Loader{UserDir: dir}).Load("o")
+	if err != nil || tp.Agents.OMP == nil || tp.Agents.OMP.Version != "18.12.5" || !tp.Agents.Any() {
+		t.Fatalf("%+v %v", tp, err)
 	}
 }
 

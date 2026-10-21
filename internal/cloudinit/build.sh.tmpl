@@ -132,6 +132,25 @@ cat >> /etc/environment <<'CURRAL_ENV'
 {{- end}}
 CURRAL_ENV
 {{- end}}
+{{- if .OMP}}
+
+log "installing omp"
+tag={{.OMP}}
+if [ "$tag" = latest ]; then
+  tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/can1357/oh-my-pi/releases/latest)
+  tag=${tag##*/}
+fi
+rel=https://github.com/can1357/oh-my-pi/releases/download/$tag
+curl -fsSL -o /tmp/omp-linux-x64 "$rel/omp-linux-x64"
+curl -fsSL -o /tmp/omp-SHA256SUMS "$rel/SHA256SUMS.txt"
+(cd /tmp && grep -E '^[0-9a-f]{64} [ *]omp-linux-x64$' omp-SHA256SUMS | sha256sum -c -)
+install -m 0755 /tmp/omp-linux-x64 /usr/local/bin/omp
+rm -f /tmp/omp-linux-x64 /tmp/omp-SHA256SUMS
+omp --version
+# No update or marketplace checks: versions change by rebuilding the base.
+sudo -u {{.User}} -H omp config set startup.checkUpdate false
+sudo -u {{.User}} -H omp config set marketplace.autoUpdate off
+{{- end}}
 {{- range .Scripts}}
 
 log "running {{.}}"

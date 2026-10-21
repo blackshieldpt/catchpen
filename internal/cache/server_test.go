@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blackshieldpt/curral/internal/canary"
 	"github.com/blackshieldpt/curral/internal/egress"
 )
 
@@ -471,5 +472,26 @@ func TestRedirectsChecked(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(s.Dir, egress.LogFile)); !strings.Contains(string(b), `"host":"cdn.example","port":443,"action":"cache","reason":"redirect /blob"`) {
 		t.Errorf("redirect hop not logged: %s", b)
+	}
+}
+
+func TestCanaryInRequest(t *testing.T) {
+	up, c := newUpstream(t, func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "x") })
+	s := newServer(t, t.TempDir(), c, "go")
+	cs := canary.Generate([]string{"git"})
+	if err := canary.Save(s.Dir, cs); err != nil {
+		t.Fatal(err)
+	}
+	var hit string
+	s.OnCanary = func(c *canary.Canary, where string) { hit = c.Kind + ": " + where }
+	if w := get(s, "/go/example.com/"+cs[0].Values[0]+"/@v/list"); w.Code != http.StatusNotFound || hit != "git: in a package cache request" {
+		t.Errorf("%d %q", w.Code, hit)
+	}
+	if up.count("proxy.golang.org/example.com/"+cs[0].Values[0]+"/@v/list") != 0 {
+		t.Error("fetched upstream")
+	}
+	hit = ""
+	if w := get(s, "/go/x/@v/list"); w.Code != 200 || hit != "" {
+		t.Errorf("clean request: %d %q", w.Code, hit)
 	}
 }

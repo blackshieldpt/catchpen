@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/blackshieldpt/curral/internal/canary"
 )
 
 func setup(t *testing.T, cfg Config, allow, deny []string) *Proxy {
@@ -385,3 +387,37 @@ type safeBuf struct {
 
 func (s *safeBuf) Write(p []byte) (int, error) { s.mu.Lock(); defer s.mu.Unlock(); return s.b.Write(p) }
 func (s *safeBuf) String() string              { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
+
+func TestCanaryHits(t *testing.T) {
+	cs := canary.Generate([]string{"aws", "env"})
+	p := setup(t, Config{AllowPrivate: true}, []string{cs[0].Hosts[0], "example.com"}, nil)
+	if err := canary.Save(p.Dir, cs); err != nil {
+		t.Fatal(err)
+	}
+	var hits []string
+	p.OnCanary = func(c *canary.Canary, where string) { hits = append(hits, c.Kind+": "+where) }
+
+	// Allowlisted or not, a canary host is never reached.
+	c, _ := serve(t, p)
+	expect403(t, c, cs[0].Hosts[0]+":443", "not allowed")
+	c, _ = serve(t, p)
+	c.SetDeadline(time.Now().Add(5 * time.Second))
+	go fmt.Fprintf(c, "GET http://example.com/x HTTP/1.1\r\nHost: example.com\r\nAuthorization: Bearer %s\r\n\r\n", cs[1].Values[2])
+	if resp, err := http.ReadResponse(bufio.NewReader(c), nil); err != nil || resp.StatusCode != 403 {
+		t.Fatalf("plain request with a canary value: %v %v", resp, err)
+	}
+	want := []string{"aws: connection to " + cs[0].Hosts[0] + ":443", "env: in a request to example.com:80"}
+	if strings.Join(hits, "|") != strings.Join(want, "|") {
+		t.Errorf("hits %q, want %q", hits, want)
+	}
+	logs := readLog(t, p.Dir)
+	if len(logs) != 2 || logs[0].Action != ActionDeny || logs[0].Reason != "canary (aws)" {
+		t.Errorf("log %+v", logs)
+	}
+	// Other requests are unaffected.
+	c, _ = serve(t, p)
+	expect403(t, c, "other.example:443", "not in allowlist")
+	if len(hits) != 2 {
+		t.Errorf("hits %q", hits)
+	}
+}

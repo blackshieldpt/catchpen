@@ -19,6 +19,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/blackshieldpt/curral/internal/cache"
+	"github.com/blackshieldpt/curral/internal/canary"
 	"github.com/blackshieldpt/curral/internal/egress"
 )
 
@@ -109,6 +110,7 @@ type Template struct {
 	Repos       []string          `yaml:"repos,omitempty" json:"repos,omitempty"`         // cloned into /workspace at start
 	IdleStop    string            `yaml:"idle_stop,omitempty" json:"idle_stop,omitempty"` // overrides config idle_stop
 	Cache       []string          `yaml:"cache,omitempty" json:"cache,omitempty"`         // host pull-through caches; replaces the parent's list
+	Canaries    []string          `yaml:"canaries,omitempty" json:"canaries,omitempty"`   // decoy credentials planted in the guest; replaces the parent's list
 
 	// Source is "builtin" or the file path; assets resolve relative to it.
 	Source string `yaml:"-" json:"-"`
@@ -278,6 +280,9 @@ func (t *Template) merge(o *Template) {
 	if o.Cache != nil { // cache: [] turns them off
 		t.Cache = o.Cache
 	}
+	if o.Canaries != nil {
+		t.Canaries = o.Canaries
+	}
 	for k, v := range o.assets {
 		t.assets[k] = v
 	}
@@ -365,6 +370,11 @@ func (t *Template) Validate() error {
 	for _, c := range t.Cache {
 		if err := cache.Valid(c); err != nil {
 			return fmt.Errorf("cache: %w", err)
+		}
+	}
+	for _, c := range t.Canaries {
+		if err := canary.Valid(c); err != nil {
+			return fmt.Errorf("canaries: %w", err)
 		}
 	}
 	for _, tool := range t.Tools {

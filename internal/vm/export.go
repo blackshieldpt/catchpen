@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -128,8 +129,16 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 	if _, err := hostGitCmd(ctx, into, "bundle", "verify", "-q", tmp.Name()); err != nil {
 		return nil, fmt.Errorf("bundle from %s failed verification: %w", name, err)
 	}
-	ref := "refs/curral/" + name + "/" + branch
-	if _, err := hostGitCmd(ctx, into, "fetch", "--no-tags", "--no-write-fetch-head", tmp.Name(), "+refs/heads/"+branch+":"+ref); err != nil {
+	// Fetched aside and scanned for canaries before it replaces ref.
+	ref, incoming := "refs/curral/"+name+"/"+branch, "refs/curral-incoming/"+name+"/"+branch
+	if _, err := hostGitCmd(ctx, into, "fetch", "--no-tags", "--no-write-fetch-head", tmp.Name(), "+refs/heads/"+branch+":"+incoming); err != nil {
+		return nil, err
+	}
+	defer hostGitCmd(context.WithoutCancel(ctx), into, "update-ref", "-d", incoming)
+	if err := m.scanCommits(ctx, name, into, incoming); err != nil {
+		return nil, err
+	}
+	if _, err := hostGitCmd(ctx, into, "update-ref", ref, incoming); err != nil {
 		return nil, err
 	}
 	if o.Patches != "" {
@@ -141,7 +150,17 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 			return nil, err
 		}
 		stderr, err := sshx.Stream(ctx, c, "git -C "+dir+" format-patch --stdout origin/HEAD.."+shQuote(branch), f, maxBundle)
+		if err == nil {
+			_, err = f.Seek(0, io.SeekStart)
+		}
+		if err == nil {
+			err = m.scanExport(name, f, "in patches pulled from it")
+		}
 		f.Close()
+		if errors.Is(err, ErrCanary) {
+			os.Remove(f.Name())
+			return nil, err
+		}
 		if err != nil {
 			return nil, fmt.Errorf("format-patch: %w\n%s", err, sshx.Printable(strings.TrimSpace(string(stderr))))
 		}
@@ -184,6 +203,18 @@ func (m *Manager) PR(ctx context.Context, name string, o PROpts) (string, error)
 	if err := validBranch(head); err != nil {
 		return "", err
 	}
+	body := fmt.Sprintf("Opened by curral from VM `%s` (branch `%s`).", name, p.Branch)
+	if o.BodyFile != "" {
+		b, err := os.ReadFile(o.BodyFile)
+		if err != nil {
+			return "", err
+		}
+		body = string(b)
+	}
+	// A task's body carries the agent's result (the title is a commit's, scanned).
+	if err := m.scanExport(name, strings.NewReader(o.Title+"\n"+body), "in the pull request"); err != nil {
+		return "", err
+	}
 	pctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	if _, err := hostGitCmd(pctx, p.Into, "push", remote, p.Ref+":refs/heads/"+head); err != nil {
@@ -206,14 +237,6 @@ func (m *Manager) PR(ctx context.Context, name string, o PROpts) (string, error)
 			return "", err
 		}
 		title = strings.TrimSpace(string(out))
-	}
-	body := fmt.Sprintf("Opened by curral from VM `%s` (branch `%s`).", name, p.Branch)
-	if o.BodyFile != "" {
-		b, err := os.ReadFile(o.BodyFile)
-		if err != nil {
-			return "", err
-		}
-		body = string(b)
 	}
 	url, err := c.CreatePR(ctx, p.Repo.Repo, head, base, title, body, o.Draft)
 	if err != nil {

@@ -42,6 +42,8 @@ type Config struct {
 	Pool    []PoolEntry `yaml:"pool"`
 	// CacheMax caps the package caches (default 20G); the least recently used objects go first.
 	CacheMax string `yaml:"cache_max"`
+	// CanaryAction is what a canary hit does to the VM: pause (default), stop or log.
+	CanaryAction string `yaml:"canary_action"`
 }
 
 // PoolEntry asks for Size booted, stopped VMs of a template, ready for up
@@ -66,6 +68,13 @@ func (t TaskLimits) MaxMemoryMB() int64 {
 }
 
 const defaultCacheMax = "20G"
+
+// Canary actions.
+const (
+	CanaryPause = "pause"
+	CanaryStop  = "stop"
+	CanaryLog   = "log"
+)
 
 // CacheMaxBytes is the package caches' size limit.
 func (c Config) CacheMaxBytes() int64 {
@@ -118,6 +127,11 @@ func Load(path string) (Config, error) {
 	c.Tasks = f.Tasks
 	c.IdleStop, c.Rebuild, c.Pool = f.IdleStop, f.Rebuild, f.Pool
 	c.CacheMax = f.CacheMax
+	switch c.CanaryAction = f.CanaryAction; c.CanaryAction {
+	case "", CanaryPause, CanaryStop, CanaryLog:
+	default:
+		return c, fmt.Errorf("%s: canary_action must be pause, stop or log", path)
+	}
 	if _, err := template.ParseSize(cmp.Or(c.CacheMax, defaultCacheMax)); err != nil {
 		return c, fmt.Errorf("%s: cache_max: %w", path, err)
 	}

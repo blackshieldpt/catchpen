@@ -18,7 +18,7 @@ const (
 type Agent struct {
 	Version string   `yaml:"version,omitempty" json:"version,omitempty"`
 	Auth    string   `yaml:"auth,omitempty" json:"auth,omitempty"` // claude only
-	Keys    []string `yaml:"keys,omitempty" json:"keys,omitempty"` // opencode/pi: provider API key secrets
+	Keys    []string `yaml:"keys,omitempty" json:"keys,omitempty"` // opencode/pi/omp: provider API key secrets
 	// Yolo makes curral run skip permission prompts (claude, opencode); the VM is the sandbox.
 	Yolo *bool `yaml:"yolo,omitempty" json:"yolo,omitempty"`
 }
@@ -30,9 +30,12 @@ type Agents struct {
 	Claude   *Agent `yaml:"claude,omitempty" json:"claude,omitempty"`
 	OpenCode *Agent `yaml:"opencode,omitempty" json:"opencode,omitempty"`
 	Pi       *Agent `yaml:"pi,omitempty" json:"pi,omitempty"`
+	OMP      *Agent `yaml:"omp,omitempty" json:"omp,omitempty"` // oh-my-pi
 }
 
-func (a Agents) Any() bool { return a.Claude != nil || a.OpenCode != nil || a.Pi != nil }
+func (a Agents) Any() bool {
+	return a.Claude != nil || a.OpenCode != nil || a.Pi != nil || a.OMP != nil
+}
 
 // MCP is an MCP server rendered into every agent's config.
 type MCP struct {
@@ -52,8 +55,8 @@ type Sync struct {
 func (s Sync) Claude() bool { return s.ClaudeConfig != nil && *s.ClaudeConfig }
 func (s Sync) Git() bool    { return s.GitIdentity == nil || *s.GitIdentity }
 
-// Provider maps an API key secret to the provider id opencode and pi use and
-// the API host the VM must reach.
+// Provider maps an API key secret (also the variable omp reads it from) to
+// the provider id opencode and pi use and the API host the VM must reach.
 type Provider struct {
 	ID   string
 	Host string
@@ -100,6 +103,7 @@ func (t *Template) mergeAgents(o *Template) {
 	t.Agents.Claude = mergeAgent(t.Agents.Claude, o.Agents.Claude)
 	t.Agents.OpenCode = mergeAgent(t.Agents.OpenCode, o.Agents.OpenCode)
 	t.Agents.Pi = mergeAgent(t.Agents.Pi, o.Agents.Pi)
+	t.Agents.OMP = mergeAgent(t.Agents.OMP, o.Agents.OMP)
 	for k, v := range o.Env {
 		if t.Env == nil {
 			t.Env = map[string]string{}
@@ -147,10 +151,10 @@ func validValue(v string) error {
 }
 
 func (t *Template) validateAgents() error {
-	if t.Agents.Any() && t.Runtimes.Node == "" {
-		return fmt.Errorf("agents need runtimes.node")
+	if (t.Agents.Claude != nil || t.Agents.OpenCode != nil || t.Agents.Pi != nil) && t.Runtimes.Node == "" {
+		return fmt.Errorf("agents need runtimes.node (omp doesn't)")
 	}
-	for name, a := range map[string]*Agent{"claude": t.Agents.Claude, "opencode": t.Agents.OpenCode, "pi": t.Agents.Pi} {
+	for name, a := range map[string]*Agent{"claude": t.Agents.Claude, "opencode": t.Agents.OpenCode, "pi": t.Agents.Pi, "omp": t.Agents.OMP} {
 		if a == nil {
 			continue
 		}
@@ -169,8 +173,8 @@ func (t *Template) validateAgents() error {
 		} else if a.Auth != "" {
 			return fmt.Errorf("agents.%s.auth is not supported (subscription tokens are for Claude Code only); use keys", name)
 		}
-		if name == "pi" && a.Yolo != nil {
-			return fmt.Errorf("agents.pi.yolo is not supported (pi has no permission prompts)")
+		if (name == "pi" || name == "omp") && a.Yolo != nil {
+			return fmt.Errorf("agents.%s.yolo is not supported (%[1]s has no permission prompts)", name)
 		}
 		for _, k := range a.Keys {
 			if _, ok := Providers[k]; !ok {

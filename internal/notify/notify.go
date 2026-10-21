@@ -28,10 +28,11 @@ const (
 	EgressPrompt = "egress.prompt"
 	AgentWaiting = "agent.waiting"
 	VMIdleStop   = "vm.idle_stop"
+	CanaryHit    = "canary.hit"
 )
 
 // Kinds lists the event kinds a config may name.
-var Kinds = []string{TaskDone, TaskFailed, EgressPrompt, AgentWaiting, VMIdleStop}
+var Kinds = []string{TaskDone, TaskFailed, EgressPrompt, AgentWaiting, VMIdleStop, CanaryHit}
 
 // Config is the notify: section of config.yaml.
 type Config struct {

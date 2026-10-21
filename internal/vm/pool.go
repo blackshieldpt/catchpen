@@ -45,10 +45,11 @@ type poolKey struct {
 	Egress, User           string
 	Docker                 bool
 	Cache                  string // the cache kinds, comma separated
+	Canaries               string // the canary kinds, comma separated
 }
 
 func keyOf(s *State) poolKey {
-	return poolKey{s.Template, s.Distro, s.Base, s.CPUs, s.MemoryMB, s.DiskMB, s.Egress, s.User, s.Docker, strings.Join(s.Cache, ",")}
+	return poolKey{s.Template, s.Distro, s.Base, s.CPUs, s.MemoryMB, s.DiskMB, s.Egress, s.User, s.Docker, strings.Join(s.Cache, ","), strings.Join(s.Canaries, ",")}
 }
 
 // poolKeyFor is the key of a VM created now from r without overrides.
@@ -67,7 +68,8 @@ func (m *Manager) poolKeyFor(r *Resolved) (poolKey, error) {
 		diskMB = max(diskMB, mb)
 	}
 	return poolKey{r.T.Name, r.Distro.Name, base, res.CPUs, memMB, diskMB,
-		cmp.Or(r.T.Network.Egress, egress.ModeAllowlist), r.User, r.T.HasDocker(), strings.Join(vmCaches(r.T), ",")}, nil
+		cmp.Or(r.T.Network.Egress, egress.ModeAllowlist), r.User, r.T.HasDocker(), strings.Join(vmCaches(r.T), ","),
+		strings.Join(canaryKinds(r.T), ",")}, nil
 }
 
 // PoolVMs lists the warm pool: ready VMs and ones being filled.

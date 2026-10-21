@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/blackshieldpt/curral/internal/audit"
+	"github.com/blackshieldpt/curral/internal/canary"
 	"github.com/blackshieldpt/curral/internal/egress"
 	"github.com/blackshieldpt/curral/internal/notify"
 	"github.com/blackshieldpt/curral/internal/vm"
@@ -250,6 +251,15 @@ func promptDecider(m *vm.Manager, inner egress.Decider) egress.Decider {
 	}
 }
 
+// canaryHit hands a canary hit seen by a guest-facing process to the manager.
+func canaryHit(name string) func(*canary.Canary, string) {
+	return func(c *canary.Canary, where string) {
+		if m, err := manager(); err == nil {
+			m.CanaryHit(name, c, where)
+		}
+	}
+}
+
 func egressStdioCmd() *cobra.Command {
 	var dir, name string
 	c := &cobra.Command{
@@ -275,7 +285,7 @@ func egressStdioCmd() *cobra.Command {
 			// stdin and stdout are the same socket; drop our copies so only conn holds it.
 			os.Stdin.Close()
 			os.Stdout.Close()
-			p := &egress.Proxy{Dir: dir, VM: name}
+			p := &egress.Proxy{Dir: dir, VM: name, OnCanary: canaryHit(name)}
 			return p.ServeConn(cmd.Context(), conn)
 		},
 	}

@@ -7,6 +7,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/blackshieldpt/curral/internal/canary"
 	tpl "github.com/blackshieldpt/curral/internal/template"
 )
 
@@ -194,5 +195,55 @@ func TestBuildScriptCaches(t *testing.T) {
 	}
 	if out, err := exec.Command("bash", "-n", "-c", s).CombinedOutput(); err != nil {
 		t.Errorf("bash -n: %v %s", err, out)
+	}
+}
+
+func TestInstanceUserDataCanaries(t *testing.T) {
+	cs := canary.Generate(canary.Kinds)
+	in := Instance{Name: "vm1", User: "agent", AuthorizedKey: "k", HostKey: "PRIV", HostPub: "p", Egress: "allowlist", Canaries: canary.Files(cs)}
+	m := parse(t, mustB(InstanceUserData(in)))
+	n := 0
+	for _, f := range m["write_files"].([]any) {
+		f := f.(map[string]any)
+		if p := f["path"].(string); strings.HasPrefix(p, "/home/agent/.") && p != "/home/agent/.docker/config.json" {
+			n++
+			if f["owner"] != "agent:agent" || f["permissions"] != "0600" || f["defer"] != true {
+				t.Errorf("%s: %v", p, f)
+			}
+		}
+	}
+	files := writeFiles(t, m)
+	if n != 4 || !strings.Contains(files["/home/agent/.aws/credentials"], cs[0].Values[0]) || !strings.Contains(files["/home/agent/.env.production"], cs[1].Hosts[0]) {
+		t.Errorf("%d decoys: %v", n, files)
+	}
+	if run := m["runcmd"].([]any); len(run) != 1 || strings.Join(toStrings(run[0].([]any)), " ") != "chown agent:agent /home/agent/.aws" {
+		t.Errorf("runcmd %v", run)
+	}
+}
+
+func TestBuildScriptOMP(t *testing.T) {
+	min := load(t, "minimal")
+	plain, _ := BuildScript(min, "agent", nil)
+	if strings.Contains(plain, "omp") {
+		t.Error("omp installed without agents.omp")
+	}
+	for v, tag := range map[string]string{"": "tag=latest\n", "18.12.5": "tag=v18.12.5\n", "v18.12.5": "tag=v18.12.5\n"} {
+		min.Agents.OMP = &tpl.Agent{Version: v}
+		s, err := BuildScript(min, "agent", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{tag, "releases/download/$tag", "sha256sum -c -", "install -m 0755 /tmp/omp-linux-x64 /usr/local/bin/omp", "\nomp --version\n",
+			"sudo -u agent -H omp config set startup.checkUpdate false"} {
+			if !strings.Contains(s, want) {
+				t.Errorf("%q: build script lacks %q", v, want)
+			}
+		}
+		if strings.Contains(s, "npm install -g") {
+			t.Error("omp isn't an npm package")
+		}
+		if out, err := exec.Command("bash", "-n", "-c", s).CombinedOutput(); err != nil {
+			t.Errorf("bash -n: %v %s", err, out)
+		}
 	}
 }

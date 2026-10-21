@@ -48,6 +48,8 @@ const (
 	VMRebase        = "vm.rebase"
 	VMIdleStop      = "vm.idle_stop"
 	PoolFill        = "pool.fill"
+	CanaryHit       = "canary.hit"
+	VMResume        = "vm.resume"
 	GC              = "gc"
 )
 

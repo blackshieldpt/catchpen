@@ -14,3 +14,4 @@ agents:
 network:
   presets: [github, npm, pypi, go, apt-ubuntu, apt-debian, docker-apt, docker-hub, ghcr]
 cache: [apt, go, npm, pypi, docker]   # host pull-through caches (docker: with docker: true)
+canaries: [aws, env, git]             # decoy credentials; their use pauses the VM

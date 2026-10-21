@@ -80,6 +80,7 @@ func fullSpec() Spec {
 			Claude:   &template.Agent{Auth: template.ClaudeOAuth},
 			OpenCode: &template.Agent{Keys: []string{"ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"}},
 			Pi:       &template.Agent{Keys: []string{"ANTHROPIC_API_KEY", "OPENAI_API_KEY"}},
+			OMP:      &template.Agent{Keys: []string{"OPENROUTER_API_KEY", "OPENAI_API_KEY"}},
 		},
 		Env: map[string]string{"FOO": "literal value", "BAR": "secret:BAR"},
 		MCP: []template.MCP{
@@ -112,7 +113,7 @@ func TestPushFull(t *testing.T) {
 	if strings.Contains(string(env), "ANTHROPIC_API_KEY") {
 		t.Error("ANTHROPIC_API_KEY in the shared env would override Claude's subscription token")
 	}
-	for _, f := range []string{envFile, claudeJSON, opencodeAuth, opencodeConfig, piAuth, piMCP} {
+	for _, f := range []string{envFile, claudeJSON, opencodeAuth, opencodeConfig, piAuth, piMCP, ompEnv, ompMCP} {
 		st, err := os.Stat(filepath.Join(home, f))
 		if err != nil || st.Mode().Perm() != 0o600 {
 			t.Errorf("%s: %v mode %v, want 0600", f, err, st.Mode())
@@ -154,6 +155,15 @@ func TestPushFull(t *testing.T) {
 	pm := readJSON(t, filepath.Join(home, piMCP))
 	if get(pm, "mcpServers", "fs", "command") != "npx" || get(pm, "mcpServers", "docs", "url") == nil || get(pm, "mcpServers", "old") != nil {
 		t.Errorf("pi mcp: %v", pm)
+	}
+
+	if b, _ := os.ReadFile(filepath.Join(home, ompEnv)); string(b) != "OPENROUTER_API_KEY="+orKey+"\n" {
+		t.Errorf("omp env: %q", b)
+	}
+	om := readJSON(t, filepath.Join(home, ompMCP))
+	if get(om, "mcpServers", "fs", "type") != "stdio" || get(om, "mcpServers", "fs", "env", "TOKEN") != "fs-secret" ||
+		get(om, "mcpServers", "old", "type") != "sse" || get(om, "mcpServers", "docs", "headers", "Authorization") != "Bearer x" {
+		t.Errorf("omp mcp: %v", om)
 	}
 
 	if strings.Join(res.Missing, ",") != "OPENAI_API_KEY,MISSING_MCP" && strings.Join(res.Missing, ",") != "MISSING_MCP,OPENAI_API_KEY" {
@@ -360,7 +370,7 @@ func TestPushHooks(t *testing.T) {
 	if doc.Model != "opus" || len(doc.Hooks["Stop"]) != 2 || len(doc.Hooks["Notification"]) != 1 || strings.Count(s, notifyURL) != 2 || !strings.Contains(s, `"mine"`) {
 		t.Errorf("settings.json:\n%s", s)
 	}
-	for _, f := range []string{opencodePlugin, piExtension} {
+	for _, f := range []string{opencodePlugin, piExtension, ompExtension} {
 		b, err := os.ReadFile(filepath.Join(home, f))
 		if err != nil || !strings.Contains(string(b), notifyURL) || !strings.Contains(string(b), "node:http") {
 			t.Errorf("%s: %v\n%s", f, err, b)

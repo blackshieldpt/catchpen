@@ -66,7 +66,7 @@ func ServeGuest(ctx context.Context, conn net.Conn, vm string, lim Limiter, get 
 	}
 	msg := g.Message
 	if msg == "" {
-		msg = "finished its turn" // Stop, session.idle, agent_settled
+		msg = "finished its turn" // Stop, session.idle, agent_settled, agent_end
 	}
 	n, err := get()
 	if err != nil {

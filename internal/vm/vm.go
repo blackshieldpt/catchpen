@@ -33,6 +33,7 @@ import (
 	"github.com/blackshieldpt/curral/internal/agents"
 	"github.com/blackshieldpt/curral/internal/audit"
 	"github.com/blackshieldpt/curral/internal/cache"
+	"github.com/blackshieldpt/curral/internal/canary"
 	"github.com/blackshieldpt/curral/internal/cloudinit"
 	"github.com/blackshieldpt/curral/internal/config"
 	"github.com/blackshieldpt/curral/internal/egress"
@@ -104,6 +105,7 @@ type State struct {
 	Pool       bool                   `json:"pool,omitempty"`      // a warm pool VM, not claimed yet
 	Resume     string                 `json:"resume,omitempty"`    // memory snapshot the next start resumes
 	Cache      []string               `json:"cache,omitempty"`     // package caches it uses
+	Canaries   []string               `json:"canaries,omitempty"`  // canary kinds planted (values: canaries.json)
 }
 
 // Runtime describes a running VM.
@@ -163,6 +165,18 @@ func vmCaches(t *template.Template) []string {
 			out = append(out, c)
 		}
 	}
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// canaryKinds are the canaries a VM of t gets: no aws decoy when the
+// template gives it AWS settings, which its endpoint_url would redirect.
+func canaryKinds(t *template.Template) []string {
+	aws := false
+	for k := range t.Env {
+		aws = aws || strings.HasPrefix(k, "AWS_")
+	}
+	out := slices.DeleteFunc(slices.Clone(t.Canaries), func(k string) bool { return aws && k == "aws" })
 	slices.Sort(out)
 	return slices.Compact(out)
 }
@@ -717,7 +731,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 	var pooled *State
 	if !o.pool && !o.Rebuild {
 		key := poolKey{r.T.Name, r.Distro.Name, base, res.CPUs, memMB, max(diskMB, baseMB), egressMode, r.User, r.T.HasDocker(),
-			strings.Join(vmCaches(r.T), ",")}
+			strings.Join(vmCaches(r.T), ","), strings.Join(canaryKinds(r.T), ",")}
 		if pooled, err = m.claimPool(name, key); err != nil {
 			return nil, err
 		}
@@ -726,6 +740,11 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 	if pooled == nil {
 		if err := m.keys(name).Generate(name); err != nil {
 			return nil, err
+		}
+		if kinds := canaryKinds(r.T); len(kinds) > 0 {
+			if err := canary.Save(m.dir(name), canary.Generate(kinds)); err != nil {
+				return nil, err
+			}
 		}
 		if err := qemu.CreateOverlay(m.file(name, diskFile), base, max(diskMB, baseMB)); err != nil {
 			return nil, err
@@ -769,7 +788,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		Egress: egressMode, Docker: r.T.HasDocker(), Created: time.Now().UTC(),
 		Agents: r.T.Agents, Env: r.T.Env, MCP: r.T.MCP, Sync: r.T.Sync,
 		Repos: s.Repos, Forges: s.Forges, ForgeUsers: s.ForgeUsers, SSH: r.T.SSH, Ephemeral: o.Ephemeral, Task: o.Task,
-		IdleStop: r.T.IdleStop, Instance: instance, Pool: o.pool, Cache: vmCaches(r.T),
+		IdleStop: r.T.IdleStop, Instance: instance, Pool: o.pool, Cache: vmCaches(r.T), Canaries: canaryKinds(r.T),
 	}
 	if pooled != nil {
 		s.Booted, s.Resume = true, pooled.Resume
@@ -803,7 +822,7 @@ func agentHosts(t *template.Template) []string {
 	if t.Agents.Claude != nil {
 		hosts = append(hosts, "api.anthropic.com:443")
 	}
-	for _, a := range []*template.Agent{t.Agents.OpenCode, t.Agents.Pi} {
+	for _, a := range []*template.Agent{t.Agents.OpenCode, t.Agents.Pi, t.Agents.OMP} {
 		if a != nil {
 			for _, k := range a.Keys {
 				hosts = append(hosts, template.Providers[k].Host+":443")
@@ -835,6 +854,10 @@ func (m *Manager) writeSeed(name, id, user, egressMode string, docker bool, cach
 	if err != nil {
 		return "", err
 	}
+	cs, err := canary.Load(m.dir(name))
+	if err != nil {
+		return "", err
+	}
 	if id == "" {
 		rnd := make([]byte, 4)
 		_, _ = rand.Read(rnd)
@@ -842,7 +865,7 @@ func (m *Manager) writeSeed(name, id, user, egressMode string, docker bool, cach
 	}
 	ud, err := cloudinit.InstanceUserData(cloudinit.Instance{
 		Name: name, User: user, AuthorizedKey: pub,
-		HostKey: hpriv, HostPub: hpub, Egress: egressMode, Docker: docker, Cache: caches,
+		HostKey: hpriv, HostPub: hpub, Egress: egressMode, Docker: docker, Cache: caches, Canaries: canary.Files(cs),
 	})
 	if err != nil {
 		return "", err
@@ -933,7 +956,7 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 		}
 		rt.Forwards = append(rt.Forwards, qemu.Forward{Host: h, Guest: p.Guest})
 	}
-	for _, f := range []string{qmpSock, serialSock, pidFile} {
+	for _, f := range []string{qmpSock, serialSock, pidFile, pausedFile} { // pausedFile: left by a crash or reboot
 		_ = os.Remove(m.file(name, f))
 	}
 	spec := qemu.Spec{
@@ -1131,6 +1154,7 @@ func (m *Manager) stopLocked(name string, force bool) error {
 	if !ok {
 		return nil
 	}
+	force = force || m.Paused(name) // a paused guest can't shut down
 	m.audit(audit.VMStop, name, map[string]any{"pid": pid, "force": force})
 	wait := func(d time.Duration) bool {
 		deadline := time.Now().Add(d)
@@ -1173,7 +1197,7 @@ func (m *Manager) cleanupRuntime(name string) error {
 	m.stopForwards(name)
 	m.tmuxDo(func(t hosttmux.Tmux) error { return t.Close(name) })
 	_ = m.agent(name).Stop()
-	for _, f := range []string{runtimeFile, qmpSock, serialSock, pidFile} {
+	for _, f := range []string{runtimeFile, qmpSock, serialSock, pidFile, pausedFile} {
 		_ = os.Remove(m.file(name, f))
 	}
 	return nil
@@ -1243,6 +1267,7 @@ func (m *Manager) saveTranscripts(name string) {
 type Info struct {
 	State
 	Running bool
+	Paused  bool // by a canary hit
 	Runtime *Runtime
 }
 
@@ -1264,7 +1289,7 @@ func (m *Manager) List() ([]Info, error) {
 			continue
 		}
 		rt, ok := m.Running(e.Name())
-		out = append(out, Info{State: *s, Running: ok, Runtime: rt})
+		out = append(out, Info{State: *s, Running: ok, Paused: ok && m.Paused(e.Name()), Runtime: rt})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
@@ -1310,6 +1335,9 @@ func (m *Manager) SSHPort(name string) (int, error) {
 	}
 	if rt.SSHPort == 0 {
 		return 0, fmt.Errorf("VM %s: runtime state missing", name)
+	}
+	if m.Paused(name) {
+		return 0, fmt.Errorf("VM %s was paused by a canary hit (curral resume %s, or curral destroy %s)", name, name, name)
 	}
 	return rt.SSHPort, nil
 }

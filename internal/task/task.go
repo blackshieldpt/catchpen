@@ -21,7 +21,7 @@ import (
 )
 
 // Agents a task can run; "cmd" runs Spec.Cmd with the prompt on stdin.
-var Agents = []string{"claude", "opencode", "pi", "cmd"}
+var Agents = []string{"claude", "opencode", "pi", "omp", "cmd"}
 
 // Output modes.
 const (

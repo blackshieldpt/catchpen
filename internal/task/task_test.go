@@ -148,9 +148,17 @@ func TestSummarize(t *testing.T) {
 	if s.Result != "Done: renamed." || s.Usage.Turns != 2 || s.Usage.InputTokens != 150 || s.Usage.CostUSD < 0.0299 {
 		t.Errorf("opencode: %+v", s)
 	}
-	s = Summarize("pi", strings.NewReader(piStream))
-	if s.Result != "All good." || s.Usage.Turns != 1 || s.Usage.CostUSD != 0.5 {
-		t.Errorf("pi: %+v", s)
+	for _, a := range []string{"pi", "omp"} {
+		s = Summarize(a, strings.NewReader(piStream))
+		if s.Result != "All good." || s.Usage.Turns != 1 || s.Usage.CostUSD != 0.5 {
+			t.Errorf("%s: %+v", a, s)
+		}
+	}
+	if s := Summarize("omp", strings.NewReader(`{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"429"}}`)); s.Error != "omp: 429" {
+		t.Errorf("omp error: %+v", s)
+	}
+	if c := Command(Spec{Agent: "omp"}); c != `omp -p --mode json <"$HOME/.curral/task-prompt.md"` {
+		t.Errorf("omp command %q", c)
 	}
 	retried := `{"type":"result","is_error":true,"subtype":"error_during_execution"}` + "\n" + `{"type":"result","is_error":false,"subtype":"success","result":"ok"}`
 	if s := Summarize("claude", strings.NewReader(retried)); s.Error != "" || s.Result != "ok" {

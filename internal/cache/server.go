@@ -17,9 +17,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/blackshieldpt/curral/internal/canary"
 	"github.com/blackshieldpt/curral/internal/egress"
 )
 
@@ -46,6 +48,9 @@ type Server struct {
 	Dir   string          // VM directory: egress log and connection slots
 	VM    string
 	Max   int64 // the store's size limit (cache_max)
+	// OnCanary is told about a request carrying one of the VM's canaries
+	// (which is refused), before the guest gets its answer.
+	OnCanary func(c *canary.Canary, where string)
 	// Client fetches upstream; nil: public addresses only, no proxy.
 	Client *http.Client
 
@@ -110,6 +115,18 @@ func (c *notifyConn) Close() error {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if cs, _ := canary.Load(s.Dir); len(cs) > 0 {
+		var b strings.Builder
+		b.WriteString(r.RequestURI)
+		_ = r.Header.Write(&b)
+		if c := canary.In(cs, b.String()); c != nil {
+			if s.OnCanary != nil {
+				s.OnCanary(c, "in a package cache request")
+			}
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			return
+		}
+	}
 	rt, code := resolve(r, s.Kinds)
 	switch {
 	case rt == nil:

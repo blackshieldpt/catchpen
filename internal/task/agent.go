@@ -28,8 +28,8 @@ func Command(s Spec) string {
 		return c + stdin
 	case "opencode":
 		return `opencode run --format json --auto -- "$(cat "$HOME/` + GuestPrompt + `")" </dev/null`
-	case "pi":
-		return "pi -p --mode json" + stdin
+	case "pi", "omp":
+		return s.Agent + " -p --mode json" + stdin
 	}
 	return `CURRAL_PROMPT_FILE="$HOME/` + GuestPrompt + `" sh -c ` + shQuote(s.Cmd) + stdin
 }
@@ -97,7 +97,7 @@ func Summarize(agent string, r io.Reader) Summary {
 				d, _ := e["data"].(map[string]any)
 				s.Error = "opencode: " + firstNonEmpty(str(d, "message"), str(e, "name"))
 			}
-		case "pi":
+		case "pi", "omp": // omp keeps pi's event stream
 			if str(ev, "type") != "message_end" {
 				continue
 			}
@@ -118,7 +118,7 @@ func Summarize(agent string, r io.Reader) Summary {
 			}
 			s.Error = ""
 			if str(m, "stopReason") == "error" {
-				s.Error = "pi: " + firstNonEmpty(str(m, "errorMessage"), "error")
+				s.Error = agent + ": " + firstNonEmpty(str(m, "errorMessage"), "error")
 			}
 		}
 	}
@@ -173,7 +173,7 @@ func Render(agent string, line []byte) string {
 			b, _ := json.Marshal(ev["error"])
 			return "error: " + string(b)
 		}
-	case "pi":
+	case "pi", "omp":
 		switch str(ev, "type") {
 		case "message_end":
 			m, _ := ev["message"].(map[string]any)

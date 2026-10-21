@@ -53,6 +53,8 @@ const (
 	opencodeConfig  = ".config/opencode/opencode.json"
 	piAuth          = ".pi/agent/auth.json"
 	piMCP           = ".pi/agent/mcp.json"
+	ompEnv          = ".omp/agent/.env" // omp keeps logins in agent.db, but reads API keys from here
+	ompMCP          = ".omp/agent/mcp.json"
 	claudeOAuthEnv  = "CLAUDE_CODE_OAUTH_TOKEN"
 	anthropicKeyEnv = "ANTHROPIC_API_KEY"
 	claudeKeySuffix = 20      // Claude Code records approved API keys by their last 20 characters
@@ -151,6 +153,11 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 	}
 	if a := s.Agents.Pi; a != nil {
 		if err := p.pi(a, servers); err != nil {
+			return p.res, err
+		}
+	}
+	if a := s.Agents.OMP; a != nil {
+		if err := p.omp(a, servers); err != nil {
 			return p.res, err
 		}
 	}
@@ -375,6 +382,46 @@ func (p *pusher) pi(a *template.Agent, servers []template.MCP) error {
 		mcp[s.Name] = e
 	}
 	return p.putJSON(piMCP, doc)
+}
+
+func (p *pusher) omp(a *template.Agent, servers []template.MCP) error {
+	var env strings.Builder
+	for _, k := range a.Keys {
+		v, ok, err := p.secret(k)
+		if err != nil {
+			return err
+		}
+		if ok {
+			fmt.Fprintf(&env, "%s=%s\n", k, v)
+		}
+	}
+	if err := p.put(ompEnv, []byte(env.String())); err != nil {
+		return err
+	}
+	if len(servers) == 0 {
+		return nil
+	}
+	doc, err := p.getJSON(ompMCP)
+	if err != nil {
+		return err
+	}
+	mcp := obj(doc, "mcpServers")
+	for _, s := range servers {
+		e := map[string]any{"type": s.Type}
+		if s.Type == "stdio" {
+			e["command"], e["args"] = s.Command[0], s.Command[1:]
+			if s.Env != nil {
+				e["env"] = s.Env
+			}
+		} else {
+			e["url"] = s.URL
+			if s.Headers != nil {
+				e["headers"] = s.Headers
+			}
+		}
+		mcp[s.Name] = e
+	}
+	return p.putJSON(ompMCP, doc)
 }
 
 // getJSON reads a guest JSON object; a missing file is empty. An unparsable

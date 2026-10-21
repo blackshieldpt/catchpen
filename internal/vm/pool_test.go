@@ -251,3 +251,14 @@ func TestVMCaches(t *testing.T) {
 		t.Errorf("build caches %v", got)
 	}
 }
+
+func TestCanaryKinds(t *testing.T) {
+	tp := template.Template{Canaries: []string{"git", "aws", "env", "git"}}
+	if got := canaryKinds(&tp); !slices.Equal(got, []string{"aws", "env", "git"}) {
+		t.Errorf("%v", got)
+	}
+	tp.Env = map[string]string{"AWS_PROFILE": "dev"}
+	if got := canaryKinds(&tp); !slices.Equal(got, []string{"env", "git"}) {
+		t.Errorf("with AWS settings: %v", got)
+	}
+}

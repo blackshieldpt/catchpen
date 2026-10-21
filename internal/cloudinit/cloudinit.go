@@ -15,6 +15,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/blackshieldpt/curral/internal/cache"
+	"github.com/blackshieldpt/curral/internal/canary"
 	"github.com/blackshieldpt/curral/internal/egress"
 	tpl "github.com/blackshieldpt/curral/internal/template"
 )
@@ -92,6 +93,7 @@ func BuildScript(t *tpl.Template, user string, caches []string) (string, error) 
 		"Go":        t.Runtimes.Go,
 		"UV":        t.Runtimes.Python == "uv",
 		"Scripts":   scripts,
+		"OMP":       ompTag(t.Agents.OMP),
 		"Proxy":     fmt.Sprintf("http://%s:%d", ProxyAddr, ProxyPort),
 		"Caches":    len(caches) > 0,
 		"CacheAddr": cache.Addr,
@@ -99,6 +101,18 @@ func BuildScript(t *tpl.Template, user string, caches []string) (string, error) 
 		"CacheApt":  cacheApt(caches),
 	})
 	return b.String(), err
+}
+
+// ompTag is the oh-my-pi release a template installs ("" for none): omp is
+// a single binary, not an npm package.
+func ompTag(a *tpl.Agent) string {
+	switch {
+	case a == nil:
+		return ""
+	case a.Version == "" || a.Version == "latest":
+		return "latest"
+	}
+	return "v" + strings.TrimPrefix(a.Version, "v")
 }
 
 // agentInstall returns the npm packages, binaries to smoke-test and static
@@ -214,7 +228,8 @@ type Instance struct {
 	HostPub       string // ed25519 public key, authorized_keys format
 	Egress        string // allowlist | open | none
 	Docker        bool
-	Cache         []string // cache kinds the VM uses
+	Cache         []string           // cache kinds the VM uses
+	Canaries      []canary.GuestFile // decoys for the user's home
 }
 
 const sshdConf = `# curral: key-only access
@@ -271,6 +286,17 @@ func InstanceUserData(in Instance) ([]byte, error) {
 		if len(run) == 1 {
 			run = append(run, []string{"systemctl", "try-restart", "docker"})
 		}
+	}
+	home := "/home/" + in.User + "/"
+	var dirs []string
+	for _, f := range in.Canaries {
+		files = append(files, writeFile{Path: home + f.Path, Content: f.Content, Owner: in.User + ":" + in.User, Permissions: "0600", Defer: true})
+		if d := path.Dir(f.Path); d != "." && !slices.Contains(dirs, d) {
+			dirs = append(dirs, d)
+		}
+	}
+	for _, d := range dirs { // cloud-init makes parent directories root's
+		run = append(run, []string{"chown", in.User + ":" + in.User, home + d})
 	}
 	doc := map[string]any{
 		"hostname":          in.Name,

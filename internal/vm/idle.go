@@ -26,7 +26,8 @@ func (m *Manager) IdleTimeout(s *State) time.Duration {
 	return d
 }
 
-// IdleTracker finds running VMs idle past their idle_stop: no connection to
+// IdleTracker finds running VMs idle past their idle_stop (paused ones are
+// left for you to look at): no connection to
 // their ssh or forwarded ports, no running task, and QEMU's CPU use below
 // idleCPU since the previous check.
 type IdleTracker struct{ vms map[string]*idleState }
@@ -78,7 +79,7 @@ func (t *IdleTracker) Check(m *Manager, now time.Time) ([]Idle, error) {
 	var out []Idle
 	for _, v := range vms {
 		limit := m.IdleTimeout(&v.State)
-		if !v.Running || v.Pool || v.Ephemeral || limit == 0 {
+		if !v.Running || v.Paused || v.Pool || v.Ephemeral || limit == 0 {
 			continue
 		}
 		ticks, err := cpuTicks(v.Runtime.PID)

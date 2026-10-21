@@ -65,10 +65,11 @@ network:
   allow: [registry.example.com:443]
   on_deny: log               # log | prompt
 cache: [apt, go, npm]        # host package caches (default: all five); [] turns them off
+canaries: [aws, env, git]    # decoy credentials (default template: all three)
 ```
 
 Lists (packages, scripts, presets, allow, ...) append to the parent template; scalars
-override, and so does `cache`. Software is baked into the base image; changing it triggers a rebuild on the
+override, and so do `cache` and `canaries`. Software is baked into the base image; changing it triggers a rebuild on the
 next `up` of a new VM (`curral template build <name> --rebuild` to force).
 
 Global defaults go in `~/.config/curral/config.yaml`:
@@ -90,8 +91,9 @@ either downloads and verifies the new image, and builds a new base.
 
 ## Agents and credentials
 
-Templates install Claude Code, opencode and pi from npm into the base (no
-self-updates; rebuild the base for new versions). Credentials are resolved on the host
+Templates install Claude Code, opencode and pi from npm, and omp (oh-my-pi) from its
+release binary (checked against its SHA256SUMS), into the base (no self-updates;
+rebuild the base for new versions). Credentials are resolved on the host
 and pushed over SSH after every start (`curral creds push <name>|--all` for running
 VMs); they never enter bases or seed images.
 
@@ -100,6 +102,7 @@ agents:
   claude: { auth: oauth-token }          # or api-key; per VM: curral up --claude-auth api-key
   opencode: { keys: [ANTHROPIC_API_KEY, OPENROUTER_API_KEY] }
   pi: { version: "1.3.0", keys: [ANTHROPIC_API_KEY] }
+  omp: { version: "18.12.5", keys: [OPENROUTER_API_KEY] }   # needs no runtimes.node
 env: { GH_TOKEN: "secret:GH_TOKEN", TZ: Europe/Lisbon }   # environment for every ssh session
 mcp:
   - { name: docs, type: http, url: "https://mcp.example.com/mcp", headers: { Authorization: "secret:DOCS_AUTH" } }
@@ -112,12 +115,12 @@ sync:
 - Claude Code: `oauth-token` uses `CLAUDE_CODE_OAUTH_TOKEN` (create it once with
   `claude setup-token`); `api-key` uses `ANTHROPIC_API_KEY`. The subscription token is
   only given to Claude Code.
-- opencode and pi get provider API keys (`keys:`) in their own auth files, so an
+- opencode, pi and omp get provider API keys (`keys:`) in their own files, so an
   Anthropic API key for them doesn't override Claude's subscription token. Known keys:
   `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`,
   `GROQ_API_KEY`, `MISTRAL_API_KEY`, `XAI_API_KEY`, `DEEPSEEK_API_KEY`. Their API hosts,
   and remote MCP hosts, are added to the VM's allowlist.
-- MCP servers are written to all three agents' configs (pi skips SSE servers).
+- MCP servers are written to all the agents' configs (pi skips SSE servers).
 - `secret:NAME` values come from, in order: `secrets:` in config.yaml, the environment
   variable `NAME`, or `~/.config/curral/secrets.env` (`NAME=value` lines, must be 0600).
 
@@ -130,7 +133,7 @@ secrets:
 
 In the guest: env in `~/.ssh/environment`, Claude in `~/.claude.json`, opencode in
 `~/.local/share/opencode/auth.json` and `~/.config/opencode/opencode.json`, pi in
-`~/.pi/agent/{auth,mcp}.json`, all 0600. Removing a secret on the host removes it from
+`~/.pi/agent/{auth,mcp}.json`, omp in `~/.omp/agent/.env` and `mcp.json`, all 0600. Removing a secret on the host removes it from
 the environment on the next push; provider keys already in auth files stay until
 replaced. With `sync.claude_config`, the guest's `~/.claude/settings.json` is replaced
 on every push (minus `env`, hooks, credential helpers, status line and plugins).
@@ -210,7 +213,7 @@ the VM stops. `-R` bypasses the egress proxy, so it is recorded in the VM's egre
 
 ## Sessions, recordings and audit
 
-`curral run <vm> claude|opencode|pi [-- args]` starts the agent in a guest tmux
+`curral run <vm> claude|opencode|pi|omp [-- args]` starts the agent in a guest tmux
 session named after it, in the VM's repo when it has exactly one (`/workspace` with
 several, home with none), and reattaches to it later (new arguments and `yolo` only
 apply when the session starts); `curral attach <vm>` does the same for a `main` shell
@@ -246,7 +249,7 @@ the VM's egress log), forwards, `cp`, `pull`/`pr`, and the start and end of ever
 ## Headless tasks
 
 ```
-curral task run --repo github:acme/api --prompt "fix issue #42" [--agent claude|opencode|pi]
+curral task run --repo github:acme/api --prompt "fix issue #42" [--agent claude|opencode|pi|omp]
     [--prompt-file f.md] [--timeout 2h] [--max-budget-usd 5] [--out pr|bundle|patch|none]
     [--into ~/src/api] [--rw] [--keep] [-f]
 curral task run --agent cmd --cmd 'make fix' --prompt "..."   # any command, prompt on stdin
@@ -294,7 +297,7 @@ notify:
     - desktop                                   # notify-send
     - { ntfy: { url: https://ntfy.sh, topic: my-curral, token: secret:NTFY_TOKEN } }
     - { webhook: { url: https://hooks.example/curral, headers: { Authorization: secret:HOOK_AUTH } } }
-  events: [task.done, task.failed, egress.prompt, agent.waiting, vm.idle_stop]   # default: all
+  events: [task.done, task.failed, egress.prompt, agent.waiting, vm.idle_stop, canary.hit]   # default: all
 ```
 
 `egress.prompt` fires while `curral egress watch` (or the daemon) waits for your answer. For
@@ -400,6 +403,39 @@ excepted) without changing the base; VMs with `egress: none` use none.
 The caches trim themselves to `cache_max` every 10 minutes while fetching (and `gc`
 does), and store nothing that would leave less than 5% of the filesystem free; objects
 the server sends without a length are passed through, not stored.
+
+## Canaries
+
+```yaml
+# config.yaml
+canary_action: pause    # default; stop | log
+```
+
+Templates listing `canaries:` get decoy credentials in the agent user's home, made for
+each VM and pointing at hosts that exist nowhere: `aws` (`~/.aws/credentials` and an
+`endpoint_url` in `~/.aws/config`; left out when the template's `env:` sets `AWS_*`),
+`env` (`~/.env.production` with a database URL, an API URL and token, a Stripe-style key)
+and `git` (`~/.git-credentials`). Nothing in the VM uses them, so their use means
+something went looking for credentials:
+
+- a connection to a canary host through the egress proxy, allowlisted or not;
+- a canary value in a plain-HTTP request's line or headers (not its body), or in a
+  package cache request;
+- a value or canary host in the commits (merges and binary files included) and patches
+  `pull`, `pr` and tasks bring out, or in a PR's title and body.
+
+The request or export is refused, `canary.hit` goes to the audit log and to
+notifications (a few per minute at most), and the VM is paused, frozen as it was, until
+`curral resume <name>` (which also sets its clock); `curral ls` shows it `paused`. A task
+whose VM is paused fails at once and keeps the VM.
+
+What goes unseen: values sent encoded, or over HTTPS to an allowed host; clients that
+don't use the proxy (database drivers for the `DATABASE_URL`, Node's and Bun's `fetch`),
+whose connections just fail; everything in VMs with `egress: open` or `none` except the
+exports; `curral cp` and `forward`. The decoys can be told from real ones by a careful
+attacker (the hosts don't resolve, the GitHub token's checksum is wrong, the seed's
+user-data lists them), and if an agent prints them they end up in transcripts and
+recordings, where secret scanners may flag them.
 
 ## Egress
 

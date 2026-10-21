@@ -77,7 +77,8 @@ func cacheStdioCmd() *cobra.Command {
 			}
 			os.Stdin.Close()
 			os.Stdout.Close()
-			s := &cache.Server{Store: cache.Store{Dir: store}, Kinds: map[string]bool{}, Dir: dir, VM: name, Max: max}
+			s := &cache.Server{Store: cache.Store{Dir: store}, Kinds: map[string]bool{}, Dir: dir, VM: name, Max: max,
+				OnCanary: canaryHit(name)}
 			for _, k := range strings.Split(kinds, ",") {
 				s.Kinds[k] = true
 			}

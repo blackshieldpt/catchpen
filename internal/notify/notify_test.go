@@ -47,7 +47,7 @@ events: [task.done, agent.waiting]
 		}
 	}
 	for _, c := range []Config{
-		{Events: []string{"canary.hit"}},
+		{Events: []string{"vm.exploded"}},
 		{Sinks: []Sink{{Webhook: &Webhook{URL: "ftp://x"}}}},
 		{Sinks: []Sink{{Ntfy: &Ntfy{Topic: "a/b"}}}},
 	} {

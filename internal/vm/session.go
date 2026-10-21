@@ -40,8 +40,10 @@ func RunCommand(s *State, agent string, args []string) (string, error) {
 		a, yolo = s.Agents.OpenCode, "--auto"
 	case "pi":
 		a = s.Agents.Pi
+	case "omp":
+		a = s.Agents.OMP
 	default:
-		return "", fmt.Errorf("unknown agent %q (claude, opencode or pi)", agent)
+		return "", fmt.Errorf("unknown agent %q (claude, opencode, pi or omp)", agent)
 	}
 	if a == nil {
 		return "", fmt.Errorf("%s is not installed in %s (add agents.%s to its template)", agent, s.Name, agent)

@@ -17,6 +17,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/blackshieldpt/curral/internal/canary"
 )
 
 const (
@@ -37,6 +39,9 @@ type Proxy struct {
 	Now     func() time.Time
 	// Idle overrides idleTimeout (tests).
 	Idle time.Duration
+	// OnCanary is told about a request using one of the VM's canaries
+	// (which is denied), before the guest gets its answer.
+	OnCanary func(c *canary.Canary, where string)
 }
 
 func (p *Proxy) now() time.Time {
@@ -101,6 +106,14 @@ func (p *Proxy) ServeConn(ctx context.Context, c io.ReadWriteCloser) error {
 		return nil
 	}
 	entry := LogEntry{VM: p.VM, Method: req.Method, Host: host, Port: port}
+	if hit, where := p.canary(req, host, port); hit != nil {
+		_ = p.log(entry, ActionDeny, "canary ("+hit.Kind+")")
+		if p.OnCanary != nil {
+			p.OnCanary(hit, where)
+		}
+		p.deny(c, host, port, "not allowed")
+		return nil
+	}
 
 	allowed, action, reason := p.decide(ctx, host, port, req.Method)
 	if !allowed {
@@ -142,6 +155,25 @@ func (p *Proxy) ServeConn(ctx context.Context, c io.ReadWriteCloser) error {
 		return nil
 	}
 	return forward(c, req, up, last)
+}
+
+// canary finds one of the VM's canaries in a request: its host, or a
+// value in the request line or headers (a body over plain HTTP isn't read).
+func (p *Proxy) canary(req *http.Request, host string, port int) (*canary.Canary, string) {
+	cs, _ := canary.Load(p.Dir)
+	if len(cs) == 0 {
+		return nil, ""
+	}
+	if c := canary.Host(cs, host); c != nil {
+		return c, "connection to " + hostPort(host, port)
+	}
+	var b strings.Builder
+	b.WriteString(req.RequestURI)
+	_ = req.Header.Write(&b)
+	if c := canary.In(cs, b.String()); c != nil {
+		return c, "in a request to " + hostPort(host, port)
+	}
+	return nil, ""
 }
 
 var errMethod = errors.New("method not allowed")

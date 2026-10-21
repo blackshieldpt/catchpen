@@ -38,7 +38,7 @@ func (m *Manager) SubmitTask(spec task.Spec) (*task.Task, error) {
 		return nil, err
 	}
 	if spec.Agent != "cmd" {
-		a := map[string]*template.Agent{"claude": r.T.Agents.Claude, "opencode": r.T.Agents.OpenCode, "pi": r.T.Agents.Pi}[spec.Agent]
+		a := map[string]*template.Agent{"claude": r.T.Agents.Claude, "opencode": r.T.Agents.OpenCode, "pi": r.T.Agents.Pi, "omp": r.T.Agents.OMP}[spec.Agent]
 		if a == nil {
 			return nil, fmt.Errorf("template %s doesn't install %s", r.T.Name, spec.Agent)
 		}
@@ -162,20 +162,25 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 	}
 	created := false
 	unexported := false // commits exist only in the VM
+	stopWatch := func() {}
 	defer func() {
+		defer stopWatch()
 		state, msg := task.Done, ""
+		paused := created && m.Paused(t.VM)
 		switch {
+		case paused:
+			state, msg = task.Failed, fmt.Sprintf("a canary hit paused %s; kept it (curral resume %[1]s, or curral destroy %[1]s)", t.VM)
 		case ctx.Err() != nil:
 			state, msg = task.Cancelled, "cancelled"
 		case err != nil:
 			// Agent-reported errors come from the guest.
 			state, msg = task.Failed, sshx.Printable(err.Error())
 		}
-		keep := t.Spec.Keep || (unexported && state == task.Failed)
-		if keep && !t.Spec.Keep {
+		keep := t.Spec.Keep || (unexported && state == task.Failed) || paused
+		if keep && !t.Spec.Keep && !paused {
 			msg += fmt.Sprintf("; kept %s because its %d commit(s) weren't exported (curral pull %s --branch %s, then curral destroy %s)", t.VM, t.Commits, t.VM, t.Branch, t.VM)
 		}
-		if created {
+		if created && !paused { // a paused guest doesn't answer
 			// Copy transcripts and tear down without the signal's context.
 			bg, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 			if _, terr := m.CopyTranscripts(bg, t.VM); terr != nil {
@@ -224,6 +229,7 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 		return err
 	}
 	created = true
+	ctx, stopWatch = m.cancelOnPause(ctx, t.VM)
 	if _, err := m.Start(ctx, t.VM); err != nil {
 		return err
 	}
@@ -375,6 +381,16 @@ func (m *Manager) exportTask(ctx context.Context, c *ssh.Client, t *task.Task, c
 		}
 		if err != nil {
 			return "", fmt.Errorf("format-patch: %w: %s", err, sshx.Printable(string(stderr)))
+		}
+		f, err = os.Open(path)
+		if err != nil {
+			return "", err
+		}
+		err = m.scanExport(t.VM, f, "in the task's patches")
+		f.Close()
+		if err != nil {
+			os.Remove(path)
+			return "", err
 		}
 		return path, nil
 	}

@@ -18,6 +18,7 @@ const (
 	claudeSettings = ".claude/settings.json"
 	opencodePlugin = ".config/opencode/plugin/curral-notify.js"
 	piExtension    = ".pi/agent/extensions/curral-notify.ts"
+	ompExtension   = ".omp/agent/extensions/curral-notify.ts"
 )
 
 // postJS posts a small JSON body with node:http, which ignores the proxy
@@ -65,6 +66,20 @@ export default function (pi: any) {
 `
 		if err := p.put(piExtension, []byte(ts)); err != nil {
 			return fmt.Errorf("pi extension: %w", err)
+		}
+	}
+	if s.Agents.OMP != nil {
+		// omp has no agent_settled; agent_end ends each agent loop.
+		ts := `// written by curral at each start; do not edit
+import http from "node:http";
+export default function (pi: any) {
+	pi.on("agent_end", async () => {
+	` + postJS("omp", "agent_end") + `
+	});
+}
+`
+		if err := p.put(ompExtension, []byte(ts)); err != nil {
+			return fmt.Errorf("omp extension: %w", err)
 		}
 	}
 	return nil

@@ -144,6 +144,24 @@ func stopCmd() *cobra.Command {
 	return c
 }
 
+func resumeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "resume <name>",
+		Short: "Continue a VM a canary hit paused",
+		Long: `A VM whose decoy credentials (template canaries:) were used is paused, frozen as it
+was (config.yaml canary_action). Look at it first (curral audit, curral egress log,
+curral console), then resume it, or stop or destroy it.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			m, err := manager()
+			if err != nil {
+				return err
+			}
+			return m.Resume(cmd.Context(), args[0])
+		},
+	}
+}
+
 func destroyCmd() *cobra.Command {
 	var yes bool
 	c := &cobra.Command{
@@ -195,6 +213,9 @@ func lsCmd() *cobra.Command {
 				state, ssh, ports := "stopped", "-", "-"
 				if v.Running {
 					state = "running"
+				}
+				if v.Paused {
+					state = "paused" // canary hit
 				}
 				if v.Ephemeral {
 					state += ",ephemeral"
