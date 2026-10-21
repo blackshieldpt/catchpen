@@ -421,8 +421,8 @@ something went looking for credentials:
 - a connection to a canary host through the egress proxy, allowlisted or not;
 - a canary value in a plain-HTTP request's line or headers (not its body), or in a
   package cache request;
-- a value or canary host in the commits (merges and binary files included) and patches
-  `pull`, `pr` and tasks bring out, or in a PR's title and body.
+- a value or canary host in the commits (authors, merges and binary files included),
+  branch names and patches `pull`, `pr` and tasks bring out, or in a PR's title and body.
 
 The request or export is refused, `canary.hit` goes to the audit log and to
 notifications (a few per minute at most), and the VM is paused, frozen as it was, until

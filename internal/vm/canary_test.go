@@ -88,7 +88,14 @@ func TestCanariesPlantedAndScanned(t *testing.T) {
 	gitRun(t, repo, "update-ref", "refs/curral/c1/bin", "HEAD")
 	gitRun(t, repo, "checkout", "-q", "main")
 	gitRun(t, repo, "branch", "-qD", "side", "top", "bin")
-	for _, ref := range []string{"refs/curral/c1/merge", "refs/curral/c1/bin"} {
+	gitRun(t, repo, "checkout", "-qb", "who", "main")
+	os.WriteFile(filepath.Join(repo, "w"), []byte("w\n"), 0o600)
+	gitRun(t, repo, "add", "w")
+	gitRun(t, repo, "-c", "user.email="+cs[0].Values[1]+"@example.com", "commit", "-qm", "clean")
+	gitRun(t, repo, "update-ref", "refs/curral/c1/who", "HEAD")
+	gitRun(t, repo, "checkout", "-q", "main")
+	gitRun(t, repo, "branch", "-qD", "who")
+	for _, ref := range []string{"refs/curral/c1/merge", "refs/curral/c1/bin", "refs/curral/c1/who"} {
 		if err := m.scanCommits(context.Background(), "c1", repo, ref); !errors.Is(err, ErrCanary) {
 			t.Errorf("%s: %v", ref, err)
 		}

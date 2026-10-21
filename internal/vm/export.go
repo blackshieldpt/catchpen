@@ -113,6 +113,10 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 	if err := validBranch(branch); err != nil {
 		return nil, err
 	}
+	// The branch name becomes a ref here, and on the forge for pr.
+	if err := m.scanExport(name, strings.NewReader(branch), "in the branch name"); err != nil {
+		return nil, err
+	}
 	tmp, err := os.CreateTemp("", "curral-bundle-*")
 	if err != nil {
 		return nil, err

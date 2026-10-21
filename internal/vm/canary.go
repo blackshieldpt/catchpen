@@ -112,11 +112,12 @@ func (m *Manager) scanCommits(ctx context.Context, name, dir, ref string) error 
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	// Merges' own changes and binary files included; nothing from the
-	// user's config that runs programs on guest data.
+	// Whole commits (author, committer, message), merges' own changes and
+	// binary files included; nothing from the user's config that runs
+	// programs on guest data.
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "-c", "core.fsmonitor=false", "-c", "log.showSignature=false",
 		"log", "-p", "--diff-merges=separate", "--text", "--no-ext-diff", "--no-textconv",
-		"--format=%B", ref, "--not", "--exclude=refs/curral*", "--all")
+		"--pretty=raw", ref, "--not", "--exclude=refs/curral*", "--all")
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
