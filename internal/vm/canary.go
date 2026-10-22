@@ -154,15 +154,28 @@ func (m *Manager) scanCommits(ctx context.Context, name, dir, ref string) error 
 	if cs, err := canary.Load(m.dir(name)); err != nil || len(cs) == 0 {
 		return err
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	// Whole commits as stored (no re-encoding: an encoding header would
 	// garble them), root commits, merges' own changes and binary files
 	// included; nothing from the user's config that runs programs on guest
-	// data or changes the output.
-	cmd := exec.CommandContext(ctx, "git", "-C", dir, "-c", "core.fsmonitor=false", "-c", "log.showSignature=false",
-		"-c", "log.showRoot=true", "log", "-p", "--diff-merges=separate", "--text", "--no-ext-diff", "--no-textconv",
-		"--no-color", "--encoding=none", "--pretty=raw", ref, "--not", "--exclude=refs/curral*", "--all")
+	// data or changes the output. Then the messages and names as re-encoded
+	// to UTF-8, as format-patch and forges show them.
+	not := []string{ref, "--not", "--exclude=refs/curral*", "--all"}
+	for _, args := range [][]string{
+		{"-c", "log.showRoot=true", "log", "-p", "--diff-merges=separate", "--text", "--no-ext-diff", "--no-textconv",
+			"--no-color", "--encoding=none", "--pretty=raw"},
+		{"log", "--no-color", "--encoding=UTF-8", "--format=%an%n%ae%n%cn%n%ce%n%B"},
+	} {
+		if err := m.scanGit(ctx, name, dir, append(args, not...)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) scanGit(ctx context.Context, name, dir string, args []string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir, "-c", "core.fsmonitor=false", "-c", "log.showSignature=false"}, args...)...)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return err

@@ -385,19 +385,32 @@ func (m *Manager) exportTask(ctx context.Context, c *ssh.Client, t *task.Task, c
 		}
 		return p.Ref + " in " + p.Into, nil
 	case task.OutPatch:
-		path := st.Path(t.ID, t.ID+".mbox")
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		// Patches are made on the host from the task's commits, scanned in
+		// a scratch repository; the commits before the task's aren't (a tag:
+		// a branch could be the repo's HEAD, whose attributes git reads).
+		if !commitID.MatchString(base) {
+			return "", fmt.Errorf("bad base commit %q", sshx.Printable(base))
+		}
+		dir, err := os.MkdirTemp("", "curral-patch-*")
 		if err != nil {
 			return "", err
 		}
-		stderr, err := sshx.Stream(ctx, c, cd+"git format-patch --stdout "+shQuote(base)+"..HEAD", f, maxBundle)
-		if cerr := f.Close(); err == nil {
-			err = cerr
+		defer os.RemoveAll(dir)
+		incoming := "refs/curral-incoming/" + t.VM + "/" + t.Branch
+		if _, err := hostGitCmd(ctx, dir, "init", "-q", "--bare"); err != nil {
+			return "", err
 		}
-		if err != nil {
-			return "", fmt.Errorf("format-patch: %w: %s", err, sshx.Printable(string(stderr)))
+		if err := m.fetchBranch(ctx, c, t.VM, cd+"git", t.Branch, dir, incoming); err != nil {
+			return "", err
 		}
-		if err := m.scanPatch(t.VM, path, "in the task's patches"); err != nil {
+		if _, err := hostGitCmd(ctx, dir, "update-ref", "refs/tags/base", base); err != nil {
+			return "", err
+		}
+		if err := m.scanCommits(ctx, t.VM, dir, incoming); err != nil {
+			return "", err
+		}
+		path := st.Path(t.ID, t.ID+".mbox")
+		if err := m.formatPatch(ctx, t.VM, dir, incoming, []string{base}, path, "in the task's patches"); err != nil {
 			return "", err
 		}
 		return path, nil

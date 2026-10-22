@@ -220,6 +220,20 @@ echo agent-finished`
 		t.Fatal(err)
 	}
 
+	// Patches are made on the host, binary files included.
+	s5 := task.Spec{Template: "tk", Repo: "gd:bot/app", Agent: "cmd", Cmd: `printf 'p\0q' > p.bin && echo change > c.txt`, Prompt: "change", Out: task.OutPatch, Timeout: 10 * time.Minute}
+	if err := s5.Normalize(other, other); err != nil {
+		t.Fatal(err)
+	}
+	t5, err := m.SubmitTask(s5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r5 := waitState(t5.ID, func(tk *task.Task) bool { return task.Final(tk.State) })
+	if b, _ := os.ReadFile(r5.Output); r5.State != task.Done || !bytes.Contains(b, []byte("Subject: [PATCH] curral task "+t5.ID)) || !bytes.Contains(b, []byte("GIT binary patch")) {
+		t.Errorf("task 5: %+v\n%s", r5, b)
+	}
+
 	// A task whose supervisor was killed shows as lost; cancelling it destroys its VM.
 	s4 := task.Spec{Template: "tk", Agent: "cmd", Cmd: "sleep 600", Prompt: "wait", Timeout: 20 * time.Minute}
 	if err := s4.Normalize(host, host); err != nil {

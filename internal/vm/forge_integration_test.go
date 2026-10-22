@@ -199,9 +199,13 @@ cd /workspace/lib && echo x > x.txt && git add x.txt && git commit -qm "Add x" &
 		t.Fatalf("host clone: %v\n%s", err, out)
 	}
 	run(`cd /workspace/app && git checkout -q -b local && echo y > y.txt && git add y.txt && git commit -qm "Local change" && mkdir -p .git/hooks`)
-	p, err := m.Pull(ctx, "fg1", PullOpts{Repo: "app", Into: host})
+	pdir := t.TempDir()
+	p, err := m.Pull(ctx, "fg1", PullOpts{Repo: "app", Into: host, Patches: pdir})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(pdir, "fg1-local.mbox")); !bytes.Contains(b, []byte("Subject: [PATCH 1/2] Add hi")) || !bytes.Contains(b, []byte("Subject: [PATCH 2/2] Local change")) {
+		t.Errorf("patches:\n%s", b)
 	}
 	if p.Ref != "refs/curral/fg1/local" {
 		t.Errorf("ref = %s", p.Ref)

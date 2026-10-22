@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"github.com/blackshieldpt/curral/internal/audit"
 	"github.com/blackshieldpt/curral/internal/forge"
 	"github.com/blackshieldpt/curral/internal/sshx"
+	"golang.org/x/crypto/ssh"
 )
 
 const maxBundle = 2 << 30
@@ -116,25 +118,9 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 	if err := m.scanExport(name, strings.NewReader(branch), "in the branch name"); err != nil {
 		return nil, err
 	}
-	tmp, err := os.CreateTemp("", "curral-bundle-*")
-	if err != nil {
-		return nil, err
-	}
-	defer os.Remove(tmp.Name())
-	defer tmp.Close()
-	stderr, err := sshx.Stream(ctx, c, "git -C "+dir+" bundle create - "+shQuote("refs/heads/"+branch), tmp, maxBundle)
-	if err != nil {
-		return nil, fmt.Errorf("bundle %s: %w\n%s", branch, err, sshx.Printable(strings.TrimSpace(string(stderr))))
-	}
-	if err := tmp.Close(); err != nil {
-		return nil, err
-	}
-	if _, err := hostGitCmd(ctx, into, "bundle", "verify", "-q", tmp.Name()); err != nil {
-		return nil, fmt.Errorf("bundle from %s failed verification: %w", name, err)
-	}
 	// Fetched aside and scanned for canaries before it replaces ref.
 	ref, incoming := "refs/curral/"+name+"/"+branch, "refs/curral-incoming/"+name+"/"+branch
-	if _, err := hostGitCmd(ctx, into, "fetch", "--no-tags", "--no-write-fetch-head", tmp.Name(), "+refs/heads/"+branch+":"+incoming); err != nil {
+	if err := m.fetchBranch(ctx, c, name, "git -C "+dir, branch, into, incoming); err != nil {
 		return nil, err
 	}
 	defer hostGitCmd(context.WithoutCancel(ctx), into, "update-ref", "-d", incoming)
@@ -148,24 +134,79 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 		if err := os.MkdirAll(o.Patches, 0o755); err != nil {
 			return nil, err
 		}
-		f, err := os.Create(filepath.Join(o.Patches, name+"-"+strings.ReplaceAll(branch, "/", "-")+".mbox"))
+		f := filepath.Join(o.Patches, name+"-"+strings.ReplaceAll(branch, "/", "-")+".mbox")
+		// None (exit 1) for unrelated histories: all the branch's commits.
+		out, err := sshx.Run(ctx, c, "git -C "+dir+" merge-base --all origin/HEAD "+shQuote(branch)+" || [ $? = 1 ]", nil)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("finding the branch's base: %w: %s", err, sshx.Printable(strings.TrimSpace(string(out))))
 		}
-		stderr, err := sshx.Stream(ctx, c, "git -C "+dir+" format-patch --stdout origin/HEAD.."+shQuote(branch), f, maxBundle)
-		if cerr := f.Close(); err == nil {
-			err = cerr
-		}
-		if err != nil {
-			return nil, fmt.Errorf("format-patch: %w\n%s", err, sshx.Printable(strings.TrimSpace(string(stderr))))
-		}
-		if err := m.scanPatch(name, f.Name(), "in patches pulled from it"); err != nil {
+		if err := m.formatPatch(ctx, name, into, ref, strings.Fields(string(out)), f, "in patches pulled from it"); err != nil {
 			return nil, err
 		}
 	}
 	m.logf("fetched %s:%s into %s (%s)", name, branch, into, ref)
 	m.audit(audit.ExportPull, name, map[string]any{"repo": rs.Repo.String(), "branch": branch, "into": into, "ref": ref})
 	return &Pulled{Repo: rs, Branch: branch, Ref: ref, Into: into}, nil
+}
+
+// fetchBranch copies branch out of the VM as a git bundle (git: the guest's
+// git command for the repo) and fetches it into ref of the host repository
+// into.
+func (m *Manager) fetchBranch(ctx context.Context, c *ssh.Client, name, git, branch, into, ref string) error {
+	tmp, err := os.CreateTemp("", "curral-bundle-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+	stderr, err := sshx.Stream(ctx, c, git+" bundle create - "+shQuote("refs/heads/"+branch), tmp, maxBundle)
+	if err != nil {
+		return fmt.Errorf("bundle %s: %w\n%s", branch, err, sshx.Printable(strings.TrimSpace(string(stderr))))
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if _, err := hostGitCmd(ctx, into, "bundle", "verify", "-q", tmp.Name()); err != nil {
+		return fmt.Errorf("bundle from %s failed verification: %w", name, err)
+	}
+	_, err = hostGitCmd(ctx, into, "fetch", "--no-tags", "--no-write-fetch-head", tmp.Name(), "+refs/heads/"+branch+":"+ref)
+	return err
+}
+
+var commitID = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
+
+// formatPatch writes to path the patches for the commits of ref that aren't
+// in bases (none: all of them), from the host repository dir, and scans them. They're made on
+// the host from commits already scanned: a binary delta in a patch the guest
+// wrote could build a decoy out of bytes no scan of the patch sees.
+func (m *Manager) formatPatch(ctx context.Context, name, dir, ref string, bases []string, path, what string) error {
+	args := []string{"-C", dir, "-c", "core.fsmonitor=false", "-c", "i18n.logOutputEncoding=UTF-8", "format-patch", "--stdout",
+		"--binary", "--no-base", "--no-color", "--no-ext-diff", "--no-textconv", ref}
+	if len(bases) == 0 {
+		args = append(args, "--root")
+	}
+	for _, b := range bases {
+		if !commitID.MatchString(b) {
+			return fmt.Errorf("%s: bad base commit %q", what, sshx.Printable(b))
+		}
+		args = append(args, "^"+b)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Stdout, cmd.Stderr = f, &stderr
+	err = cmd.Run()
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(path)
+		return fmt.Errorf("format-patch: %w: %s", err, sshx.Printable(strings.TrimSpace(stderr.String())))
+	}
+	return m.scanPatch(name, path, what)
 }
 
 type PROpts struct {

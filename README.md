@@ -426,8 +426,8 @@ something went looking for credentials:
 - a canary value in a plain-HTTP request's line or headers (not its body), or in a
   package cache request;
 - a value or canary host (in any case) in the commits (headers, root commits, merges and
-  binary files included), branch names and patches (binary files decoded; what a binary delta
-  copies from the old file isn't seen) `pull`, `pr` and tasks bring out, in a PR's title and body, or in a task's result and an agent's
+  binary files included), branch names and patches (made on the host from the scanned
+  commits) `pull`, `pr` and tasks bring out, in a PR's title and body, or in a task's result and an agent's
   notification.
 
 The request or export is refused (a notification is sent with its text withheld),
