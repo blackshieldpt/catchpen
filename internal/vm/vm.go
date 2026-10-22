@@ -822,6 +822,15 @@ func agentHosts(t *template.Template) []string {
 	if t.Agents.Claude != nil {
 		hosts = append(hosts, "api.anthropic.com:443")
 	}
+	if c := t.Agents.Codex; c != nil {
+		switch c.Auth {
+		case template.CodexNone:
+		case template.CodexChatGPT:
+			hosts = append(hosts, "chatgpt.com:443", "auth.openai.com:443")
+		default:
+			hosts = append(hosts, "api.openai.com:443")
+		}
+	}
 	for _, a := range []*template.Agent{t.Agents.OpenCode, t.Agents.Pi, t.Agents.OMP} {
 		if a != nil {
 			for _, k := range a.Keys {

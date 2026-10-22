@@ -90,7 +90,7 @@ Tasks wait for the budget in config.yaml tasks: (max_vms, max_memory).
 	f := c.Flags()
 	f.StringVarP(&s.Template, "template", "t", "", "template (default from config)")
 	f.StringVar(&s.Repo, "repo", "", "repo to clone and work on (forge:owner/repo or URL)")
-	f.StringVar(&s.Agent, "agent", "claude", "claude | opencode | pi | omp | cmd")
+	f.StringVar(&s.Agent, "agent", "claude", "claude | opencode | pi | omp | codex | cmd")
 	f.StringVar(&s.Cmd, "cmd", "", "shell command for --agent cmd (prompt on stdin, path in $CURRAL_PROMPT_FILE)")
 	f.StringVar(&s.Prompt, "prompt", "", "the task")
 	f.StringVar(&s.PromptFile, "prompt-file", "", "read the task from a file")

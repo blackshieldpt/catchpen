@@ -14,12 +14,19 @@ const (
 	ClaudeAPIKey = "api-key"     // ANTHROPIC_API_KEY
 )
 
+// Codex auth modes.
+const (
+	CodexAPIKey  = "api-key" // OPENAI_API_KEY, pushed with codex login --with-api-key
+	CodexChatGPT = "chatgpt" // a ChatGPT sign-in done in each VM (codex login --device-auth)
+	CodexNone    = "none"    // installed only: no credentials, no API hosts allowlisted
+)
+
 // Agent configures one coding agent. Version is an npm version or "latest".
 type Agent struct {
 	Version string   `yaml:"version,omitempty" json:"version,omitempty"`
-	Auth    string   `yaml:"auth,omitempty" json:"auth,omitempty"` // claude only
+	Auth    string   `yaml:"auth,omitempty" json:"auth,omitempty"` // claude and codex
 	Keys    []string `yaml:"keys,omitempty" json:"keys,omitempty"` // opencode/pi/omp: provider API key secrets
-	// Yolo makes curral run skip permission prompts (claude, opencode); the VM is the sandbox.
+	// Yolo makes curral run skip permission prompts (claude, opencode, codex); the VM is the sandbox.
 	Yolo *bool `yaml:"yolo,omitempty" json:"yolo,omitempty"`
 }
 
@@ -31,10 +38,11 @@ type Agents struct {
 	OpenCode *Agent `yaml:"opencode,omitempty" json:"opencode,omitempty"`
 	Pi       *Agent `yaml:"pi,omitempty" json:"pi,omitempty"`
 	OMP      *Agent `yaml:"omp,omitempty" json:"omp,omitempty"` // oh-my-pi
+	Codex    *Agent `yaml:"codex,omitempty" json:"codex,omitempty"`
 }
 
 func (a Agents) Any() bool {
-	return a.Claude != nil || a.OpenCode != nil || a.Pi != nil || a.OMP != nil
+	return a.Claude != nil || a.OpenCode != nil || a.Pi != nil || a.OMP != nil || a.Codex != nil
 }
 
 // MCP is an MCP server rendered into every agent's config.
@@ -104,6 +112,7 @@ func (t *Template) mergeAgents(o *Template) {
 	t.Agents.OpenCode = mergeAgent(t.Agents.OpenCode, o.Agents.OpenCode)
 	t.Agents.Pi = mergeAgent(t.Agents.Pi, o.Agents.Pi)
 	t.Agents.OMP = mergeAgent(t.Agents.OMP, o.Agents.OMP)
+	t.Agents.Codex = mergeAgent(t.Agents.Codex, o.Agents.Codex)
 	for k, v := range o.Env {
 		if t.Env == nil {
 			t.Env = map[string]string{}
@@ -151,10 +160,10 @@ func validValue(v string) error {
 }
 
 func (t *Template) validateAgents() error {
-	if (t.Agents.Claude != nil || t.Agents.OpenCode != nil || t.Agents.Pi != nil) && t.Runtimes.Node == "" {
+	if (t.Agents.Claude != nil || t.Agents.OpenCode != nil || t.Agents.Pi != nil || t.Agents.Codex != nil) && t.Runtimes.Node == "" {
 		return fmt.Errorf("agents need runtimes.node (omp doesn't)")
 	}
-	for name, a := range map[string]*Agent{"claude": t.Agents.Claude, "opencode": t.Agents.OpenCode, "pi": t.Agents.Pi, "omp": t.Agents.OMP} {
+	for name, a := range map[string]*Agent{"claude": t.Agents.Claude, "opencode": t.Agents.OpenCode, "pi": t.Agents.Pi, "omp": t.Agents.OMP, "codex": t.Agents.Codex} {
 		if a == nil {
 			continue
 		}
@@ -165,7 +174,8 @@ func (t *Template) validateAgents() error {
 		if name == "omp" && a.Version != "" && a.Version != "latest" && strings.Count(strings.SplitN(a.Version, "-", 2)[0], ".") != 2 {
 			return fmt.Errorf("agents.omp.version must be latest or a full version (like 18.12.5), not %q", a.Version)
 		}
-		if name == "claude" {
+		switch name {
+		case "claude":
 			switch a.Auth {
 			case "", ClaudeOAuth, ClaudeAPIKey:
 			default:
@@ -174,8 +184,19 @@ func (t *Template) validateAgents() error {
 			if len(a.Keys) > 0 {
 				return fmt.Errorf("agents.claude.keys is not supported; use agents.claude.auth")
 			}
-		} else if a.Auth != "" {
-			return fmt.Errorf("agents.%s.auth is not supported (subscription tokens are for Claude Code only); use keys", name)
+		case "codex":
+			switch a.Auth {
+			case "", CodexAPIKey, CodexChatGPT, CodexNone:
+			default:
+				return fmt.Errorf("agents.codex.auth must be %s, %s or %s", CodexAPIKey, CodexChatGPT, CodexNone)
+			}
+			if len(a.Keys) > 0 {
+				return fmt.Errorf("agents.codex.keys is not supported; use agents.codex.auth (its key is OPENAI_API_KEY)")
+			}
+		default:
+			if a.Auth != "" {
+				return fmt.Errorf("agents.%s.auth is not supported (only claude and codex take auth); use keys", name)
+			}
 		}
 		if (name == "pi" || name == "omp") && a.Yolo != nil {
 			return fmt.Errorf("agents.%s.yolo is not supported (%[1]s has no permission prompts)", name)

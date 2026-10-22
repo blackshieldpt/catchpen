@@ -9,7 +9,7 @@
 
 - [Templates](templates.md): what a VM contains, `extends`, bases
 - [Configuration](configuration.md): `config.yaml`, secrets, directories, distros
-- [Agents and credentials](agents.md): Claude Code, opencode, pi, omp, MCP, transcripts
+- [Agents and credentials](agents.md): Claude Code, opencode, pi, omp, Codex, MCP, transcripts
 - [Forges, repos and SSH](forges.md): GitHub and Gitea, `pull` and `pr`, SSH agents,
   port forwards
 - [Sessions, recordings and audit](sessions.md)

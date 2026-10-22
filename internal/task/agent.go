@@ -30,6 +30,8 @@ func Command(s Spec) string {
 		return `opencode run --format json --auto -- "$(cat "$HOME/` + GuestPrompt + `")" </dev/null`
 	case "pi", "omp":
 		return s.Agent + " -p --mode json" + stdin
+	case "codex":
+		return "codex exec --json --yolo --skip-git-repo-check -" + stdin
 	}
 	return `CURRAL_PROMPT_FILE="$HOME/` + GuestPrompt + `" sh -c ` + shQuote(s.Cmd) + stdin
 }
@@ -96,6 +98,28 @@ func Summarize(agent string, r io.Reader) Summary {
 				e, _ := ev["error"].(map[string]any)
 				d, _ := e["data"].(map[string]any)
 				s.Error = "opencode: " + firstNonEmpty(str(d, "message"), str(e, "name"))
+			}
+		case "codex":
+			item, _ := ev["item"].(map[string]any)
+			switch str(ev, "type") {
+			case "item.completed":
+				if str(item, "type") == "agent_message" {
+					if t := strings.TrimSpace(str(item, "text")); t != "" {
+						s.Result = t
+					}
+				}
+			case "turn.completed":
+				s.Error = "" // a turn after an error: it recovered
+				s.Usage.Turns++
+				if u, ok := ev["usage"].(map[string]any); ok {
+					s.Usage.InputTokens += int64(num(u, "input_tokens"))
+					s.Usage.OutputTokens += int64(num(u, "output_tokens"))
+				}
+			case "turn.failed":
+				e, _ := ev["error"].(map[string]any)
+				s.Error = "codex: " + firstNonEmpty(str(e, "message"), "turn failed")
+			case "error":
+				s.Error = "codex: " + firstNonEmpty(str(ev, "message"), "error")
 			}
 		case "pi", "omp": // omp keeps pi's event stream
 			if str(ev, "type") != "message_end" {
@@ -172,6 +196,21 @@ func Render(agent string, line []byte) string {
 		case "error":
 			b, _ := json.Marshal(ev["error"])
 			return "error: " + string(b)
+		}
+	case "codex":
+		item, _ := ev["item"].(map[string]any)
+		switch t := str(ev, "type"); {
+		case t == "item.completed" && str(item, "type") == "agent_message":
+			return str(item, "text")
+		case t == "item.started" && str(item, "type") == "command_execution":
+			return "→ " + str(item, "command")
+		case t == "item.started" && str(item, "type") == "mcp_tool_call":
+			return "→ " + str(item, "server") + "." + str(item, "tool")
+		case t == "error":
+			return "error: " + str(ev, "message")
+		case t == "turn.failed":
+			e, _ := ev["error"].(map[string]any)
+			return "failed: " + str(e, "message")
 		}
 	case "pi", "omp":
 		switch str(ev, "type") {

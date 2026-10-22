@@ -11,6 +11,7 @@ credentials its template asks for.
 | `opencode` | npm | `runtimes.node` |
 | `pi` | npm | `runtimes.node` |
 | `omp` (oh-my-pi) | its release binary, checked against the release's SHA256SUMS | nothing |
+| `codex` (OpenAI Codex CLI) | npm (`@openai/codex`) | `runtimes.node` |
 
 ```yaml
 agents:
@@ -18,14 +19,15 @@ agents:
   opencode: { keys: [ANTHROPIC_API_KEY, OPENROUTER_API_KEY] }
   pi: { version: "1.3.0", keys: [ANTHROPIC_API_KEY] }
   omp: { version: "18.12.5", keys: [OPENROUTER_API_KEY] }
+  codex: { auth: api-key }               # or chatgpt, or none
 ```
 
 | Field | Meaning |
 |---|---|
 | `version` | `latest` (default) or a version such as `1.3.0`. omp needs `latest` or a full `X.Y.Z`. |
-| `auth` | Claude only: `oauth-token` (the default) or `api-key`. |
-| `keys` | Provider API keys for opencode, pi and omp (not Claude). |
-| `yolo` | `true` starts claude (`--dangerously-skip-permissions`) or opencode (`--auto`) in `curral run` without permission prompts. Not for pi or omp. |
+| `auth` | Claude: `oauth-token` (the default) or `api-key`. Codex: `api-key` (the default), `chatgpt` or `none` (installed, with no credentials or API hosts; the `default` template's setting). |
+| `keys` | Provider API keys for opencode, pi and omp (not Claude or Codex). |
+| `yolo` | `true` starts claude (`--dangerously-skip-permissions`), opencode (`--auto`) or codex (`--yolo`) in `curral run` without permission prompts. Not for pi or omp. |
 
 Agents are baked into the base and don't update themselves. To get new versions, rebuild
 the base (`curral template rebuild <template>`, then `curral reset --latest` or a new VM).
@@ -36,6 +38,7 @@ The omp checksum catches a broken download, not a tampered release; pin `version
 ```
 curral run dev claude              # attach to (or start) the claude tmux session
 curral run dev opencode -- --model x
+curral run dev codex
 ```
 
 The session starts in the VM's repo when it has exactly one, `/workspace` with several,
@@ -61,6 +64,16 @@ curral creds push --all
   still get it in every session's environment, and curral warns at each start until
   `curral reset --latest` moves them to a current base. With `oauth-token`, setting
   `ANTHROPIC_API_KEY` in `env:` is refused, since it would override the token.
+- **Codex**: with `api-key`, curral logs Codex in with `OPENAI_API_KEY` at every push
+  (`codex login --with-api-key`, the key on stdin), which stores it in
+  `~/.codex/auth.json`. With `chatgpt`, curral pushes nothing: sign in once inside each
+  VM with `codex login --device-auth`, and the login stays in that VM's `auth.json`.
+  curral never copies your host's Codex login, because its refresh tokens rotate:
+  copies on several machines invalidate each other. Tasks need `api-key`, since a new
+  VM has no sign-in. With `none`, as in the `default` template, Codex is installed but
+  gets no credentials and no API hosts; set `agents.codex.auth` in a template extending
+  `default` to use it. `chatgpt` and `none` both drop an API key login an earlier
+  `api-key` setting left.
 - **opencode, pi and omp** get the provider keys listed in `keys:`, in their own files, so
   an Anthropic API key for them doesn't override Claude's subscription token. Known
   keys: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`,
@@ -82,10 +95,27 @@ All of these files are mode 0600:
 | opencode | `~/.local/share/opencode/auth.json`, `~/.config/opencode/opencode.json` |
 | pi | `~/.pi/agent/auth.json`, `~/.pi/agent/mcp.json` |
 | omp | `~/.omp/agent/.env`, `~/.omp/agent/mcp.json` |
+| Codex | `~/.codex/auth.json` (written by `codex login`), `~/.codex/config.toml` |
 
 Removing a secret on the host removes it from the environment on the next push.
-opencode's and pi's provider keys already in their auth files stay until replaced; omp's
-`.env` is rewritten on every push.
+opencode's and pi's provider keys, and Codex's login, stay in their auth files until
+replaced; omp's `.env` is rewritten on every push.
+
+Codex reaches `api.openai.com` with an API key, or `chatgpt.com` and `auth.openai.com`
+with `chatgpt`; curral allowlists those. With an API key it also tries `chatgpt.com`,
+`github.com` and `api.github.com` while it runs. `chatgpt.com` stays blocked (GitHub's
+hosts too, unless the template has the `github` preset, as `default` does), and Codex
+works without them, logging errors about refreshing its model list. Codex's own command
+sandbox (bubblewrap) can't set up in the guest, so curral sets
+`sandbox_mode = "danger-full-access"` unless you set another mode: the VM is the
+sandbox.
+
+curral merges its settings into Codex's `config.toml` at every push and keeps the rest:
+update checks, analytics, feedback and metrics off, credentials in `auth.json` rather
+than a keyring, the notification hook (replacing a `notify` of your own, with a
+warning), and the template's MCP servers. Comments in the file aren't kept. curral parses
+the file on the host, so one that isn't valid TOML, is over 256 KiB or nests more than 64
+levels is saved as `config.toml.curral-bak` and replaced.
 
 ## Environment
 
@@ -104,7 +134,7 @@ mcp:
   - { name: fs, type: stdio, command: [npx, -y, "@modelcontextprotocol/server-filesystem", /workspace] }
 ```
 
-Servers are written to every agent's config; pi skips SSE servers. `type` is `stdio`
+Servers are written to every agent's config; pi and Codex skip SSE servers. `type` is `stdio`
 (with `command` and optional `env`), `http` or `sse` (with an `http(s)` `url` and
 optional `headers`).
 Remote MCP hosts are added to the VM's allowlist.
@@ -123,7 +153,8 @@ minus `env`, hooks, credential helpers, the status line and plugins.
 ## Transcripts
 
 The agents' session stores (claude `~/.claude/projects`, opencode's `opencode.db`, pi
-`~/.pi/agent/sessions`, omp `~/.omp/agent/sessions`; not their credentials) are copied
+`~/.pi/agent/sessions`, omp `~/.omp/agent/sessions`, Codex `~/.codex/sessions`; not their
+credentials) are copied
 to the host under `transcripts/<vm>/<time>/`:
 
 - when a task ends;

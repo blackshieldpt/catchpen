@@ -83,7 +83,7 @@ Open a shell in a VM (recorded when stdin is a terminal, unless `record: false`)
 a command (no tty, not recorded). The command's
 words are joined with spaces, not quoted, so quote for the remote shell yourself.
 
-### `curral run <name> claude|opencode|pi|omp [-- agent args...]`
+### `curral run <name> claude|opencode|pi|omp|codex [-- agent args...]`
 
 Start an agent in a guest tmux session named after it, or reattach to it. It starts in
 the VM's repo when it has exactly one, `/workspace` with several, or home with none.
@@ -217,7 +217,7 @@ Queue a headless task, or a batch of them (`--file`). See [tasks.md](tasks.md).
 |---|---|
 | `-t, --template` | Template (default from config). |
 | `--repo` | Repo to clone and work on. |
-| `--agent` | `claude` (default), `opencode`, `pi`, `omp` or `cmd`. |
+| `--agent` | `claude` (default), `opencode`, `pi`, `omp`, `codex` or `cmd`. |
 | `--cmd` | Shell command for `--agent cmd`. The prompt is on stdin, and its path in `$CURRAL_PROMPT_FILE`. |
 | `--prompt`, `--prompt-file` | The task. |
 | `--timeout` | Stop the agent after this long (default `2h`). |

@@ -65,7 +65,8 @@ the agent user has passwordless sudo inside it.
   never enter bases, seed images or the warm pool.
 - Claude Code's token or API key goes into a file only the guest's `claude` command
   loads, so other agents and SSH sessions don't get it in their environment. Other
-  agents' provider keys go only to the agents you list them for, in their own files.
+  agents' provider keys go only to the agents you list them for, and Codex's OpenAI key
+  only to Codex, in their own files.
   This keeps credentials from being picked up or logged by the wrong tool; it is not a
   boundary inside the VM, where anything running as the agent user can read all of
   them. Don't give a VM a credential you wouldn't give to everything that runs in it.

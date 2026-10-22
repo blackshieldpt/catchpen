@@ -7,11 +7,14 @@ package agents
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/pelletier/go-toml/v2"
 
 	"github.com/blackshieldpt/curral/internal/template"
 )
@@ -56,8 +59,10 @@ const (
 	piMCP           = ".pi/agent/mcp.json"
 	ompEnv          = ".omp/agent/.env" // omp keeps logins in agent.db, but reads API keys from here
 	ompMCP          = ".omp/agent/mcp.json"
+	codexConfig     = ".codex/config.toml" // its auth.json is written by codex login
 	claudeOAuthEnv  = "CLAUDE_CODE_OAUTH_TOKEN"
 	anthropicKeyEnv = "ANTHROPIC_API_KEY"
+	openaiKeyEnv    = "OPENAI_API_KEY"
 	claudeKeySuffix = 20      // Claude Code records approved API keys by their last 20 characters
 	maxGuestJSON    = 4 << 20 // largest guest config file we read back
 )
@@ -180,6 +185,11 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 	}
 	if a := s.Agents.OMP; a != nil {
 		if err := p.omp(a, servers); err != nil {
+			return p.res, err
+		}
+	}
+	if a := s.Agents.Codex; a != nil {
+		if err := p.codex(a, servers); err != nil {
 			return p.res, err
 		}
 	}
@@ -440,9 +450,144 @@ func (p *pusher) omp(a *template.Agent, servers []template.MCP) error {
 	return p.putJSON(ompMCP, doc)
 }
 
+// The guest's config.toml is parsed on the host. go-toml recurses without a
+// depth limit, and writing deep tables back costs quadratic memory: small and
+// shallow files only, or a guest could take the host down.
+const (
+	maxCodexConfig = 256 << 10
+	maxTOMLDepth   = 64
+)
+
+func tomlUnmarshal(b []byte, v any) error {
+	if len(b) > maxCodexConfig {
+		return errors.New("too large")
+	}
+	depth := 0
+	for _, c := range b {
+		switch c {
+		case '[', '{':
+			if depth++; depth > maxTOMLDepth {
+				return errors.New("nested too deeply")
+			}
+		case ']', '}':
+			depth = max(depth-1, 0)
+		}
+	}
+	if err := toml.Unmarshal(b, v); err != nil {
+		return err
+	}
+	if m, ok := v.(*map[string]any); ok && tooDeep(*m, maxTOMLDepth) {
+		return errors.New("nested too deeply") // dotted keys, which the bracket count misses
+	}
+	return nil
+}
+
+// tooDeep reports whether v nests tables or arrays more than left deep.
+func tooDeep(v any, left int) bool {
+	switch x := v.(type) {
+	case map[string]any:
+		if left == 0 {
+			return true
+		}
+		for _, e := range x {
+			if tooDeep(e, left-1) {
+				return true
+			}
+		}
+	case []any:
+		if left == 0 {
+			return true
+		}
+		for _, e := range x {
+			if tooDeep(e, left-1) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (p *pusher) codex(a *template.Agent, servers []template.MCP) error {
+	cfg, err := p.getDoc(codexConfig, "TOML", tomlUnmarshal)
+	if err != nil {
+		return err
+	}
+	// Versions change by rebuilding the base; nothing leaves the VM but the
+	// model traffic; logins live in auth.json, not a keyring the VM lacks.
+	cfg["check_for_update_on_startup"] = false
+	cfg["cli_auth_credentials_store"] = "file"
+	obj(cfg, "analytics")["enabled"] = false
+	obj(cfg, "feedback")["enabled"] = false
+	obj(cfg, "otel")["metrics_exporter"] = "none"
+	// Codex's bubblewrap sandbox can't set up its network namespace in the
+	// guest; the VM is the sandbox. Left alone once set.
+	if _, ok := cfg["sandbox_mode"]; !ok {
+		cfg["sandbox_mode"] = "danger-full-access"
+	}
+	// Codex adds the event as a last argument, which sh -c leaves in $1.
+	notify := []any{"sh", "-c", "curl -s -m 5 --noproxy '*' -X POST -H 'Content-Type: application/json' " +
+		`--data-binary '{"agent":"codex","hook_event_name":"agent-turn-complete"}' '` + notifyURL + "' >/dev/null 2>&1 || true", "curral-notify"}
+	if old, ok := cfg["notify"]; ok && fmt.Sprint(old) != fmt.Sprint(notify) {
+		p.warn("codex: replaced notify in ~/%s with curral's notification hook", codexConfig)
+	}
+	cfg["notify"] = notify
+	if len(servers) > 0 {
+		mcp := obj(cfg, "mcp_servers")
+		for _, s := range servers {
+			e := map[string]any{}
+			switch s.Type {
+			case "stdio":
+				e["command"], e["args"] = s.Command[0], s.Command[1:]
+				if s.Env != nil {
+					e["env"] = s.Env
+				}
+			case "http":
+				e["url"] = s.URL
+				if s.Headers != nil {
+					e["http_headers"] = s.Headers
+				}
+			default:
+				p.warn("mcp %s: codex does not support SSE servers; skipped for codex", s.Name)
+				continue
+			}
+			mcp[s.Name] = e
+		}
+	}
+	b, err := toml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	if err := p.put(codexConfig, b); err != nil {
+		return err
+	}
+	if a.Auth == template.CodexChatGPT || a.Auth == template.CodexNone {
+		// chatgpt: signed in inside the VM with codex login --device-auth.
+		// Either way, an API key login from api-key mode would stay in use.
+		_, err := p.r.Run(p.ctx, "if codex login status 2>&1 | grep -qi 'api key'; then codex logout >/dev/null 2>&1; fi; true", nil)
+		return err
+	}
+	key, ok, err := p.secret(openaiKeyEnv)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		p.warn("codex: no %s on the host; store it (secrets.env or config.yaml secrets), or use agents.codex.auth: chatgpt", openaiKeyEnv)
+		return nil
+	}
+	// The key goes on stdin, into ~/.codex/auth.json (0600).
+	if _, err := p.r.Run(p.ctx, "codex login --with-api-key >/dev/null", []byte(key)); err != nil {
+		return fmt.Errorf("codex login: %w", err)
+	}
+	return nil
+}
+
 // getJSON reads a guest JSON object; a missing file is empty. An unparsable
 // file is kept as <file>.curral-bak and replaced.
 func (p *pusher) getJSON(rel string) (map[string]any, error) {
+	return p.getDoc(rel, "JSON", json.Unmarshal)
+}
+
+func (p *pusher) getDoc(rel, format string, unmarshal func([]byte, any) error) (map[string]any, error) {
 	// The file is guest-controlled: only regular files, size-capped on the guest side.
 	out, err := p.r.Run(p.ctx, fmt.Sprintf(`f="$HOME/%s"; [ -f "$f" ] && [ ! -L "$f" ] || exit 0; [ "$(stat -c %%s "$f")" -le %d ] || { echo too large >&2; exit 3; }; cat "$f"`, rel, maxGuestJSON), nil)
 	if err != nil {
@@ -452,8 +597,8 @@ func (p *pusher) getJSON(rel string) (map[string]any, error) {
 	if strings.TrimSpace(string(out)) == "" {
 		return doc, nil
 	}
-	if err := json.Unmarshal(out, &doc); err != nil {
-		p.warn("~/%s was not valid JSON; saved as ~/%s.curral-bak and replaced", rel, rel)
+	if err := unmarshal(out, &doc); err != nil {
+		p.warn("~/%s was not valid %s; saved as ~/%s.curral-bak and replaced", rel, format, rel)
 		if _, err := p.r.Run(p.ctx, fmt.Sprintf(`cp -f "$HOME/%s" "$HOME/%s.curral-bak"`, rel, rel), nil); err != nil {
 			return nil, err
 		}

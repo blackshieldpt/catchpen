@@ -32,8 +32,9 @@ URLs must be `http` or `https`.
 
 ## How `agent.waiting` works
 
-Claude's `Notification` and `Stop` hooks, an opencode plugin, a pi extension and an omp
-hook (`agent_end`), written at each start, POST to `10.0.2.101:80` in the guest. That reaches
+Claude's `Notification` and `Stop` hooks, an opencode plugin, a pi extension, an omp
+hook (`agent_end`) and Codex's `notify` program (`agent-turn-complete`), written at each
+start, POST to `10.0.2.101:80` in the guest. That reaches
 `curral notify-stdio` on the host, which sends the notification. The guest holds no sink
 credentials. Its text is stripped of control characters, cut to 300 characters and
 limited to a burst of 5 per VM, then one per 30 s. Task VMs' hooks are ignored.

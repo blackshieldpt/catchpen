@@ -1,4 +1,4 @@
-description: General development VM with Docker, Node, Python (uv) and Claude Code, opencode and pi
+description: General development VM with Docker, Node, Python (uv) and Claude Code, opencode, pi and Codex
 extends: base
 resources: { cpus: 4, memory: 8G, disk: 40G }
 packages: [build-essential, make, python3, python3-venv, pkg-config]
@@ -11,6 +11,7 @@ agents:
   claude: { auth: oauth-token }   # oauth-token (claude setup-token) | api-key
   opencode: {}                    # provider keys: agents.opencode.keys
   pi: {}                          # provider keys: agents.pi.keys
+  codex: { auth: none }           # installed only; to use it: api-key (OPENAI_API_KEY) | chatgpt (codex login --device-auth in the VM)
 network:
   presets: [github, npm, pypi, go, apt-ubuntu, apt-debian, docker-apt, docker-hub, ghcr]
 cache: [apt, go, npm, pypi, docker]   # host pull-through caches (docker: with docker: true)

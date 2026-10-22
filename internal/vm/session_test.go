@@ -30,6 +30,14 @@ func TestRunCommand(t *testing.T) {
 	if got, err := RunCommand(s, "omp", nil); err != nil || !strings.HasSuffix(got, "-s omp -- 'curral-env' 'omp'") {
 		t.Errorf("omp: %s %v", got, err)
 	}
+	s.Agents.Codex = &template.Agent{}
+	if got, err := RunCommand(s, "codex", nil); err != nil || !strings.HasSuffix(got, "-s codex -- 'curral-env' 'codex'") {
+		t.Errorf("codex: %s %v", got, err)
+	}
+	s.Agents.Codex.Yolo = &yes
+	if got, _ := RunCommand(s, "codex", nil); !strings.HasSuffix(got, "'codex' '--yolo'") {
+		t.Errorf("codex yolo: %s", got)
+	}
 	if _, err := RunCommand(s, "bash", nil); err == nil {
 		t.Error("unknown agent accepted")
 	}

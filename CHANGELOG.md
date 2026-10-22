@@ -6,6 +6,15 @@ yet; everything below is on `master`, newest first.
 
 ## [Unreleased]
 
+### Added
+
+- The Codex agent (`agents: { codex: {} }`), installed from npm. `auth: api-key` logs
+  it in with `OPENAI_API_KEY` at each start; `auth: chatgpt` leaves the sign-in to
+  `codex login --device-auth` inside each VM; `auth: none` installs it with no
+  credentials. The `default` template installs it with `none`, so its base is rebuilt.
+  `curral run <vm> codex`, `curral task run --agent codex`, notifications, transcripts
+  and MCP servers (not SSE ones) work as for the other agents.
+
 ### Security
 
 - Claude Code's token or API key is no longer in every session's environment. curral

@@ -5,13 +5,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blackshieldpt/curral/internal/config"
 	"github.com/blackshieldpt/curral/internal/image"
 	"github.com/blackshieldpt/curral/internal/paths"
 	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/curral/internal/task"
 	"github.com/blackshieldpt/curral/internal/template"
 )
 
@@ -267,5 +270,32 @@ mcp:
 	}
 	if _, err := m.Create(context.Background(), "b", CreateOpts{Template: "minimal", ClaudeAuth: "api-key"}); err == nil || !strings.Contains(err.Error(), "no claude agent") {
 		t.Errorf("claude-auth on template without claude: %v", err)
+	}
+}
+
+// A codex task needs an API key: a new VM has no ChatGPT sign-in.
+func TestCodexTaskNeedsAPIKey(t *testing.T) {
+	m := testManager(t)
+	writeFile(t, filepath.Join(m.P.Templates(), "cg.yaml"), "extends: minimal\nruntimes: { node: \"24\" }\nagents: { codex: { auth: chatgpt } }\n")
+	if _, err := m.SubmitTask(task.Spec{Template: "cg", Agent: "codex", Prompt: "x", Out: task.OutNone, Timeout: time.Hour}); err == nil || !strings.Contains(err.Error(), "auth: api-key") {
+		t.Errorf("chatgpt codex task: %v", err)
+	}
+	if _, err := m.SubmitTask(task.Spec{Template: "default", Agent: "codex", Prompt: "x", Out: task.OutNone, Timeout: time.Hour}); err == nil || !strings.Contains(err.Error(), "it has none") {
+		t.Errorf("default template's codex task: %v", err)
+	}
+}
+
+// Codex reaches the API with a key, or ChatGPT's backend and its sign-in host.
+func TestCodexHosts(t *testing.T) {
+	for auth, want := range map[string][]string{
+		"":                    {"api.openai.com:443"},
+		template.CodexAPIKey:  {"api.openai.com:443"},
+		template.CodexChatGPT: {"auth.openai.com:443", "chatgpt.com:443"},
+		template.CodexNone:    nil,
+	} {
+		got := agentHosts(&template.Template{Agents: template.Agents{Codex: &template.Agent{Auth: auth}}})
+		if !slices.Equal(got, want) {
+			t.Errorf("auth %q: hosts %v, want %v", auth, got, want)
+		}
 	}
 }

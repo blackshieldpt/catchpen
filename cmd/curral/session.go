@@ -48,11 +48,11 @@ func sshCmd() *cobra.Command {
 
 func runCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "run <name> claude|opencode|pi|omp [-- agent args...]",
+		Use:   "run <name> claude|opencode|pi|omp|codex [-- agent args...]",
 		Short: "Start (or reattach to) an agent in a guest tmux session",
 		Long: `The agent runs in a guest tmux session named after it, in the VM's repo when it has
 exactly one (else /workspace), so it survives disconnects. Guest tmux prefix: C-a.
-Template agents.<name>.yolo: true starts claude/opencode without permission prompts.`,
+Template agents.<name>.yolo: true starts claude/opencode/codex without permission prompts.`,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()

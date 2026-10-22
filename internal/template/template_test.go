@@ -216,7 +216,10 @@ func TestAgentsValidation(t *testing.T) {
 	cases := map[string]struct{ body, want string }{
 		"nonode":     {"agents: { claude: {} }\n", "agents need runtimes.node"},
 		"badauth":    {"extends: default\nagents: { claude: { auth: password } }\n", "agents.claude.auth"},
-		"subauth":    {"extends: default\nagents: { pi: { auth: oauth-token } }\n", "Claude Code only"},
+		"subauth":    {"extends: default\nagents: { pi: { auth: oauth-token } }\n", "only claude and codex"},
+		"codexauth":  {"extends: default\nagents: { codex: { auth: oauth-token } }\n", "agents.codex.auth must be api-key, chatgpt or none"},
+		"codexkeys":  {"extends: default\nagents: { codex: { keys: [OPENAI_API_KEY] } }\n", "agents.codex.keys"},
+		"codexnode":  {"agents: { codex: {} }\n", "agents need runtimes.node"},
 		"claudekeys": {"extends: default\nagents: { claude: { keys: [OPENAI_API_KEY] } }\n", "agents.claude.keys"},
 		"badkey":     {"extends: default\nagents: { pi: { keys: [MY_KEY] } }\n", "unknown provider key"},
 		"badver":     {"extends: default\nagents: { pi: { version: \"1.0; rm\" } }\n", "agents.pi.version"},
@@ -239,6 +242,18 @@ func TestAgentsValidation(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err = %v, want %q", name, err, c.want)
 		}
+	}
+	write(t, dir, "codexok.yaml", "extends: minimal\nruntimes: { node: \"24\" }\nagents: { codex: { auth: chatgpt, yolo: true } }\n")
+	if tp, err := (Loader{UserDir: dir}).Load("codexok"); err != nil || tp.Agents.Codex.Auth != CodexChatGPT || !tp.Agents.Codex.SkipPermissions() {
+		t.Errorf("codex with chatgpt auth and yolo: %+v %v", tp, err)
+	}
+	def, err := (Loader{UserDir: dir}).Load("default")
+	if err != nil || def.Agents.Codex == nil || def.Agents.Codex.Auth != CodexNone {
+		t.Errorf("default template's codex: %v", err)
+	}
+	write(t, dir, "usecodex.yaml", "extends: default\nagents: { codex: { auth: api-key } }\n")
+	if tp, err := (Loader{UserDir: dir}).Load("usecodex"); err != nil || tp.Agents.Codex.Auth != CodexAPIKey {
+		t.Errorf("turning codex on over default: %v", err)
 	}
 	write(t, dir, "apikey.yaml", "extends: default\nagents: { claude: { auth: api-key } }\nenv: { ANTHROPIC_API_KEY: \"secret:K\" }\n")
 	if _, err := (Loader{UserDir: dir}).Load("apikey"); err != nil {

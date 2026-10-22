@@ -38,9 +38,12 @@ func (m *Manager) SubmitTask(spec task.Spec) (*task.Task, error) {
 		return nil, err
 	}
 	if spec.Agent != "cmd" {
-		a := map[string]*template.Agent{"claude": r.T.Agents.Claude, "opencode": r.T.Agents.OpenCode, "pi": r.T.Agents.Pi, "omp": r.T.Agents.OMP}[spec.Agent]
+		a := map[string]*template.Agent{"claude": r.T.Agents.Claude, "opencode": r.T.Agents.OpenCode, "pi": r.T.Agents.Pi, "omp": r.T.Agents.OMP, "codex": r.T.Agents.Codex}[spec.Agent]
 		if a == nil {
 			return nil, fmt.Errorf("template %s doesn't install %s", r.T.Name, spec.Agent)
+		}
+		if spec.Agent == "codex" && (a.Auth == template.CodexChatGPT || a.Auth == template.CodexNone) {
+			return nil, fmt.Errorf("codex tasks need agents.codex.auth: api-key in template %s (it has %s; a new VM has no sign-in)", r.T.Name, a.Auth)
 		}
 	}
 	if spec.Into != "" {

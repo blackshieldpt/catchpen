@@ -112,6 +112,9 @@ func TestCommand(t *testing.T) {
 	if c := Command(Spec{Agent: "opencode"}); !strings.Contains(c, `--auto -- "$(cat`) {
 		t.Errorf("opencode: %s", c)
 	}
+	if c := Command(Spec{Agent: "codex"}); c != `codex exec --json --yolo --skip-git-repo-check - <"$HOME/.curral/task-prompt.md"` {
+		t.Errorf("codex: %s", c)
+	}
 	if c := Command(Spec{Agent: "cmd", Cmd: "echo 'hi'"}); !strings.Contains(c, `sh -c 'echo '\''hi'\'''`) || !strings.Contains(c, `<"$HOME/.curral/task-prompt.md"`) {
 		t.Errorf("cmd: %s", c)
 	}
@@ -135,7 +138,40 @@ const piStream = `{"type":"session","version":3}
 {"type":"message_end","message":{"role":"user","content":"x"}}
 `
 
+// codex exec --json events, as documented.
+const codexStream = `{"type":"thread.started","thread_id":"t1"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"i0","type":"command_execution","command":"bash -lc ls","status":"in_progress"}}
+{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"Looking."}}
+{"type":"error","message":"Reconnecting... 1/5"}
+{"type":"item.completed","item":{"id":"i2","type":"agent_message","text":"Fixed it."}}
+{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":20,"reasoning_output_tokens":5}}
+`
+
 func TestSummarize(t *testing.T) {
+	if s := Summarize("codex", strings.NewReader(codexStream)); s.Result != "Fixed it." || s.Usage != (Usage{Turns: 1, InputTokens: 100, OutputTokens: 20}) || s.Error != "" {
+		t.Errorf("codex: %+v", s)
+	}
+	// As a real run with a bad key ends: retries, a non-fatal error item, the failed turn.
+	failed := `{"type":"error","message":"Reconnecting... 2/5 (unexpected status 401 Unauthorized)"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Falling back from WebSockets to HTTPS transport."}}
+{"type":"turn.failed","error":{"message":"unexpected status 401 Unauthorized: Incorrect API key provided"}}
+`
+	if s := Summarize("codex", strings.NewReader(failed)); s.Error != "codex: unexpected status 401 Unauthorized: Incorrect API key provided" || s.Result != "" {
+		t.Errorf("codex failure: %+v", s)
+	}
+	var rendered []string
+	for _, l := range strings.Split(failed, "\n") {
+		if r := Render("codex", []byte(l)); r != "" {
+			rendered = append(rendered, r)
+		}
+	}
+	if got := strings.Join(rendered, "|"); got != "error: Reconnecting... 2/5 (unexpected status 401 Unauthorized)|failed: unexpected status 401 Unauthorized: Incorrect API key provided" {
+		t.Errorf("codex failure render: %q", got)
+	}
+	if r := Render("codex", []byte(`{"type":"item.started","item":{"type":"mcp_tool_call","server":"docs","tool":"search"}}`)); r != "→ docs.search" {
+		t.Errorf("codex mcp render: %q", r)
+	}
 	s := Summarize("claude", strings.NewReader(claudeStream))
 	if s.Result != "Fixed it." || s.Usage != (Usage{Turns: 3, InputTokens: 100, OutputTokens: 50, CostUSD: 0.12}) || s.Error != "" {
 		t.Errorf("claude: %+v", s)
@@ -189,6 +225,15 @@ func TestRender(t *testing.T) {
 		if r := Render(a, []byte(`{"type":"tool_execution_start","toolName":"bash","args":{}}`)); r != "→ bash {}" {
 			t.Errorf("%s render: %q", a, r)
 		}
+	}
+	out = nil
+	for _, l := range strings.Split(codexStream, "\n") {
+		if r := Render("codex", []byte(l)); r != "" {
+			out = append(out, r)
+		}
+	}
+	if got := strings.Join(out, "|"); got != "→ bash -lc ls|Looking.|error: Reconnecting... 1/5|Fixed it." {
+		t.Errorf("codex render: %q", got)
 	}
 	if r := Render("opencode", []byte("not json")); r != "not json" {
 		t.Errorf("raw line: %q", r)

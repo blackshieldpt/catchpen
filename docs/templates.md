@@ -24,7 +24,7 @@ Built-ins:
 |---|---|
 | `base` | `ca-certificates curl git jq tmux ripgrep unzip less file htop netcat-openbsd`; `egress: allowlist` with the `anthropic` preset. |
 | `minimal` | `base` with 2 CPUs, 4G memory, 20G disk. |
-| `default` | `base` with 4 CPUs, 8G, 40G; `build-essential make python3 python3-venv pkg-config`; Docker; `gh`; Node 24 and uv; Claude Code (OAuth token), opencode and pi; the `github npm pypi go apt-ubuntu apt-debian docker-apt docker-hub ghcr` presets; all five package caches; all three canaries. |
+| `default` | `base` with 4 CPUs, 8G, 40G; `build-essential make python3 python3-venv pkg-config`; Docker; `gh`; Node 24 and uv; Claude Code (OAuth token), opencode, pi and Codex (installed with `auth: none`: no credentials until a template sets `agents.codex.auth`); the `github npm pypi go apt-ubuntu apt-debian docker-apt docker-hub ghcr` presets; all five package caches; all three canaries. |
 
 ## Example
 
@@ -67,7 +67,7 @@ idle_stop: 2h
 | `tools` | `gh`, `tea`. |
 | `ports` | `"guest"` or `"host:guest"`, bound to `127.0.0.1`. Host port 0 or omitted picks a free port at start. |
 | `network` | `egress` (`allowlist`, `open`, `none`), `presets`, `allow`, `on_deny` (`log`, `prompt`), `prompt_timeout` (default `30s`), `allow_private`. See [egress.md](egress.md). |
-| `agents` | `claude`, `opencode`, `pi`, `omp`. See [agents.md](agents.md). |
+| `agents` | `claude`, `opencode`, `pi`, `omp`, `codex`. See [agents.md](agents.md). |
 | `env` | Environment for every ssh session: literal values or `secret:NAME`. Names are upper case; `HOME`, `USER`, `PATH`, `SHELL` and `LOGNAME` are refused, and so is `ANTHROPIC_API_KEY` unless Claude's `auth` is `api-key`. |
 | `mcp` | MCP servers for all agents. See [agents.md](agents.md#mcp-servers). |
 | `sync` | `git_identity` (default `true`), `claude_config` (default `false`). |

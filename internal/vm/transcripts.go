@@ -16,7 +16,7 @@ import (
 
 // Agent session stores copied as transcripts, relative to the guest home.
 // Credentials (claude's .credentials.json, opencode's auth.json, pi's
-// auth.json, omp's agent.db and .env) live outside these paths.
+// auth.json, omp's agent.db and .env, codex's auth.json) live outside these paths.
 var transcriptPaths = []string{
 	".claude/projects",
 	".local/share/opencode/opencode.db",
@@ -24,6 +24,7 @@ var transcriptPaths = []string{
 	".local/share/opencode/opencode.db-shm",
 	".pi/agent/sessions",
 	".omp/agent/sessions",
+	".codex/sessions",
 }
 
 var transcriptLimits = safetar.Limits{Bytes: 1 << 30, Files: 200_000}

@@ -10,7 +10,7 @@ curral attach dev                 # the guest's main tmux session
 curral cp ./notes.md dev:/tmp/    # scp, either direction (-r for directories)
 ```
 
-`curral run <vm> claude|opencode|pi|omp [-- args]` starts the agent in a guest tmux
+`curral run <vm> claude|opencode|pi|omp|codex [-- args]` starts the agent in a guest tmux
 session named after it and reattaches to it later. New arguments and `yolo` apply only
 when the session starts. `curral attach` does the same for a `main` shell session. The
 guest tmux prefix is `C-a`, so it doesn't clash with a host tmux. VMs created before

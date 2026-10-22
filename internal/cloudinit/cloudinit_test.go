@@ -45,7 +45,7 @@ func TestBuildScriptSections(t *testing.T) {
 	if strings.Contains(min, "installing docker") || strings.Contains(min, "installing node") || strings.Contains(min, "installing agents") {
 		t.Error("minimal must not install docker/node/agents")
 	}
-	agents := "npm install -g --no-fund --no-audit --loglevel=error @anthropic-ai/claude-code@latest opencode-ai@latest @earendil-works/pi-coding-agent@latest"
+	agents := "npm install -g --no-fund --no-audit --loglevel=error @anthropic-ai/claude-code@latest opencode-ai@latest @earendil-works/pi-coding-agent@latest @openai/codex@latest\n"
 	if !strings.Contains(def, agents) || strings.Index(def, agents) < strings.Index(def, "installing node") {
 		t.Errorf("default build script must install the agents after node")
 	}
@@ -53,7 +53,7 @@ func TestBuildScriptSections(t *testing.T) {
 		t.Error("claude wrapper without agents.claude")
 	}
 	for _, want := range []string{"DISABLE_AUTOUPDATER=1\n", "OPENCODE_DISABLE_AUTOUPDATE=1\n", "PI_OFFLINE=1\n", "\nclaude --version\n", "\npi --version\n",
-		`ln -sfn "$(readlink -f "$bin")" /usr/local/lib/curral/claude`, `done < "$HOME/.config/curral/claude.env"`, "exec /usr/local/lib/curral/claude \"$@\""} {
+		`ln -sfn "$(readlink -f "$bin")" /usr/local/lib/curral/claude`, "\ncodex --version\n", `done < "$HOME/.config/curral/claude.env"`, "exec /usr/local/lib/curral/claude \"$@\""} {
 		if !strings.Contains(def, want) {
 			t.Errorf("default build script missing %q", want)
 		}

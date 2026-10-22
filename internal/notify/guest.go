@@ -69,7 +69,7 @@ func ServeGuest(ctx context.Context, conn net.Conn, vm string, lim Limiter, get 
 	}
 	msg := g.Message
 	if msg == "" {
-		msg = "finished its turn" // Stop, session.idle, agent_settled, agent_end
+		msg = "finished its turn" // Stop, session.idle, agent_settled, agent_end, agent-turn-complete
 	}
 	// As written and as sinks get it (Clean drops what isn't printable).
 	if note := withhold(g.Agent + "\n" + msg + "\n" + agent + "\n" + Clean(msg, len(msg)+1)); note != "" {

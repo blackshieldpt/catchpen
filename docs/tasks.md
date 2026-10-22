@@ -27,7 +27,10 @@ curral task rm <id>
    read-only deploy keys unless `--rw`.
 3. The agent works on branch `curral/<id>` without permission prompts: claude
    `-p --output-format stream-json`, `opencode run --format json --auto`,
-   `pi -p --mode json`. omp also runs headless. `--agent cmd` runs your command with the prompt on stdin
+   `pi -p --mode json`, `codex exec --json --yolo`. omp also runs headless. Codex
+   tasks need `auth: api-key` (a task whose template has `chatgpt` or `none`, as `default`
+   does, is refused), and Codex
+   reports no cost. `--agent cmd` runs your command with the prompt on stdin
    and its path in `$CURRAL_PROMPT_FILE`. `--timeout` (default 2h, from 1m to 48h)
    stops it; `--max-budget-usd` caps Claude's spend (claude only). Prompts are limited
    to 100 KiB.

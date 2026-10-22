@@ -134,6 +134,7 @@ func agentInstall(a tpl.Agents) (pkgs, bins, env []string) {
 	add(a.Claude, "@anthropic-ai/claude-code", "claude", "DISABLE_AUTOUPDATER=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1")
 	add(a.OpenCode, "opencode-ai", "opencode", "OPENCODE_DISABLE_AUTOUPDATE=1", "OPENCODE_DISABLE_MODELS_FETCH=1", "OPENCODE_DISABLE_SHARE=1")
 	add(a.Pi, "@earendil-works/pi-coding-agent", "pi", "PI_OFFLINE=1", "PI_SKIP_VERSION_CHECK=1", "PI_TELEMETRY=0")
+	add(a.Codex, "@openai/codex", "codex") // update checks and telemetry are off in its config.toml
 	return pkgs, bins, env
 }
 

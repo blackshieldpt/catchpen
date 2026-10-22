@@ -7,8 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/pelletier/go-toml/v2"
 
 	"github.com/blackshieldpt/curral/internal/template"
 )
@@ -433,6 +436,142 @@ func TestPushHooks(t *testing.T) {
 		b, err := os.ReadFile(filepath.Join(home, f))
 		if err != nil || !strings.Contains(string(b), notifyURL) || !strings.Contains(string(b), "node:http") || !strings.Contains(string(b), ev) {
 			t.Errorf("%s: %v\n%s", f, err, b)
+		}
+	}
+}
+
+// fakeCodex puts a codex on PATH that keeps its login in ~/.codex/auth.json
+// as the real one does: login --with-api-key stores stdin, login status
+// reports an API key login, logout removes it; anything else fails.
+func fakeCodex(t *testing.T) {
+	bin := t.TempDir()
+	write(t, filepath.Join(bin, "codex"), `#!/bin/sh
+f="$HOME/.codex/auth.json"
+case "$*" in
+"login --with-api-key") cat > "$f" ;;
+"login status") grep -q '^sk-' "$f" 2>/dev/null && echo "Logged in using an API key" || echo "Logged in using ChatGPT" ;;
+logout) rm -f "$f" ;;
+*) exit 2 ;;
+esac
+`)
+	os.Chmod(filepath.Join(bin, "codex"), 0o755)
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+}
+
+func TestPushCodex(t *testing.T) {
+	fakeCodex(t)
+	home := t.TempDir()
+	write(t, filepath.Join(home, codexConfig), "model = \"gpt-x\"\ncheck_for_update_on_startup = true\nsandbox_mode = \"read-only\"\n[mcp_servers.mine]\ncommand = \"x\"\n")
+	s := fullSpec()
+	s.Agents = template.Agents{Codex: &template.Agent{}}
+	sec := fakeSecrets{"OPENAI_API_KEY": "sk-openai-test", "FS_TOKEN": "fs-secret"}
+	res, err := Push(context.Background(), localRemote{home}, s, sec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(home, ".codex/auth.json")); string(b) != "sk-openai-test" {
+		t.Errorf("codex login got %q", b)
+	}
+	if env, _ := os.ReadFile(filepath.Join(home, envFile)); strings.Contains(string(env), "sk-openai-test") {
+		t.Errorf("the OpenAI key is in the shared env:\n%s", env)
+	}
+	b, err := os.ReadFile(filepath.Join(home, codexConfig))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := os.Stat(filepath.Join(home, codexConfig)); st.Mode().Perm() != 0o600 {
+		t.Errorf("config.toml mode %v", st.Mode())
+	}
+	cfg := map[string]any{}
+	if err := toml.Unmarshal(b, &cfg); err != nil {
+		t.Fatalf("config.toml: %v\n%s", err, b)
+	}
+	if cfg["model"] != "gpt-x" || cfg["sandbox_mode"] != "read-only" || get(cfg, "mcp_servers", "mine", "command") != "x" {
+		t.Errorf("user settings not kept:\n%s", b)
+	}
+	if cfg["check_for_update_on_startup"] != false || cfg["cli_auth_credentials_store"] != "file" || get(cfg, "analytics", "enabled") != false ||
+		get(cfg, "feedback", "enabled") != false || get(cfg, "otel", "metrics_exporter") != "none" {
+		t.Errorf("curral settings:\n%s", b)
+	}
+	if n, _ := cfg["notify"].([]any); len(n) != 4 || n[0] != "sh" || !strings.Contains(n[2].(string), notifyURL) || !strings.Contains(n[2].(string), `"agent":"codex"`) {
+		t.Errorf("notify = %v", cfg["notify"])
+	}
+	if get(cfg, "mcp_servers", "fs", "command") != "npx" || get(cfg, "mcp_servers", "fs", "env", "TOKEN") != "fs-secret" ||
+		get(cfg, "mcp_servers", "docs", "url") != "https://mcp.example.com/mcp" || get(cfg, "mcp_servers", "docs", "http_headers", "Authorization") != "Bearer x" {
+		t.Errorf("mcp_servers:\n%s", b)
+	}
+	if get(cfg, "mcp_servers", "old") != nil || !strings.Contains(strings.Join(res.Warnings, "\n"), "codex does not support SSE") {
+		t.Errorf("SSE server: %v", res.Warnings)
+	}
+
+	// ChatGPT mode keeps the VM's own sign-in, but drops an API key login
+	// left from api-key mode.
+	chatgpt := Spec{Agents: template.Agents{Codex: &template.Agent{Auth: template.CodexChatGPT}}}
+	if _, err := Push(context.Background(), localRemote{home}, chatgpt, sec); err != nil {
+		t.Fatalf("chatgpt mode: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".codex/auth.json")); err == nil {
+		t.Error("switching to chatgpt kept the API key login")
+	}
+	write(t, filepath.Join(home, ".codex/auth.json"), `{"auth_mode":"chatgpt"}`)
+	if _, err := Push(context.Background(), localRemote{home}, chatgpt, sec); err != nil {
+		t.Fatalf("chatgpt mode: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(home, ".codex/auth.json")); string(b) != `{"auth_mode":"chatgpt"}` {
+		t.Errorf("chatgpt sign-in changed: %q", b)
+	}
+	home = t.TempDir()
+	// Installed only: no login, no warning, and an old API key login is dropped.
+	home = t.TempDir()
+	if _, err := Push(context.Background(), localRemote{home}, s, sec); err != nil {
+		t.Fatal(err)
+	}
+	res, err = Push(context.Background(), localRemote{home}, Spec{Agents: template.Agents{Codex: &template.Agent{Auth: template.CodexNone}}}, sec)
+	if _, serr := os.Stat(filepath.Join(home, ".codex/auth.json")); err != nil || serr == nil || len(res.Warnings) != 0 || slices.Contains(res.Found, "OPENAI_API_KEY") {
+		t.Errorf("auth none: %v, auth.json kept %v, warnings %v, found %v", err, serr == nil, res.Warnings, res.Found)
+	}
+	// No key on the host: a warning, and no login.
+	res, err = Push(context.Background(), localRemote{t.TempDir()}, Spec{Agents: template.Agents{Codex: &template.Agent{}}}, fakeSecrets{})
+	if err != nil || !strings.Contains(strings.Join(res.Warnings, "\n"), "codex: no OPENAI_API_KEY") {
+		t.Errorf("no key: %v %v", res.Warnings, err)
+	}
+	// A config.toml that isn't TOML, or that would take the host's parser too
+	// deep or too long, is kept aside and replaced.
+	for name, body := range map[string]string{
+		"invalid":   "[[not toml",
+		"deep":      "a = " + strings.Repeat("[", 1<<20) + strings.Repeat("]", 1<<20),
+		"large":     strings.Repeat("# filler\n", maxCodexConfig/8),
+		"notify":    "notify = [\"my-notifier\"]\n",
+		"dotted":    strings.Repeat("a.", (maxCodexConfig-8)/2) + "a = 1\n",
+		"mcpscalar": "mcp_servers = 1\nanalytics = \"x\"\n",
+	} {
+		home = t.TempDir()
+		write(t, filepath.Join(home, codexConfig), body)
+		res, err = Push(context.Background(), localRemote{home}, chatgpt, sec)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		w := strings.Join(res.Warnings, "\n")
+		_, backedUp := os.Stat(filepath.Join(home, codexConfig+".curral-bak"))
+		switch name {
+		case "notify":
+			if !strings.Contains(w, "replaced notify") {
+				t.Errorf("notify: warnings %v", res.Warnings)
+			}
+		case "mcpscalar": // valid TOML within the limits: merged
+			if backedUp == nil {
+				t.Errorf("%s: replaced", name)
+			}
+		default:
+			if backedUp != nil || !strings.Contains(w, "not valid TOML") {
+				t.Errorf("%s: warnings %v", name, res.Warnings)
+			}
+			if b, _ := os.ReadFile(filepath.Join(home, codexConfig)); !strings.Contains(string(b), "sandbox_mode = 'danger-full-access'") {
+				t.Errorf("%s: default sandbox_mode:\n%.200s", name, b)
+			}
+		}
+		if b, _ := os.ReadFile(filepath.Join(home, codexConfig)); !strings.Contains(string(b), "check_for_update_on_startup = false") {
+			t.Errorf("%s: config not written:\n%.200s", name, b)
 		}
 	}
 }

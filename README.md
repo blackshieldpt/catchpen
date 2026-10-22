@@ -1,6 +1,6 @@
 # curral
 
-KVM sandboxes for coding agents. `curral` runs Claude Code, opencode, pi and omp in
+KVM sandboxes for coding agents. `curral` runs Claude Code, opencode, pi, omp and Codex in
 QEMU/KVM virtual machines built from declarative templates, so an agent can install
 packages, run code and use sudo without reaching your host, your credentials or your
 network.
@@ -85,7 +85,8 @@ curral task run --repo github:acme/api --prompt "fix issue #42" --into ~/src/api
 curral task ls
 ```
 
-The `default` template has Docker, Node 24, uv, `gh`, Claude Code, opencode and pi.
+The `default` template has Docker, Node 24, uv, `gh`, Claude Code, opencode, pi and Codex
+(Codex without credentials until you set `agents.codex.auth`).
 Write your own in `~/.config/curral/templates/`; see
 [docs/templates.md](docs/templates.md).
 
