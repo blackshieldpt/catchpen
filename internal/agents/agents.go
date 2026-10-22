@@ -48,6 +48,7 @@ type Result struct {
 // Guest paths, relative to the user's home.
 const (
 	envFile         = ".ssh/environment"
+	claudeEnvFile   = ".config/curral/claude.env" // read only by the guest's claude wrapper
 	claudeJSON      = ".claude.json"
 	opencodeAuth    = ".local/share/opencode/auth.json"
 	opencodeConfig  = ".config/opencode/opencode.json"
@@ -60,6 +61,10 @@ const (
 	claudeKeySuffix = 20      // Claude Code records approved API keys by their last 20 characters
 	maxGuestJSON    = 4 << 20 // largest guest config file we read back
 )
+
+// claudeReal is the real claude in bases that wrap it to load claudeEnvFile;
+// older bases lack it.
+var claudeReal = "/usr/local/lib/curral/claude"
 
 type pusher struct {
 	ctx    context.Context
@@ -125,13 +130,30 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 		if err != nil {
 			return p.res, err
 		}
+		claudeEnv := map[string]string{}
 		if ok {
-			env[name] = v
+			claudeEnv[name] = v
 			if name == anthropicKeyEnv {
 				claudeKey = v
 			}
 		} else if name == claudeOAuthEnv {
 			p.warn("claude: no %s on the host; run `claude setup-token` and store the token (secrets.env or config.yaml secrets)", claudeOAuthEnv)
+		}
+		// Only claude gets its token or key, where the base wraps claude
+		// to load it; older bases get it in every session's environment.
+		out, err := p.r.Run(p.ctx, "test -e "+claudeReal+" && echo wrapped || true", nil)
+		if err != nil {
+			return p.res, err
+		}
+		if strings.TrimSpace(string(out)) == "wrapped" {
+			if err := p.put(claudeEnvFile, envFileContent(claudeEnv)); err != nil {
+				return p.res, err
+			}
+		} else {
+			maps.Copy(env, claudeEnv)
+			if ok {
+				p.warn("claude: this VM's base predates keeping Claude's credential to Claude Code, so every session gets it in its environment (curral reset --latest moves the VM to a current base)")
+			}
 		}
 	}
 	if err := p.put(envFile, envFileContent(env)); err != nil {

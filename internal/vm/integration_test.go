@@ -188,13 +188,16 @@ mcp:
 			t.Errorf("%s --version printed nothing", bin)
 		}
 	}
-	// ~/.ssh/environment reaches ssh sessions; the API key stays out of Claude's env.
-	for name, want := range map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": oauth, "FOO": "literal value", "BAR": "bar from host", "ANTHROPIC_API_KEY": "", "DISABLE_AUTOUPDATER": "1", "PI_OFFLINE": "1"} {
+	// ~/.ssh/environment reaches ssh sessions; Claude's token and the API key don't.
+	for name, want := range map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "", "FOO": "literal value", "BAR": "bar from host", "ANTHROPIC_API_KEY": "", "DISABLE_AUTOUPDATER": "1", "PI_OFFLINE": "1"} {
 		if got := run("printenv " + name + " || true"); got != want {
 			t.Errorf("guest %s = %q, want %q", name, got, want)
 		}
 	}
-	if got := run("stat -c %a ~/.ssh/environment ~/.claude.json ~/.local/share/opencode/auth.json ~/.pi/agent/auth.json | sort -u"); got != "600" {
+	if got := run("curral-env printenv CLAUDE_CODE_OAUTH_TOKEN || true"); got != "" {
+		t.Errorf("agents curral run starts get Claude's token: %q", got)
+	}
+	if got := run("stat -c %a ~/.ssh/environment ~/.config/curral/claude.env ~/.claude.json ~/.local/share/opencode/auth.json ~/.pi/agent/auth.json | sort -u"); got != "600" {
 		t.Errorf("modes: %q", got)
 	}
 	if got := run("jq -r .anthropic.key ~/.local/share/opencode/auth.json ~/.pi/agent/auth.json | sort -u"); got != key {
@@ -216,6 +219,11 @@ mcp:
 	}
 	if got := run("grep -c ^BAR= ~/.ssh/environment || true"); got != "0" {
 		t.Errorf("removed secret still in the VM env file")
+	}
+	// claude itself gets the token: point the wrapper at printenv.
+	run("sudo ln -sfn /usr/bin/printenv /usr/local/lib/curral/claude")
+	if got := run("claude CLAUDE_CODE_OAUTH_TOKEN"); got != oauth {
+		t.Errorf("claude's token = %q", got)
 	}
 }
 

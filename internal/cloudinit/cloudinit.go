@@ -86,6 +86,7 @@ func BuildScript(t *tpl.Template, user string, caches []string) (string, error) 
 		"AgentPkgs": pkgs,
 		"AgentBins": bins,
 		"AgentEnv":  env,
+		"Claude":    t.Agents.Claude != nil,
 		"User":      user,
 		"Packages":  t.Packages,
 		"Docker":    t.HasDocker(),

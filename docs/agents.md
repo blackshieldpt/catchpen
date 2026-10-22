@@ -54,9 +54,13 @@ curral creds push --all
 
 - **Claude Code**: `oauth-token` uses `CLAUDE_CODE_OAUTH_TOKEN` (create it once with
   `claude setup-token`); `api-key` uses `ANTHROPIC_API_KEY`. The variable is written to
-  the VM's session environment (`~/.ssh/environment`), so every SSH session and every
-  agent `curral run` starts can read it, not just Claude Code. With `oauth-token`,
-  setting `ANTHROPIC_API_KEY` in `env:` is refused, since it would override the token.
+  `~/.config/curral/claude.env`, which only the guest's `claude` command loads: other
+  agents and SSH sessions don't get it in their environment. It is not a secret from
+  the VM, though: anything running as the agent user can read the file, and programs
+  Claude Code starts inherit its environment. VMs on a base built before this change
+  still get it in every session's environment, and curral warns at each start until
+  `curral reset --latest` moves them to a current base. With `oauth-token`, setting
+  `ANTHROPIC_API_KEY` in `env:` is refused, since it would override the token.
 - **opencode, pi and omp** get the provider keys listed in `keys:`, in their own files, so
   an Anthropic API key for them doesn't override Claude's subscription token. Known
   keys: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `GEMINI_API_KEY`,
@@ -72,7 +76,8 @@ All of these files are mode 0600:
 
 | What | File |
 |---|---|
-| `env:`, and Claude Code's token or key | `~/.ssh/environment` |
+| `env:` | `~/.ssh/environment` |
+| Claude Code's token or key | `~/.config/curral/claude.env` |
 | Claude Code's settings and MCP servers | `~/.claude.json` |
 | opencode | `~/.local/share/opencode/auth.json`, `~/.config/opencode/opencode.json` |
 | pi | `~/.pi/agent/auth.json`, `~/.pi/agent/mcp.json` |

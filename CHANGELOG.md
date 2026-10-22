@@ -8,6 +8,12 @@ yet; everything below is on `master`, newest first.
 
 ### Security
 
+- Claude Code's token or API key is no longer in every session's environment. curral
+  pushes it to `~/.config/curral/claude.env`, which only a `claude` wrapper in the base
+  loads, so opencode, pi, omp and SSH sessions don't get it. Templates with Claude get
+  a new base; existing VMs keep the old behaviour, with a warning at each start, until
+  `curral reset --latest`.
+
 - Patches exported by `curral pull --patches` and `curral task run --out patch` are now
   made on the host from commits it has already scanned, instead of being taken from
   the guest. A binary delta in a guest-written patch could rebuild a decoy credential

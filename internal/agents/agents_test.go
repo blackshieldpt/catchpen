@@ -216,6 +216,65 @@ func TestPushAPIKeyModeAndRepush(t *testing.T) {
 	}
 }
 
+// In a base that wraps claude, its token or key goes only to the wrapper's
+// file; older bases get it in the shared environment, with a warning.
+func TestPushClaudeCredentialOnlyForClaude(t *testing.T) {
+	real := claudeReal
+	t.Cleanup(func() { claudeReal = real })
+	claudeReal = filepath.Join(t.TempDir(), "claude")
+	write(t, claudeReal, "")
+	for _, auth := range []string{template.ClaudeOAuth, template.ClaudeAPIKey} {
+		home := t.TempDir()
+		s := Spec{Agents: template.Agents{Claude: &template.Agent{Auth: auth}, OpenCode: &template.Agent{}}, Env: map[string]string{"FOO": "bar"}}
+		sec := fakeSecrets{"CLAUDE_CODE_OAUTH_TOKEN": oauth, "ANTHROPIC_API_KEY": apiKey}
+		res, err := Push(context.Background(), localRemote{home}, s, sec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		name, val := "CLAUDE_CODE_OAUTH_TOKEN", oauth
+		if auth == template.ClaudeAPIKey {
+			name, val = "ANTHROPIC_API_KEY", apiKey
+		}
+		env, _ := os.ReadFile(filepath.Join(home, envFile))
+		if strings.Contains(string(env), val) || !strings.Contains(string(env), "FOO=bar\n") {
+			t.Errorf("%s: shared env:\n%s", auth, env)
+		}
+		ce, _ := os.ReadFile(filepath.Join(home, claudeEnvFile))
+		if !strings.Contains(string(ce), name+"="+val+"\n") || strings.Contains(string(ce), "FOO") {
+			t.Errorf("%s: claude env:\n%s", auth, ce)
+		}
+		if st, err := os.Stat(filepath.Join(home, claudeEnvFile)); err != nil || st.Mode().Perm() != 0o600 {
+			t.Errorf("%s: claude env file: %v", auth, err)
+		}
+		if len(res.Warnings) != 0 {
+			t.Errorf("%s: warnings %v", auth, res.Warnings)
+		}
+		// A credential removed on the host disappears on the next push.
+		if _, err := Push(context.Background(), localRemote{home}, s, fakeSecrets{}); err != nil {
+			t.Fatal(err)
+		}
+		if ce, _ = os.ReadFile(filepath.Join(home, claudeEnvFile)); strings.Contains(string(ce), val) {
+			t.Errorf("%s: stale credential kept: %s", auth, ce)
+		}
+	}
+
+	claudeReal = filepath.Join(t.TempDir(), "missing")
+	home := t.TempDir()
+	res, err := Push(context.Background(), localRemote{home}, Spec{Agents: template.Agents{Claude: &template.Agent{}}}, fakeSecrets{"CLAUDE_CODE_OAUTH_TOKEN": oauth})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env, _ := os.ReadFile(filepath.Join(home, envFile)); !strings.Contains(string(env), "CLAUDE_CODE_OAUTH_TOKEN="+oauth) {
+		t.Errorf("old base: token not in the shared env:\n%s", env)
+	}
+	if _, err := os.Stat(filepath.Join(home, claudeEnvFile)); err == nil {
+		t.Error("old base: claude env file written")
+	}
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "reset --latest") {
+		t.Errorf("old base: warnings %v", res.Warnings)
+	}
+}
+
 func TestPushWarnsWithoutClaudeToken(t *testing.T) {
 	res, err := Push(context.Background(), localRemote{t.TempDir()}, Spec{Agents: template.Agents{Claude: &template.Agent{}}}, fakeSecrets{})
 	if err != nil {

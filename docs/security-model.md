@@ -63,10 +63,12 @@ the agent user has passwordless sudo inside it.
 
 - Credentials are resolved on the host and pushed over SSH after every start. They
   never enter bases, seed images or the warm pool.
-- Claude Code's token or API key is in the VM's session environment
-  (`~/.ssh/environment`), so every SSH session and agent in that VM can read it. Other
+- Claude Code's token or API key goes into a file only the guest's `claude` command
+  loads, so other agents and SSH sessions don't get it in their environment. Other
   agents' provider keys go only to the agents you list them for, in their own files.
-  Don't give a VM a Claude token you wouldn't give to everything that runs in it.
+  This keeps credentials from being picked up or logged by the wrong tool; it is not a
+  boundary inside the VM, where anything running as the agent user can read all of
+  them. Don't give a VM a credential you wouldn't give to everything that runs in it.
 - Forge credentials are scoped per VM where the forge allows it: per-VM, per-repo deploy
   keys (read-only with `--ro`) or per-VM minted Gitea tokens, removed when the VM is
   destroyed. Task VMs get read-only deploy keys unless you pass `--rw`.

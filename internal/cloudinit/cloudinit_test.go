@@ -49,7 +49,11 @@ func TestBuildScriptSections(t *testing.T) {
 	if !strings.Contains(def, agents) || strings.Index(def, agents) < strings.Index(def, "installing node") {
 		t.Errorf("default build script must install the agents after node")
 	}
-	for _, want := range []string{"DISABLE_AUTOUPDATER=1\n", "OPENCODE_DISABLE_AUTOUPDATE=1\n", "PI_OFFLINE=1\n", "\nclaude --version\n", "\npi --version\n"} {
+	if strings.Contains(min, "/usr/local/lib/curral/claude") {
+		t.Error("claude wrapper without agents.claude")
+	}
+	for _, want := range []string{"DISABLE_AUTOUPDATER=1\n", "OPENCODE_DISABLE_AUTOUPDATE=1\n", "PI_OFFLINE=1\n", "\nclaude --version\n", "\npi --version\n",
+		`ln -sfn "$(readlink -f "$bin")" /usr/local/lib/curral/claude`, `done < "$HOME/.config/curral/claude.env"`, "exec /usr/local/lib/curral/claude \"$@\""} {
 		if !strings.Contains(def, want) {
 			t.Errorf("default build script missing %q", want)
 		}

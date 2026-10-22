@@ -124,6 +124,26 @@ npm install -g --no-fund --no-audit --loglevel=error {{join .AgentPkgs " "}}
 {{- range .AgentBins}}
 {{.}} --version
 {{- end}}
+{{- if .Claude}}
+# curral pushes Claude Code's token or key to ~/.config/curral/claude.env, and
+# only claude loads it: other agents and sessions don't get it in their
+# environment.
+bin=$(command -v claude)
+install -d -m 0755 /usr/local/lib/curral
+ln -sfn "$(readlink -f "$bin")" /usr/local/lib/curral/claude
+rm -f "$bin"
+cat > "$bin" <<'CURRAL_SCRIPT'
+#!/bin/sh
+if [ -r "$HOME/.config/curral/claude.env" ]; then
+  while IFS= read -r l; do
+    case $l in ''|'#'*) ;; *=*) export "$l" ;; esac
+  done < "$HOME/.config/curral/claude.env"
+fi
+exec /usr/local/lib/curral/claude "$@"
+CURRAL_SCRIPT
+chmod 0755 "$bin"
+claude --version
+{{- end}}
 # No self-updates, telemetry or background catalog fetches: the VM only reaches
 # allowlisted hosts, and versions change by rebuilding the base.
 cat >> /etc/environment <<'CURRAL_ENV'
