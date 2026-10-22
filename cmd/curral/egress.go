@@ -251,6 +251,29 @@ func promptDecider(m *vm.Manager, inner egress.Decider) egress.Decider {
 	}
 }
 
+// stdioConn is the guest connection QEMU gave a guestfwd process on stdin
+// and stdout. stderr may be the guest socket too, so it goes to /dev/null
+// first; if that fails, the process exits silently rather than risk writing
+// diagnostics into the guest.
+func stdioConn() (net.Conn, error) {
+	devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		os.Exit(1)
+	}
+	if err := syscall.Dup3(int(devnull.Fd()), 2, 0); err != nil {
+		os.Exit(1)
+	}
+	devnull.Close()
+	conn, err := net.FileConn(os.Stdin)
+	if err != nil {
+		return nil, err
+	}
+	// stdin and stdout are the same socket; drop our copies so only conn holds it.
+	os.Stdin.Close()
+	os.Stdout.Close()
+	return conn, nil
+}
+
 // canaryHit hands a canary hit seen by a guest-facing process to the manager.
 func canaryHit(name string) func(*canary.Canary, string) {
 	return func(c *canary.Canary, where string) {
@@ -268,23 +291,10 @@ func egressStdioCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// stderr may be the guest socket too; never write diagnostics into the guest.
-			// If that fails, exit silently rather than risk it.
-			devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-			if err != nil {
-				os.Exit(1)
-			}
-			if err := syscall.Dup3(int(devnull.Fd()), 2, 0); err != nil {
-				os.Exit(1)
-			}
-			devnull.Close()
-			conn, err := net.FileConn(os.Stdin)
+			conn, err := stdioConn()
 			if err != nil {
 				return err
 			}
-			// stdin and stdout are the same socket; drop our copies so only conn holds it.
-			os.Stdin.Close()
-			os.Stdout.Close()
 			p := &egress.Proxy{Dir: dir, VM: name, OnCanary: canaryHit(name)}
 			return p.ServeConn(cmd.Context(), conn)
 		},

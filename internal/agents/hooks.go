@@ -55,31 +55,24 @@ export const CurralNotify = async () => ({
 			return fmt.Errorf("opencode plugin: %w", err)
 		}
 	}
-	if s.Agents.Pi != nil {
-		ts := `// written by curral at each start; do not edit
-import http from "node:http";
-export default function (pi: any) {
-	pi.on("agent_settled", async () => {
-	` + postJS("pi", "agent_settled") + `
-	});
-}
-`
-		if err := p.put(piExtension, []byte(ts)); err != nil {
-			return fmt.Errorf("pi extension: %w", err)
+	// omp has no agent_settled; agent_end ends each agent loop.
+	for _, e := range []struct {
+		on              bool
+		agent, path, ev string
+	}{{s.Agents.Pi != nil, "pi", piExtension, "agent_settled"}, {s.Agents.OMP != nil, "omp", ompExtension, "agent_end"}} {
+		if !e.on {
+			continue
 		}
-	}
-	if s.Agents.OMP != nil {
-		// omp has no agent_settled; agent_end ends each agent loop.
 		ts := `// written by curral at each start; do not edit
 import http from "node:http";
 export default function (pi: any) {
-	pi.on("agent_end", async () => {
-	` + postJS("omp", "agent_end") + `
+	pi.on("` + e.ev + `", async () => {
+	` + postJS(e.agent, e.ev) + `
 	});
 }
 `
-		if err := p.put(ompExtension, []byte(ts)); err != nil {
-			return fmt.Errorf("omp extension: %w", err)
+		if err := p.put(e.path, []byte(ts)); err != nil {
+			return fmt.Errorf("%s extension: %w", e.agent, err)
 		}
 	}
 	return nil

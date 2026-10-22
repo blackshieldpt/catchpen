@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -16,6 +17,8 @@ import (
 	"time"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/blackshieldpt/curral/internal/canary"
 )
 
 type secrets map[string]string
@@ -135,12 +138,19 @@ func TestServeGuest(t *testing.T) {
 	}))
 	defer srv.Close()
 	n := &Notifier{Cfg: Config{Sinks: []Sink{{Webhook: &Webhook{URL: srv.URL}}}}}
-	lim := Limiter{Path: filepath.Join(t.TempDir(), "b"), Burst: 2, Every: time.Hour}
+	vmDir := t.TempDir()
+	cs := canary.Generate([]string{"git"})
+	if err := canary.Save(vmDir, cs); err != nil {
+		t.Fatal(err)
+	}
+	var hits []string
+	withhold := Withhold(vmDir, func(c *canary.Canary, where string) { hits = append(hits, c.Kind+" "+where) })
+	lim := Limiter{Path: filepath.Join(t.TempDir(), "b"), Burst: 3, Every: time.Hour}
 	do := func(req string) string {
 		a, b := net.Pipe()
 		done := make(chan error, 1)
 		go func() {
-			done <- ServeGuest(context.Background(), b, "vm1", lim, func() (*Notifier, error) { return n, nil })
+			done <- ServeGuest(context.Background(), b, "vm1", lim, func() (*Notifier, error) { return n, nil }, withhold)
 		}()
 		go a.Write([]byte(req))
 		resp, err := http.ReadResponse(bufio.NewReader(a), nil)
@@ -159,12 +169,30 @@ func TestServeGuest(t *testing.T) {
 	if s := do(req); !strings.HasPrefix(s, "202") {
 		t.Fatalf("first: %s", s)
 	}
+	// Split by a character sinks drop.
+	v := cs[0].Values[0]
+	decoy, _ := json.Marshal(GuestRequest{Agent: "x", Message: "key " + v[:10] + "\u200b" + v[10:]})
+	if s := do("POST /notify HTTP/1.1\r\nHost: x\r\nContent-Length: " + strconv.Itoa(len(decoy)) + "\r\n\r\n" + string(decoy)); !strings.HasPrefix(s, "202") {
+		t.Fatalf("withheld: %s", s)
+	}
 	// The bad request above took a token too: junk can't bypass the limit.
 	if s := do(req); !strings.HasPrefix(s, "429") {
 		t.Errorf("rate limit: %s", s)
 	}
-	if len(sent) != 1 || sent[0].Kind != AgentWaiting || sent[0].Title != "curral vm1: claude is waiting" || strings.ContainsAny(sent[0].Message, "\x1b\x07") {
-		t.Errorf("sent %+v", sent)
+	if len(sent) != 2 || sent[0].Kind != AgentWaiting || sent[0].Title != "curral vm1: claude is waiting" || strings.ContainsAny(sent[0].Message, "\x1b\x07") {
+		t.Fatalf("sent %+v", sent)
+	}
+	if strings.Contains(sent[1].Message, v[10:]) || !strings.Contains(sent[1].Message, "decoy credentials") || len(hits) != 1 {
+		t.Errorf("decoy sent: %+v (hits %v)", sent[1], hits)
+	}
+	if err := os.WriteFile(filepath.Join(vmDir, canary.File), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if note := withhold("anything"); !strings.Contains(note, "couldn't be read") || len(hits) != 1 {
+		t.Errorf("unreadable canaries: %q", note)
+	}
+	if note := Withhold(t.TempDir(), nil)("anything"); note != "" {
+		t.Errorf("a VM without canaries: %q", note)
 	}
 }
 

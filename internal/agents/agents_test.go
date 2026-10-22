@@ -370,9 +370,9 @@ func TestPushHooks(t *testing.T) {
 	if doc.Model != "opus" || len(doc.Hooks["Stop"]) != 2 || len(doc.Hooks["Notification"]) != 1 || strings.Count(s, notifyURL) != 2 || !strings.Contains(s, `"mine"`) {
 		t.Errorf("settings.json:\n%s", s)
 	}
-	for _, f := range []string{opencodePlugin, piExtension, ompExtension} {
+	for f, ev := range map[string]string{opencodePlugin: "session.idle", piExtension: `pi.on("agent_settled"`, ompExtension: `pi.on("agent_end"`} {
 		b, err := os.ReadFile(filepath.Join(home, f))
-		if err != nil || !strings.Contains(string(b), notifyURL) || !strings.Contains(string(b), "node:http") {
+		if err != nil || !strings.Contains(string(b), notifyURL) || !strings.Contains(string(b), "node:http") || !strings.Contains(string(b), ev) {
 			t.Errorf("%s: %v\n%s", f, err, b)
 		}
 	}

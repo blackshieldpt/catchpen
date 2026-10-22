@@ -1,5 +1,5 @@
 // Package agents delivers credentials and configuration for Claude Code,
-// opencode and pi into a running VM. Secrets are resolved on the host at push
+// opencode, pi and omp into a running VM. Secrets are resolved on the host at push
 // time and written to 0600 files in the guest user's home; nothing secret is
 // baked into bases or seeds.
 package agents
@@ -365,9 +365,19 @@ func (p *pusher) pi(a *template.Agent, servers []template.MCP) error {
 	if err != nil {
 		return err
 	}
+	addMCPServers(doc, entries, false)
+	return p.putJSON(piMCP, doc)
+}
+
+// addMCPServers writes servers into doc's mcpServers the way pi and omp
+// read them (omp also wants each server's type).
+func addMCPServers(doc map[string]any, servers []template.MCP, typed bool) {
 	mcp := obj(doc, "mcpServers")
-	for _, s := range entries {
+	for _, s := range servers {
 		e := map[string]any{}
+		if typed {
+			e["type"] = s.Type
+		}
 		if s.Type == "stdio" {
 			e["command"], e["args"] = s.Command[0], s.Command[1:]
 			if s.Env != nil {
@@ -381,7 +391,6 @@ func (p *pusher) pi(a *template.Agent, servers []template.MCP) error {
 		}
 		mcp[s.Name] = e
 	}
-	return p.putJSON(piMCP, doc)
 }
 
 func (p *pusher) omp(a *template.Agent, servers []template.MCP) error {
@@ -405,22 +414,7 @@ func (p *pusher) omp(a *template.Agent, servers []template.MCP) error {
 	if err != nil {
 		return err
 	}
-	mcp := obj(doc, "mcpServers")
-	for _, s := range servers {
-		e := map[string]any{"type": s.Type}
-		if s.Type == "stdio" {
-			e["command"], e["args"] = s.Command[0], s.Command[1:]
-			if s.Env != nil {
-				e["env"] = s.Env
-			}
-		} else {
-			e["url"] = s.URL
-			if s.Headers != nil {
-				e["headers"] = s.Headers
-			}
-		}
-		mcp[s.Name] = e
-	}
+	addMCPServers(doc, servers, true)
 	return p.putJSON(ompMCP, doc)
 }
 

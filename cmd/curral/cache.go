@@ -2,10 +2,7 @@ package main
 
 import (
 	"fmt"
-	"net"
-	"os"
 	"strings"
-	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -62,21 +59,10 @@ func cacheStdioCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// As in egress-stdio: never write diagnostics into the guest.
-			devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-			if err != nil {
-				os.Exit(1)
-			}
-			if err := syscall.Dup3(int(devnull.Fd()), 2, 0); err != nil {
-				os.Exit(1)
-			}
-			devnull.Close()
-			conn, err := net.FileConn(os.Stdin)
+			conn, err := stdioConn()
 			if err != nil {
 				return err
 			}
-			os.Stdin.Close()
-			os.Stdout.Close()
 			s := &cache.Server{Store: cache.Store{Dir: store}, Kinds: map[string]bool{}, Dir: dir, VM: name, Max: max,
 				OnCanary: canaryHit(name)}
 			for _, k := range strings.Split(kinds, ",") {

@@ -19,7 +19,10 @@ import (
 // Store is the on-disk cache: <Dir>/<kind>/<xx>/<sha256 of the key>, with
 // a .meta file beside each object and a .lock file while one is fetching it.
 // An object exists only once complete (written to a temp file, renamed).
-type Store struct{ Dir string }
+type Store struct {
+	Dir    string
+	statfs func(dir string) (avail, total int64, err error) // nil: statfs
+}
 
 type meta struct {
 	URL          string `json:"url"`
@@ -64,12 +67,25 @@ func (st Store) lock(path string) (release func(), err error) {
 // room reports whether an object of size bytes fits, leaving minFree percent
 // of the filesystem free (the limit is enforced only every trimEvery).
 func (st Store) room(size int64) bool {
-	var fs syscall.Statfs_t
-	if err := syscall.Statfs(st.Dir, &fs); err != nil {
+	f := st.statfs
+	if f == nil {
+		f = statfs
+	}
+	avail, total, err := f(st.Dir)
+	if err != nil {
 		return false
 	}
+	return avail-size > total*minFree/100
+}
+
+// statfs reports the bytes available to us, and in all, on dir's filesystem.
+func statfs(dir string) (avail, total int64, err error) {
+	var fs syscall.Statfs_t
+	if err := syscall.Statfs(dir, &fs); err != nil {
+		return 0, 0, err
+	}
 	bs := int64(fs.Bsize)
-	return int64(fs.Bavail)*bs-size > int64(fs.Blocks)*bs*minFree/100
+	return int64(fs.Bavail) * bs, int64(fs.Blocks) * bs, nil
 }
 
 // trimSometimes trims the store to max, at most every trimEvery across

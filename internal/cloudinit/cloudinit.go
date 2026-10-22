@@ -112,7 +112,7 @@ func ompTag(a *tpl.Agent) string {
 	case a.Version == "" || a.Version == "latest":
 		return "latest"
 	}
-	return "v" + strings.TrimPrefix(a.Version, "v")
+	return "v" + a.Version
 }
 
 // agentInstall returns the npm packages, binaries to smoke-test and static

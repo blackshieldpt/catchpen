@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/blackshieldpt/curral/internal/canary"
 )
 
 // GuestRequest is what agent hooks in the guest POST to /notify. Claude
@@ -25,8 +27,9 @@ const maxGuestBody = 8 << 10
 // valid notification, delivers it with the notifier from get. Every
 // connection takes a rate-limit token first, so a guest can't make the host
 // do (or log) more than the limit allows. Nothing the host knows (sink URLs,
-// tokens, errors) is sent back to the guest.
-func ServeGuest(ctx context.Context, conn net.Conn, vm string, lim Limiter, get func() (*Notifier, error)) error {
+// tokens, errors) is sent back to the guest. If withhold returns a note for
+// the text, the note is sent instead.
+func ServeGuest(ctx context.Context, conn net.Conn, vm string, lim Limiter, get func() (*Notifier, error), withhold func(string) string) error {
 	defer conn.Close()
 	conn.SetDeadline(time.Now().Add(10 * time.Second))
 	reply := func(code int) {
@@ -68,9 +71,29 @@ func ServeGuest(ctx context.Context, conn net.Conn, vm string, lim Limiter, get 
 	if msg == "" {
 		msg = "finished its turn" // Stop, session.idle, agent_settled, agent_end
 	}
+	// As written and as sinks get it (Clean drops what isn't printable).
+	if note := withhold(g.Agent + "\n" + msg + "\n" + agent + "\n" + Clean(msg, len(msg)+1)); note != "" {
+		agent, msg = "agent", note
+	}
 	n, err := get()
 	if err != nil {
 		return err
 	}
 	return n.Send(ctx, Event{Kind: AgentWaiting, VM: vm, Title: "curral " + vm + ": " + agent + " is waiting", Message: msg})
+}
+
+// Withhold is ServeGuest's withhold for the VM in dir: a note for text
+// carrying one of its decoys (reported to hit) or when they can't be read.
+func Withhold(dir string, hit func(*canary.Canary, string)) func(string) string {
+	return func(s string) string {
+		cs, err := canary.Load(dir)
+		if err != nil {
+			return "(message withheld: the VM's canaries couldn't be read)"
+		}
+		if c := canary.In(cs, s); c != nil {
+			hit(c, "in a notification from it")
+			return "(message withheld: it contained the VM's decoy credentials)"
+		}
+		return ""
+	}
 }

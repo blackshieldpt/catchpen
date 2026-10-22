@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -17,15 +18,21 @@ import (
 	"github.com/blackshieldpt/curral/internal/config"
 	"github.com/blackshieldpt/curral/internal/notify"
 	"github.com/blackshieldpt/curral/internal/qemu"
+	"github.com/blackshieldpt/curral/internal/sshx"
 )
 
-// pausedFile marks a VM a canary hit paused (removed by resume and stop).
-const pausedFile = "paused.json"
+// pausedFile marks a VM a canary hit paused (removed by resume and stop);
+// hitFile records that one was found in use at all (kept until destroy).
+const (
+	pausedFile = "paused.json"
+	hitFile    = "canary-hit.json"
+)
 
 // CanaryHit records one of name's canaries found in use (where: how it was
 // seen) and acts on it as config canary_action says.
 func (m *Manager) CanaryHit(name string, c *canary.Canary, where string) {
 	action := cmp.Or(m.Cfg.CanaryAction, config.CanaryPause)
+	_ = writeJSON(m.file(name, hitFile), map[string]any{"kind": c.Kind, "where": where, "time": time.Now().UTC()})
 	then := map[string]string{config.CanaryPause: "paused it (curral resume " + name + ")", config.CanaryStop: "stopped it", config.CanaryLog: "left it running"}[action]
 	var err error
 	switch action {
@@ -89,11 +96,48 @@ var ErrCanary = errors.New("refused: it contains the VM's decoy credentials")
 // scanExport reads r for name's canaries (what: where they'd be); a hit is
 // acted on and refuses the export.
 func (m *Manager) scanExport(name string, r io.Reader, what string) error {
+	return m.scanWith(name, what, func(cs []canary.Canary) (*canary.Canary, error) { return canary.Scan(r, cs) })
+}
+
+// guestText returns s, or a note in its place when s carries one of
+// name's decoys (as written, or as the task record and notifications clean
+// it) or they can't be read. A hit is acted on.
+func (m *Manager) guestText(name, s, what string) string {
+	if s == "" {
+		return s
+	}
+	p := sshx.Printable(s)
+	err := m.scanExport(name, strings.NewReader(s+"\n"+p+"\n"+notify.Clean(p, len(p)+1)), what)
+	switch {
+	case errors.Is(err, ErrCanary):
+		return "(withheld: it contained the VM's decoy credentials)"
+	case err != nil:
+		return "(withheld: the VM's canaries couldn't be read)"
+	}
+	return s
+}
+
+// scanPatch is scanExport for a patch file, binary files included; unless
+// it is clean, it is removed.
+func (m *Manager) scanPatch(name, path, what string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	err = m.scanWith(name, what, func(cs []canary.Canary) (*canary.Canary, error) { return canary.ScanPatch(f, cs) })
+	f.Close()
+	if err != nil {
+		os.Remove(path)
+	}
+	return err
+}
+
+func (m *Manager) scanWith(name, what string, scan func([]canary.Canary) (*canary.Canary, error)) error {
 	cs, err := canary.Load(m.dir(name))
 	if err != nil || len(cs) == 0 {
 		return err
 	}
-	c, err := canary.Scan(r, cs)
+	c, err := scan(cs)
 	if err != nil {
 		return err
 	}
@@ -105,19 +149,20 @@ func (m *Manager) scanExport(name string, r io.Reader, what string) error {
 }
 
 // scanCommits scans the commits ref brings into the host repository dir
-// (messages and diffs) for name's canaries.
+// (headers, messages and diffs) for name's canaries.
 func (m *Manager) scanCommits(ctx context.Context, name, dir, ref string) error {
 	if cs, err := canary.Load(m.dir(name)); err != nil || len(cs) == 0 {
 		return err
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	// Whole commits (author, committer, message), merges' own changes and
-	// binary files included; nothing from the user's config that runs
-	// programs on guest data.
+	// Whole commits as stored (no re-encoding: an encoding header would
+	// garble them), root commits, merges' own changes and binary files
+	// included; nothing from the user's config that runs programs on guest
+	// data or changes the output.
 	cmd := exec.CommandContext(ctx, "git", "-C", dir, "-c", "core.fsmonitor=false", "-c", "log.showSignature=false",
-		"log", "-p", "--diff-merges=separate", "--text", "--no-ext-diff", "--no-textconv",
-		"--pretty=raw", ref, "--not", "--exclude=refs/curral*", "--all")
+		"-c", "log.showRoot=true", "log", "-p", "--diff-merges=separate", "--text", "--no-ext-diff", "--no-textconv",
+		"--no-color", "--encoding=none", "--pretty=raw", ref, "--not", "--exclude=refs/curral*", "--all")
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return err

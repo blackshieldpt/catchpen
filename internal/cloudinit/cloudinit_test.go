@@ -2,6 +2,7 @@ package cloudinit
 
 import (
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -224,16 +225,16 @@ func TestInstanceUserDataCanaries(t *testing.T) {
 func TestBuildScriptOMP(t *testing.T) {
 	min := load(t, "minimal")
 	plain, _ := BuildScript(min, "agent", nil)
-	if strings.Contains(plain, "omp") {
+	if regexp.MustCompile(`\bomp\b`).MatchString(plain) {
 		t.Error("omp installed without agents.omp")
 	}
-	for v, tag := range map[string]string{"": "tag=latest\n", "18.12.5": "tag=v18.12.5\n", "v18.12.5": "tag=v18.12.5\n"} {
+	for v, tag := range map[string]string{"": "tag=latest\n", "18.12.5": "tag=v18.12.5\n"} {
 		min.Agents.OMP = &tpl.Agent{Version: v}
 		s, err := BuildScript(min, "agent", nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, want := range []string{tag, "releases/download/$tag", "sha256sum -c -", "install -m 0755 /tmp/omp-linux-x64 /usr/local/bin/omp", "\nomp --version\n",
+		for _, want := range []string{tag, "releases/download/$tag", `case "$tag" in v[0-9]*.[0-9]*.[0-9]*) ;;`, "sha256sum -c -", "install -m 0755 /tmp/omp-linux-x64 /usr/local/bin/omp", "\nomp --version\n",
 			"sudo -u agent -H omp config set startup.checkUpdate false"} {
 			if !strings.Contains(s, want) {
 				t.Errorf("%q: build script lacks %q", v, want)

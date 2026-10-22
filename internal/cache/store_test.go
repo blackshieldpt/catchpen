@@ -34,10 +34,16 @@ func TestTrimLeastRecentlyUsed(t *testing.T) {
 	old := put(t, st, "apt", "u2", 100, now.Add(-2*time.Hour))
 	recent := put(t, st, "go", "u3", 100, now.Add(-time.Hour))
 	leftover := filepath.Join(filepath.Dir(recent), tmpPfx+"dead")
-	os.WriteFile(leftover, []byte("partial"), 0o600)
-	os.Chtimes(leftover, now.Add(-2*tmpAge), now.Add(-2*tmpAge))
+	if err := os.WriteFile(leftover, []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(leftover, now.Add(-2*tmpAge), now.Add(-2*tmpAge)); err != nil {
+		t.Fatal(err)
+	}
 	fresh := filepath.Join(filepath.Dir(recent), tmpPfx+"live")
-	os.WriteFile(fresh, []byte("partial"), 0o600)
+	if err := os.WriteFile(fresh, []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	if n, b, err := st.Trim(150, true); err != nil || n != 2 || b != 200 {
 		t.Fatalf("dry run: %d %d %v", n, b, err)

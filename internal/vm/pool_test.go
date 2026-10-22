@@ -257,8 +257,36 @@ func TestCanaryKinds(t *testing.T) {
 	if got := canaryKinds(&tp); !slices.Equal(got, []string{"aws", "env", "git"}) {
 		t.Errorf("%v", got)
 	}
-	tp.Env = map[string]string{"AWS_PROFILE": "dev"}
+	tp.Env = map[string]string{"AWS_REGION": "eu-west-1"}
 	if got := canaryKinds(&tp); !slices.Equal(got, []string{"env", "git"}) {
 		t.Errorf("with AWS settings: %v", got)
+	}
+}
+
+// A pool VM made before canaries: changed isn't handed out.
+func TestCanariesAndThePool(t *testing.T) {
+	m := poolManager(t, "pool-a")
+	writeFile(t, filepath.Join(m.P.Templates(), "ag.yaml"), "extends: minimal\nruntimes: { node: \"24\" }\nagents:\n  claude: {}\nidle_stop: 2h\ncanaries: [git]\n")
+	wants, err := m.poolWants()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.recyclePool(wants, true); err != nil {
+		t.Fatal(err)
+	}
+	if vms, _ := m.PoolVMs(); len(vms) != 0 {
+		t.Errorf("pool VM without the canaries kept: %+v", vms)
+	}
+}
+
+func TestPoolVMWithCanaryHitNotClaimed(t *testing.T) {
+	m := poolManager(t, "pool-a")
+	writeFile(t, m.file("pool-a", hitFile), "{}")
+	if err := os.Mkdir(m.dir("w1"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pool, _ := m.Load("pool-a")
+	if got, err := m.claimPool("w1", keyOf(pool)); err != nil || got != nil {
+		t.Errorf("claimed a pool VM with a canary hit: %+v %v", got, err)
 	}
 }

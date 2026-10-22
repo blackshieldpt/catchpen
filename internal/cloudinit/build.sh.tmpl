@@ -140,6 +140,9 @@ if [ "$tag" = latest ]; then
   tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/can1357/oh-my-pi/releases/latest)
   tag=${tag##*/}
 fi
+case "$tag" in v[0-9]*.[0-9]*.[0-9]*) ;; *) log "bad omp version: $tag"; exit 1;; esac
+# SHA256SUMS comes from the same release: it guards against a broken
+# download, not a tampered release (pin agents.omp.version for that).
 rel=https://github.com/can1357/oh-my-pi/releases/download/$tag
 curl -fsSL -o /tmp/omp-linux-x64 "$rel/omp-linux-x64"
 curl -fsSL -o /tmp/omp-SHA256SUMS "$rel/SHA256SUMS.txt"

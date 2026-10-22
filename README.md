@@ -64,7 +64,7 @@ network:
   presets: [go]
   allow: [registry.example.com:443]
   on_deny: log               # log | prompt
-cache: [apt, go, npm]        # host package caches (default: all five); [] turns them off
+cache: [apt, go, npm]        # host package caches (default template: all five); [] turns them off
 canaries: [aws, env, git]    # decoy credentials (default template: all three)
 ```
 
@@ -92,7 +92,8 @@ either downloads and verifies the new image, and builds a new base.
 ## Agents and credentials
 
 Templates install Claude Code, opencode and pi from npm, and omp (oh-my-pi) from its
-release binary (checked against its SHA256SUMS), into the base (no self-updates;
+release binary (checked against the release's SHA256SUMS, which catches a broken
+download, not a tampered release: pin `version:`), into the base (no self-updates;
 rebuild the base for new versions). Credentials are resolved on the host
 and pushed over SSH after every start (`curral creds push <name>|--all` for running
 VMs); they never enter bases or seed images.
@@ -391,9 +392,9 @@ curral cache clear [apt|go|npm|pypi|docker ...]
 VMs of templates listing `cache:` fetch packages through curral on the host at
 `10.0.2.102`, which keeps what never changes in `~/.cache/curral/pkg/` for every other VM
 and base build: `.deb` files (from the Ubuntu and Debian archive and security mirrors),
-Go module files and checksum database tiles, npm tarballs, PyPI files and Docker Hub
-layers and manifests by digest. Indexes (apt lists, npm and PyPI metadata, tags, Go
-version lists) are fetched every time. The guest is preconfigured: apt, `GOPROXY`,
+apt lists fetched by hash, Go module files and checksum database tiles, npm tarballs,
+PyPI files and Docker Hub layers and manifests by digest. Indexes (apt's `InRelease`,
+npm and PyPI metadata, tags, Go version lists) are fetched every time. The guest is preconfigured: apt, `GOPROXY`,
 npm, yarn and pnpm, pip and uv, and Docker's registry mirror (added to the base's
 `daemon.json`). Cached hosts need no allowlist entry, but `egress deny` applies; their
 fetches appear in `egress log` as `CACHE`. Other mirrors, registries and private indexes
@@ -401,8 +402,11 @@ still go through the egress proxy. Base builds use the template's caches too (Do
 excepted) without changing the base; VMs with `egress: none` use none.
 
 The caches trim themselves to `cache_max` every 10 minutes while fetching (and `gc`
-does), and store nothing that would leave less than 5% of the filesystem free; objects
-the server sends without a length are passed through, not stored.
+does), so they can be over it in between. A download stops being stored when the
+filesystem would drop below 5% free (checked as it is written, so parallel downloads
+count; the guest's response is cut short, as when the upstream fails). Objects the
+server sends without a length, and paths that aren't in canonical form, are passed
+through, not stored.
 
 ## Canaries
 
@@ -421,18 +425,25 @@ something went looking for credentials:
 - a connection to a canary host through the egress proxy, allowlisted or not;
 - a canary value in a plain-HTTP request's line or headers (not its body), or in a
   package cache request;
-- a value or canary host in the commits (authors, merges and binary files included),
-  branch names and patches `pull`, `pr` and tasks bring out, or in a PR's title and body.
+- a value or canary host (in any case) in the commits (headers, root commits, merges and
+  binary files included), branch names and patches (binary files decoded; what a binary delta
+  copies from the old file isn't seen) `pull`, `pr` and tasks bring out, in a PR's title and body, or in a task's result and an agent's
+  notification.
 
-The request or export is refused, `canary.hit` goes to the audit log and to
-notifications (a few per minute at most), and the VM is paused, frozen as it was, until
-`curral resume <name>` (which also sets its clock); `curral ls` shows it `paused`. A task
-whose VM is paused fails at once and keeps the VM.
+The request or export is refused (a notification is sent with its text withheld),
+`canary.hit` goes to the audit log and to notifications (both a few per minute at most),
+and the VM is paused, frozen as it was, until `curral resume <name>` (which also sets its
+clock); `curral ls` shows it `paused`, and `ssh`, `run` and the like refuse it until
+then. A task whose VM is paused fails at once; a task VM with any canary hit is kept,
+whatever `canary_action` did, and a pool VM with one isn't handed out. If a VM's
+`canaries.json` can't be read, its proxy, cache and exports refuse everything and its
+notifications and task results are withheld.
 
 What goes unseen: values sent encoded, or over HTTPS to an allowed host; clients that
-don't use the proxy (database drivers for the `DATABASE_URL`, Node's and Bun's `fetch`),
-whose connections just fail; everything in VMs with `egress: open` or `none` except the
-exports; `curral cp` and `forward`. The decoys can be told from real ones by a careful
+don't use the proxy (database drivers for the `DATABASE_URL`, Node's `fetch`), whose
+connections just fail; everything in VMs with `egress: open` or `none` except the
+exports; `curral cp` and `forward`; commits the guest pushed to a forge itself (deploy key
+or token), which the host has once it fetches them. The decoys can be told from real ones by a careful
 attacker (the hosts don't resolve, the GitHub token's checksum is wrong, the seed's
 user-data lists them), and if an agent prints them they end up in transcripts and
 recordings, where secret scanners may flag them.

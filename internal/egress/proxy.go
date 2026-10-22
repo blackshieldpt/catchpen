@@ -26,7 +26,8 @@ const (
 	dialTimeout    = 15 * time.Second
 	maxHeaderBytes = 64 << 10
 	idleTimeout    = 10 * time.Minute
-	// MaxConns caps concurrent proxy processes per VM (QEMU spawns one per connection).
+	// MaxConns caps a VM's concurrent processes of one kind (QEMU spawns one
+	// per connection): proxy and package cache processes each have their own.
 	MaxConns = 128
 )
 
@@ -106,7 +107,13 @@ func (p *Proxy) ServeConn(ctx context.Context, c io.ReadWriteCloser) error {
 		return nil
 	}
 	entry := LogEntry{VM: p.VM, Method: req.Method, Host: host, Port: port}
-	if hit, where := p.canary(req, host, port); hit != nil {
+	hit, where, err := p.canary(req, host, port)
+	if err != nil { // fail closed: detection can't be skipped by breaking the file
+		_ = p.log(entry, ActionDeny, "canaries unreadable: "+err.Error())
+		p.deny(c, host, port, "not allowed")
+		return nil
+	}
+	if hit != nil {
 		_ = p.log(entry, ActionDeny, "canary ("+hit.Kind+")")
 		if p.OnCanary != nil {
 			p.OnCanary(hit, where)
@@ -159,21 +166,18 @@ func (p *Proxy) ServeConn(ctx context.Context, c io.ReadWriteCloser) error {
 
 // canary finds one of the VM's canaries in a request: its host, or a
 // value in the request line or headers (a body over plain HTTP isn't read).
-func (p *Proxy) canary(req *http.Request, host string, port int) (*canary.Canary, string) {
-	cs, _ := canary.Load(p.Dir)
-	if len(cs) == 0 {
-		return nil, ""
+func (p *Proxy) canary(req *http.Request, host string, port int) (*canary.Canary, string, error) {
+	cs, err := canary.Load(p.Dir)
+	if err != nil || len(cs) == 0 {
+		return nil, "", err
 	}
 	if c := canary.Host(cs, host); c != nil {
-		return c, "connection to " + hostPort(host, port)
+		return c, "connection to " + hostPort(host, port), nil
 	}
-	var b strings.Builder
-	b.WriteString(req.RequestURI)
-	_ = req.Header.Write(&b)
-	if c := canary.In(cs, b.String()); c != nil {
-		return c, "in a request to " + hostPort(host, port)
+	if c := canary.InRequest(cs, req); c != nil {
+		return c, "in a request to " + hostPort(host, port), nil
 	}
-	return nil, ""
+	return nil, "", nil
 }
 
 var errMethod = errors.New("method not allowed")

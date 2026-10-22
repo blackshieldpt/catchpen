@@ -29,7 +29,10 @@ func TestOMP(t *testing.T) {
 	if _, err := m.Start(ctx, "om"); err != nil {
 		t.Fatal(err)
 	}
-	port, _ := m.SSHPort("om")
+	port, err := m.SSHPort("om")
+	if err != nil {
+		t.Fatal(err)
+	}
 	c, err := m.keys("om").Dial(ctx, port, "agent")
 	if err != nil {
 		t.Fatal(err)
@@ -39,8 +42,10 @@ func TestOMP(t *testing.T) {
 	if v := guest("omp --version"); v == "" {
 		t.Error("omp --version printed nothing")
 	}
-	if got := guest("omp config get startup.checkUpdate; omp config get marketplace.autoUpdate"); !strings.Contains(got, "false") || !strings.Contains(got, "off") {
-		t.Errorf("omp settings: %q", got)
+	for k, v := range map[string]string{"startup.checkUpdate": "false", "marketplace.autoUpdate": "off"} {
+		if got := guest("omp config get " + k); !strings.Contains(got, v) || strings.Contains(got, "rror") {
+			t.Errorf("omp %s: %q", k, got)
+		}
 	}
 	if got := guest("stat -c %a ~/.omp/agent/.env && cat ~/.omp/agent/.env"); got != "600\nOPENROUTER_API_KEY=sk-or-v1-test" {
 		t.Errorf("omp keys: %q", got)

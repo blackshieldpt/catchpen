@@ -17,7 +17,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -26,9 +25,11 @@ import (
 )
 
 const (
-	upstreamIdle = 2 * time.Minute  // an upstream fetch making no progress is dropped
-	clientStall  = 30 * time.Second // a guest not reading stops being served (the fetch goes on)
+	upstreamIdle = 2 * time.Minute // an upstream fetch making no progress is dropped
+	roomEvery    = 8 << 20         // how often a download checks the store still has room
 )
+
+var clientStall = 30 * time.Second // a guest not reading stops being served (the fetch goes on)
 
 // Request headers passed upstream: for stored objects (the representation
 // must not vary: no ranges, no compression), for indexes the cache
@@ -51,11 +52,16 @@ type Server struct {
 	// OnCanary is told about a request carrying one of the VM's canaries
 	// (which is refused), before the guest gets its answer.
 	OnCanary func(c *canary.Canary, where string)
-	// Client fetches upstream; nil: public addresses only, no proxy.
+	// Client fetches upstream (over an *http.Transport); nil: public
+	// addresses only, no proxy.
 	Client *http.Client
 
+	gzip      http.RoundTripper // Client's transport, asking for gzip (indexes the cache rewrites)
 	tokens    map[string]string // registry tokens by repository
 	downloads sync.WaitGroup
+	canaries  []canary.Canary
+	canaryErr error
+	loadOnce  sync.Once
 }
 
 // ServeConn serves HTTP on a single guest connection until it closes.
@@ -115,17 +121,19 @@ func (c *notifyConn) Close() error {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if cs, _ := canary.Load(s.Dir); len(cs) > 0 {
-		var b strings.Builder
-		b.WriteString(r.RequestURI)
-		_ = r.Header.Write(&b)
-		if c := canary.In(cs, b.String()); c != nil {
-			if s.OnCanary != nil {
-				s.OnCanary(c, "in a package cache request")
-			}
-			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
-			return
+	s.loadOnce.Do(func() { s.canaries, s.canaryErr = canary.Load(s.Dir) })
+	if s.canaryErr != nil { // fail closed: detection can't be skipped by breaking the file
+		_ = egress.Append(s.Dir, egress.LogEntry{Time: time.Now().UTC(), VM: s.VM, Method: r.Method, Host: Addr, Port: Port,
+			Action: egress.ActionDeny, Reason: "canaries unreadable: " + s.canaryErr.Error()})
+		http.Error(w, "cache unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if c := canary.InRequest(s.canaries, r); c != nil {
+		if s.OnCanary != nil {
+			s.OnCanary(c, "in a package cache request")
 		}
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
 	}
 	rt, code := resolve(r, s.Kinds)
 	switch {
@@ -213,7 +221,7 @@ func (s *Server) serveStored(w http.ResponseWriter, r *http.Request, rt *route) 
 	s.downloads.Go(func() {
 		defer release()
 		defer resp.Body.Close()
-		d.run(resp, tmp, rt, path)
+		d.run(s.Store, resp, tmp, rt, path)
 		s.Store.trimSometimes(s.Max)
 	})
 	copyHeaders(w.Header(), resp.Header)
@@ -227,21 +235,23 @@ func (s *Server) serveStored(w http.ResponseWriter, r *http.Request, rt *route) 
 		}
 		n, done := d.n, d.done
 		d.mu.Unlock()
-		if n > sent {
+		for sent < n { // in slices: clientStall is how long one may take
+			k := min(n-sent, 256<<10)
 			_ = rc.SetWriteDeadline(time.Now().Add(clientStall))
-			if _, err := io.CopyN(w, rd, n-sent); err != nil {
+			if _, err := io.CopyN(w, rd, k); err != nil {
 				return // the guest went away or stalled; the fetch goes on
 			}
-			sent = n
+			sent += k
 		}
 		if done {
-			return // short of Content-Length if the fetch failed: the guest sees it
+			return // short of Content-Length if the fetch failed or the store filled: the guest sees it
 		}
 	}
 }
 
 // download copies an upstream object into a temp file, then commits it if
-// complete and matching its digest.
+// complete and matching its digest. It stops once the rest would no longer
+// fit in st (downloads in other processes share the free space).
 type download struct {
 	mu   sync.Mutex
 	cond sync.Cond
@@ -249,12 +259,13 @@ type download struct {
 	done bool
 }
 
-func (d *download) run(resp *http.Response, tmp *os.File, rt *route, path string) {
+func (d *download) run(st Store, resp *http.Response, tmp *os.File, rt *route, path string) {
 	defer os.Remove(tmp.Name()) // nothing left after a commit
 	h := sha256.New()
 	buf := make([]byte, 256<<10)
 	var n int64
 	var err error
+	next := int64(roomEvery)
 	for {
 		k, rerr := resp.Body.Read(buf)
 		if k > 0 {
@@ -267,6 +278,13 @@ func (d *download) run(resp *http.Response, tmp *os.File, rt *route, path string
 			d.n = n
 			d.cond.Broadcast()
 			d.mu.Unlock()
+			if n >= next {
+				if !st.room(resp.ContentLength - n) {
+					err = errors.New("no room left in the store")
+					break
+				}
+				next += roomEvery
+			}
 		}
 		if rerr != nil {
 			if rerr != io.EOF {
@@ -409,7 +427,7 @@ func (s *Server) fetch(ctx context.Context, r *http.Request, rt *route, hdrs []s
 		if tok := s.tokens[repo]; repo != "" && tok != "" {
 			req.Header.Set("Authorization", "Bearer "+tok)
 		}
-		resp, err := s.client().Do(req)
+		resp, err := s.client(rt.from != "").Do(req)
 		if err != nil {
 			t.Stop()
 			cancel()
@@ -478,7 +496,7 @@ func (s *Server) token(ctx context.Context, challenge string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	resp, err := s.client().Do(req)
+	resp, err := s.client(false).Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -516,7 +534,9 @@ func (s *Server) allowed(method, what string, u *url.URL) bool {
 
 // client is the upstream client: redirects (to CDNs) are followed over
 // HTTPS only, at most 10, each logged and checked against the denylist.
-func (s *Server) client() *http.Client {
+// With gzip, Go asks for gzip and decodes it (the body is identity, its
+// Content-Encoding removed); stored objects and pass-through keep theirs.
+func (s *Server) client(gzip bool) *http.Client {
 	if s.Client == nil {
 		s.Client = &http.Client{Transport: &http.Transport{
 			DialContext: dialPublic, ForceAttemptHTTP2: true, DisableCompression: true,
@@ -524,6 +544,14 @@ func (s *Server) client() *http.Client {
 		}}
 	}
 	c := *s.Client
+	if gzip {
+		if s.gzip == nil {
+			t := s.Client.Transport.(*http.Transport).Clone()
+			t.DisableCompression = false
+			s.gzip = t
+		}
+		c.Transport = s.gzip
+	}
 	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		switch {
 		case len(via) >= 10:

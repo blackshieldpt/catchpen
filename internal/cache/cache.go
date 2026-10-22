@@ -88,15 +88,16 @@ func routeFor(r *http.Request) (*route, int) {
 			return nil, http.StatusForbidden
 		}
 		p := r.URL.EscapedPath()
+		plain := r.URL.RawQuery == "" && canonical(p)
 		rt := &route{kind: "apt", url: "https://" + strings.ToLower(r.URL.Hostname()) + p + query(r),
-			store: r.URL.RawQuery == "" && (strings.Contains(p, "/pool/") || strings.Contains(p, "/by-hash/"))}
+			store: plain && strings.Contains(p, "/pool/")}
 		if m := byHashRe.FindStringSubmatch(p); m != nil {
-			rt.digest = m[1]
+			rt.store, rt.digest = plain, m[1]
 		}
 		return rt, 0
 	}
 	p, q := r.URL.EscapedPath(), query(r)
-	plain := r.URL.RawQuery == ""
+	plain := r.URL.RawQuery == "" && canonical(p)
 	switch {
 	case strings.HasPrefix(p, "/go/sumdb/"):
 		// The go command asks the proxy whether it proxies the checksum
@@ -133,13 +134,29 @@ func routeFor(r *http.Request) (*route, int) {
 			return nil, http.StatusNotFound
 		}
 		rt := &route{kind: "docker", url: registry + p}
-		if d := digestRe.FindStringSubmatch(m[3]); d != nil {
+		if d := digestRe.FindStringSubmatch(m[3]); d != nil && canonical(p) {
 			// Shared by every repository with the object.
 			rt.store, rt.digest, rt.key = true, d[1], m[2]+"/"+m[3]
 		}
 		return rt, 0
 	}
 	return nil, http.StatusNotFound
+}
+
+// canonical reports whether an escaped path has no empty, . or .. segments
+// and no encoded dots, slashes or backslashes: nothing an upstream may
+// resolve to another object than the one stored under the path.
+func canonical(p string) bool {
+	l := strings.ToLower(p)
+	if strings.Contains(l, "%2e") || strings.Contains(l, "%2f") || strings.Contains(l, "%5c") {
+		return false
+	}
+	for _, seg := range strings.Split(p, "/")[1:] {
+		if seg == "" || seg == "." || seg == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 func query(r *http.Request) string {

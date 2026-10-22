@@ -112,7 +112,8 @@ func (m *Manager) claimPool(name string, key poolKey) (*State, error) {
 		}
 		s, err := m.Load(v.Name)
 		_, running := m.Running(v.Name)
-		if err != nil || !s.Pool || s.Resume != poolSnap || keyOf(s) != key || running {
+		// A canary hit while warming: not handed out.
+		if err != nil || !s.Pool || s.Resume != poolSnap || keyOf(s) != key || running || fileExists(m.file(v.Name, hitFile)) {
 			vunlock()
 			continue
 		}

@@ -420,4 +420,13 @@ func TestCanaryHits(t *testing.T) {
 	if len(hits) != 2 {
 		t.Errorf("hits %q", hits)
 	}
+	// An unreadable canary file denies everything, without a hit.
+	if err := os.WriteFile(filepath.Join(p.Dir, canary.File), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, _ = serve(t, p)
+	expect403(t, c, "example.com:443", "not allowed")
+	if logs := readLog(t, p.Dir); len(hits) != 2 || !strings.HasPrefix(logs[len(logs)-1].Reason, "canaries unreadable") {
+		t.Errorf("unreadable canaries: hits %q, log %+v", hits, logs[len(logs)-1])
+	}
 }

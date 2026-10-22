@@ -161,6 +161,10 @@ func (t *Template) validateAgents() error {
 		if a.Version != "" && !versionRe.MatchString(a.Version) {
 			return fmt.Errorf("agents.%s.version: invalid %q", name, a.Version)
 		}
+		// omp's releases are tagged v<major>.<minor>.<patch>; npm resolves partial versions.
+		if name == "omp" && a.Version != "" && a.Version != "latest" && strings.Count(strings.SplitN(a.Version, "-", 2)[0], ".") != 2 {
+			return fmt.Errorf("agents.omp.version must be latest or a full version (like 18.12.5), not %q", a.Version)
+		}
 		if name == "claude" {
 			switch a.Auth {
 			case "", ClaudeOAuth, ClaudeAPIKey:
@@ -192,7 +196,7 @@ func (t *Template) validateAgents() error {
 	}
 	if c := t.Agents.Claude; c != nil && c.Auth != ClaudeAPIKey {
 		if _, ok := t.Env["ANTHROPIC_API_KEY"]; ok {
-			return fmt.Errorf("env.ANTHROPIC_API_KEY would override Claude's subscription token; give it to opencode/pi with agents.<agent>.keys instead")
+			return fmt.Errorf("env.ANTHROPIC_API_KEY would override Claude's subscription token; give it to opencode, pi or omp with agents.<agent>.keys instead")
 		}
 	}
 	for _, m := range t.MCP {

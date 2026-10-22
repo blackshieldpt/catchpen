@@ -165,6 +165,13 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 	stopWatch := func() {}
 	defer func() {
 		defer stopWatch()
+		// The guest's words go to the task record and notification sinks.
+		result := m.guestText(t.VM, firstLine(readFile(st.Path(id, "result.md"))), "in the task's result")
+		if err != nil {
+			if g := m.guestText(t.VM, err.Error(), "in the task's error"); g != err.Error() {
+				err = errors.New(g)
+			}
+		}
 		state, msg := task.Done, ""
 		paused := created && m.Paused(t.VM)
 		switch {
@@ -176,9 +183,14 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 			// Agent-reported errors come from the guest.
 			state, msg = task.Failed, sshx.Printable(err.Error())
 		}
-		keep := t.Spec.Keep || (unexported && state == task.Failed) || paused
-		if keep && !t.Spec.Keep && !paused {
+		// Whatever canary_action did, the VM is the evidence.
+		hit := created && fileExists(m.file(t.VM, hitFile))
+		keep := t.Spec.Keep || (unexported && state == task.Failed) || hit
+		if unexported && state == task.Failed && !t.Spec.Keep && !paused {
 			msg += fmt.Sprintf("; kept %s because its %d commit(s) weren't exported (curral pull %s --branch %s, then curral destroy %s)", t.VM, t.Commits, t.VM, t.Branch, t.VM)
+		}
+		if hit && !paused {
+			msg = strings.TrimPrefix(msg+fmt.Sprintf("; its decoy credentials were used: kept %s (curral destroy %[1]s)", t.VM), "; ")
 		}
 		if created && !paused { // a paused guest doesn't answer
 			// Copy transcripts and tear down without the signal's context.
@@ -200,7 +212,7 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 		if state != task.Done {
 			kind, text = notify.TaskFailed, msg
 		} else if text == "" {
-			text = firstLine(readFile(st.Path(id, "result.md")))
+			text = result
 		}
 		m.notify(notify.Event{Kind: kind, VM: t.VM, Title: fmt.Sprintf("curral task %s %s", id, state), Message: text})
 		m.logf("task %s %s %s", id, state, msg)
@@ -247,6 +259,9 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 		return err
 	}
 	defer c.Close()
+	// Closing a session doesn't end a command a paused guest never answers;
+	// closing the connection does.
+	defer context.AfterFunc(ctx, func() { c.Close() })()
 	run := func(cmd string) (string, error) {
 		out, err := sshx.Run(ctx, c, cmd, nil)
 		return strings.TrimSpace(string(out)), err
@@ -382,14 +397,7 @@ func (m *Manager) exportTask(ctx context.Context, c *ssh.Client, t *task.Task, c
 		if err != nil {
 			return "", fmt.Errorf("format-patch: %w: %s", err, sshx.Printable(string(stderr)))
 		}
-		f, err = os.Open(path)
-		if err != nil {
-			return "", err
-		}
-		err = m.scanExport(t.VM, f, "in the task's patches")
-		f.Close()
-		if err != nil {
-			os.Remove(path)
+		if err := m.scanPatch(t.VM, path, "in the task's patches"); err != nil {
 			return "", err
 		}
 		return path, nil

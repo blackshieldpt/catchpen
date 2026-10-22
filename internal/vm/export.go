@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -154,19 +153,14 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 			return nil, err
 		}
 		stderr, err := sshx.Stream(ctx, c, "git -C "+dir+" format-patch --stdout origin/HEAD.."+shQuote(branch), f, maxBundle)
-		if err == nil {
-			_, err = f.Seek(0, io.SeekStart)
-		}
-		if err == nil {
-			err = m.scanExport(name, f, "in patches pulled from it")
-		}
-		f.Close()
-		if errors.Is(err, ErrCanary) {
-			os.Remove(f.Name())
-			return nil, err
+		if cerr := f.Close(); err == nil {
+			err = cerr
 		}
 		if err != nil {
 			return nil, fmt.Errorf("format-patch: %w\n%s", err, sshx.Printable(strings.TrimSpace(string(stderr))))
+		}
+		if err := m.scanPatch(name, f.Name(), "in patches pulled from it"); err != nil {
+			return nil, err
 		}
 	}
 	m.logf("fetched %s:%s into %s (%s)", name, branch, into, ref)

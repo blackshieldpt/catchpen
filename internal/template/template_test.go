@@ -88,6 +88,7 @@ func TestLoadErrors(t *testing.T) {
 		"cachex":   {"cache: [maven]\n", "unknown cache \"maven\""},
 		"canaryx":  {"canaries: [ssh]\n", "unknown canary \"ssh\""},
 		"ompyolo":  {"agents: { omp: { yolo: true } }\n", "agents.omp.yolo is not supported"},
+		"ompver":   {"agents: { omp: { version: \"18.12\" } }\n", "agents.omp.version must be latest or a full version"},
 		"ompkey":   {"agents: { omp: { keys: [FOO_KEY] } }\n", "agents.omp.keys: unknown provider key"},
 		"pinode":   {"agents: { pi: {} }\n", "agents need runtimes.node"},
 	}

@@ -2,10 +2,8 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -22,21 +20,10 @@ func notifyStdioCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// As in egress-stdio: never write diagnostics into the guest.
-			devnull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
-			if err != nil {
-				os.Exit(1)
-			}
-			if err := syscall.Dup3(int(devnull.Fd()), 2, 0); err != nil {
-				os.Exit(1)
-			}
-			devnull.Close()
-			conn, err := net.FileConn(os.Stdin)
+			conn, err := stdioConn()
 			if err != nil {
 				return err
 			}
-			os.Stdin.Close()
-			os.Stdout.Close()
 			logErr := func(err error) {
 				if err == nil {
 					return
@@ -58,7 +45,7 @@ func notifyStdioCmd() *cobra.Command {
 				return m.Notifier(), nil
 			}
 			lim := notify.Limiter{Path: filepath.Join(dir, "notify.bucket"), Burst: 5, Every: 30 * time.Second}
-			logErr(notify.ServeGuest(cmd.Context(), conn, name, lim, get))
+			logErr(notify.ServeGuest(cmd.Context(), conn, name, lim, get, notify.Withhold(dir, canaryHit(name))))
 			return nil
 		},
 	}

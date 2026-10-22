@@ -149,8 +149,8 @@ func resumeCmd() *cobra.Command {
 		Use:   "resume <name>",
 		Short: "Continue a VM a canary hit paused",
 		Long: `A VM whose decoy credentials (template canaries:) were used is paused, frozen as it
-was (config.yaml canary_action). Look at it first (curral audit, curral egress log,
-curral console), then resume it, or stop or destroy it.`,
+was (config.yaml canary_action). Look at what it did first (curral audit, curral egress
+log), then resume it, or stop or destroy it.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()

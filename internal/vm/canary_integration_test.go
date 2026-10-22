@@ -13,6 +13,7 @@ import (
 	"github.com/blackshieldpt/curral/internal/canary"
 	"github.com/blackshieldpt/curral/internal/qemu"
 	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/curral/internal/task"
 )
 
 // TestCanaries plants decoys, uses one from the guest and checks the VM is
@@ -28,10 +29,20 @@ func TestCanaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = m.Destroy("cn") })
+	// As a crash or reboot while paused leaves it.
+	if err := os.WriteFile(m.file("cn", pausedFile), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := m.Start(ctx, "cn"); err != nil {
 		t.Fatal(err)
 	}
-	port, _ := m.SSHPort("cn")
+	if m.Paused("cn") {
+		t.Error("a stale pause marker survived start")
+	}
+	port, err := m.SSHPort("cn")
+	if err != nil {
+		t.Fatal(err)
+	}
 	c, err := m.keys("cn").Dial(ctx, port, "agent")
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +62,7 @@ func TestCanaries(t *testing.T) {
 	go func() {
 		rctx, rcancel := context.WithTimeout(ctx, 3*time.Minute)
 		defer rcancel()
-		out, _ := sshx.Run(rctx, c, `bash -lc '. ~/.env.production; curl -s -o /dev/null -w %{http_code} -H "Authorization: Bearer $INTERNAL_API_TOKEN" "$INTERNAL_API_URL/v1/users"; echo " done"'`, nil)
+		out, _ := sshx.Run(rctx, c, `bash -lc '. ~/.env.production; curl -s -o /dev/null -w %{http_connect} -H "Authorization: Bearer $INTERNAL_API_TOKEN" "$INTERNAL_API_URL/v1/users"; echo " done"'`, nil)
 		done <- string(out)
 	}()
 	deadline := time.Now().Add(time.Minute)
@@ -87,7 +98,7 @@ func TestCanaries(t *testing.T) {
 	if err := m.Resume(ctx, "cn"); err != nil {
 		t.Fatal(err)
 	}
-	if out := <-done; !strings.HasSuffix(strings.TrimSpace(out), "done") || strings.HasPrefix(out, "200") {
+	if out := <-done; out != "403 done\n" { // the proxy refused the CONNECT
 		t.Errorf("after resume: %q", out)
 	}
 	if m.Paused("cn") {
@@ -95,5 +106,61 @@ func TestCanaries(t *testing.T) {
 	}
 	if got := guest("echo ok"); got != "ok" {
 		t.Errorf("guest after resume: %q", got)
+	}
+	if _, err := m.SSHPort("cn"); err != nil {
+		t.Errorf("ssh after resume: %v", err)
+	}
+
+	// A task using a decoy fails at once, and its paused VM is kept.
+	spec := task.Spec{Template: "cn", Agent: "cmd", Cmd: `. ~/.env.production; curl -s -m 120 "$INTERNAL_API_URL/x"; sleep 600`, Prompt: "x", Timeout: 20 * time.Minute}
+	dir := t.TempDir()
+	if err := spec.Normalize(dir, dir); err != nil {
+		t.Fatal(err)
+	}
+	tk, err := m.SubmitTask(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Destroy(tk.VM) })
+	until := time.Now().Add(10 * time.Minute)
+	for tk.State != task.Failed && time.Now().Before(until) {
+		time.Sleep(2 * time.Second)
+		if tk, err = m.Tasks().Load(tk.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if tk.State != task.Failed || !strings.Contains(tk.Error, "a canary hit paused") || !m.Paused(tk.VM) {
+		b, _ := os.ReadFile(m.Tasks().Path(tk.ID, "supervisor.log"))
+		t.Fatalf("task %+v, paused %v\n%s", tk, m.Paused(tk.VM), b)
+	}
+
+	// A kept VM holds its share of the task budget until destroyed.
+	if err := m.Destroy(tk.VM); err != nil {
+		t.Fatal(err)
+	}
+
+	// With canary_action log the task runs on, and its VM is still kept.
+	if err := os.WriteFile(m.P.ConfigFile(), []byte("canary_action: log\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec.Cmd = `. ~/.env.production; curl -s -m 30 "$INTERNAL_API_URL/x"; echo finished`
+	tk, err = m.SubmitTask(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Destroy(tk.VM) })
+	until = time.Now().Add(10 * time.Minute)
+	for !task.Final(tk.State) && time.Now().Before(until) {
+		time.Sleep(2 * time.Second)
+		if tk, err = m.Tasks().Load(tk.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if tk.State != task.Done || !strings.Contains(tk.Error, "decoy credentials were used: kept") || m.Paused(tk.VM) {
+		b, _ := os.ReadFile(m.Tasks().Path(tk.ID, "supervisor.log"))
+		t.Fatalf("task %+v, paused %v\n%s", tk, m.Paused(tk.VM), b)
+	}
+	if _, err := os.Stat(m.Dir(tk.VM)); err != nil {
+		t.Errorf("task VM not kept: %v", err)
 	}
 }

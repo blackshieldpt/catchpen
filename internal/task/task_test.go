@@ -185,8 +185,10 @@ func TestRender(t *testing.T) {
 	if got := strings.Join(out, "|"); got != `Looking.`+"\n"+`→ Bash {"command":"ls"}|== success: 3 turns, $0.1200` {
 		t.Errorf("claude render: %q", got)
 	}
-	if r := Render("pi", []byte(`{"type":"tool_execution_start","toolName":"bash","args":{}}`)); r != "→ bash {}" {
-		t.Errorf("pi render: %q", r)
+	for _, a := range []string{"pi", "omp"} {
+		if r := Render(a, []byte(`{"type":"tool_execution_start","toolName":"bash","args":{}}`)); r != "→ bash {}" {
+			t.Errorf("%s render: %q", a, r)
+		}
 	}
 	if r := Render("opencode", []byte("not json")); r != "not json" {
 		t.Errorf("raw line: %q", r)

@@ -231,6 +231,7 @@ runtimes: { node: "24" }
 agents:
   claude: {}
   pi: { keys: [OPENROUTER_API_KEY, ANTHROPIC_API_KEY] }
+  omp: { keys: [XAI_API_KEY] }
 env: { FOO: "secret:FOO" }
 mcp:
   - { name: docs, type: http, url: "https://mcp.example.com:8443/mcp" }
@@ -255,7 +256,7 @@ mcp:
 		t.Errorf("state = %+v", s)
 	}
 	b, _ := os.ReadFile(m.file("a", "allowlist"))
-	for _, want := range []string{"api.anthropic.com:443", "openrouter.ai:443", "mcp.example.com:8443", "sse.example.com:80"} {
+	for _, want := range []string{"api.anthropic.com:443", "openrouter.ai:443", "api.x.ai:443", "mcp.example.com:8443", "sse.example.com:80"} {
 		if !strings.Contains(string(b), want+"\n") {
 			t.Errorf("allowlist lacks %s", want)
 		}

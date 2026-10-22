@@ -6,6 +6,9 @@
 package canary
 
 import (
+	"bufio"
+	"bytes"
+	"compress/zlib"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -13,9 +16,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math/bits"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/blackshieldpt/curral/internal/fsutil"
@@ -136,11 +142,17 @@ func Host(cs []Canary, host string) *Canary {
 	return nil
 }
 
-// In returns the canary whose value (or host) s contains.
+// In returns the canary whose value (or host, in any case) s contains.
 func In(cs []Canary, s string) *Canary {
+	lower := strings.ToLower(s)
 	for i, c := range cs {
-		for _, v := range append(c.Values, c.Hosts...) {
+		for _, v := range c.Values {
 			if strings.Contains(s, v) {
+				return &cs[i]
+			}
+		}
+		for _, h := range c.Hosts {
+			if strings.Contains(lower, h) {
 				return &cs[i]
 			}
 		}
@@ -148,12 +160,247 @@ func In(cs []Canary, s string) *Canary {
 	return nil
 }
 
+// InRequest returns the canary in r's request line or headers (Host
+// included; the body isn't read).
+func InRequest(cs []Canary, r *http.Request) *Canary {
+	var b strings.Builder
+	b.WriteString(r.Host + "\n" + r.RequestURI + "\n")
+	_ = r.Header.Write(&b)
+	return In(cs, b.String())
+}
+
+// ScanPatch scans a patch file like Scan, and the contents of its binary
+// files too: git's base85 "GIT binary patch" hunks, whole files ("literal")
+// and the bytes deltas insert ("delta"; what a delta copies from the old
+// file isn't seen).
+func ScanPatch(f io.ReadSeeker, cs []Canary) (*Canary, error) {
+	if c, err := Scan(f, cs); c != nil || err != nil {
+		return c, err
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return nil, err
+	}
+	h := &hunk{br: bufio.NewReader(f)}
+	budget := int64(maxInflate)
+	for {
+		l, err := h.line()
+		if err == io.EOF {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		delta, size, ok := hunkHeader(l)
+		if !ok {
+			continue
+		}
+		h.in = true
+		var r io.Reader
+		if zr, err := zlib.NewReader(h); err == nil {
+			r = &spend{zr, &budget}
+			r = io.LimitReader(r, size)
+			if delta {
+				r = &inserts{br: bufio.NewReader(r)}
+			}
+		} else {
+			r = bytes.NewReader(nil)
+		}
+		c, err := Scan(readFailOK{r}, cs)
+		if c != nil || err != nil {
+			return c, err
+		}
+		if budget < 0 {
+			return nil, errors.New("its binary files inflate to more than can be scanned")
+		}
+		if _, err := io.Copy(io.Discard, h); err != nil { // the rest of the hunk
+			return nil, err
+		}
+	}
+}
+
+// maxInflate caps what a patch's binary hunks inflate to, in all.
+const maxInflate = 4 << 30
+
+// spend reads r, taking what it reads from budget; past it, r ends.
+type spend struct {
+	r      io.Reader
+	budget *int64
+}
+
+func (s *spend) Read(p []byte) (int, error) {
+	if *s.budget < 0 {
+		return 0, io.EOF
+	}
+	n, err := s.r.Read(p)
+	*s.budget -= int64(n)
+	return n, err
+}
+
+// hunkHeader parses "literal <size>" or "delta <size>" as git apply does
+// (leading blanks skipped, anything after the digits ignored).
+func hunkHeader(l string) (delta bool, size int64, ok bool) {
+	var rest string
+	switch {
+	case strings.HasPrefix(l, "literal "):
+		rest = l[len("literal "):]
+	case strings.HasPrefix(l, "delta "):
+		delta, rest = true, l[len("delta "):]
+	default:
+		return false, 0, false
+	}
+	rest = strings.TrimLeft(rest, " \t")
+	n := 0
+	for n < len(rest) && rest[n] >= '0' && rest[n] <= '9' {
+		n++
+	}
+	size, err := strconv.ParseInt(rest[:n], 10, 64)
+	return delta, size, err == nil
+}
+
+// hunk reads a patch line by line; while in a binary hunk, Read returns
+// its decoded bytes, ending at the first line that isn't base85 (which
+// line then returns again).
+type hunk struct {
+	br      *bufio.Reader
+	in      bool
+	pending *string
+	buf     []byte
+}
+
+func (h *hunk) line() (string, error) {
+	if h.pending != nil {
+		l := *h.pending
+		h.pending = nil
+		return l, nil
+	}
+	l, err := h.br.ReadString('\n')
+	if err == io.EOF && l != "" {
+		err = nil
+	}
+	return strings.TrimRight(l, "\r\n"), err
+}
+
+func (h *hunk) Read(p []byte) (int, error) {
+	for len(h.buf) == 0 {
+		if !h.in {
+			return 0, io.EOF
+		}
+		l, err := h.line()
+		if err != nil {
+			h.in = false
+			return 0, err
+		}
+		b, ok := decode85(l)
+		if !ok {
+			h.in, h.pending = false, &l
+			return 0, io.EOF
+		}
+		h.buf = b
+	}
+	n := copy(p, h.buf)
+	h.buf = h.buf[n:]
+	return n, nil
+}
+
+// inserts reads a git delta (from its sizes and copy/insert ops) as the
+// bytes it inserts, one after the other.
+type inserts struct {
+	br     *bufio.Reader
+	header bool
+	left   int // of the current insert
+}
+
+func (d *inserts) Read(p []byte) (int, error) {
+	if !d.header {
+		for range 2 { // source and target sizes, base-128 varints
+			for {
+				b, err := d.br.ReadByte()
+				if err != nil {
+					return 0, err
+				}
+				if b&0x80 == 0 {
+					break
+				}
+			}
+		}
+		d.header = true
+	}
+	for d.left == 0 {
+		op, err := d.br.ReadByte()
+		if err != nil {
+			return 0, err
+		}
+		switch {
+		case op&0x80 != 0: // copy from the source: skip its offset and size
+			if _, err := d.br.Discard(bits.OnesCount8(op & 0x7f)); err != nil {
+				return 0, err
+			}
+		case op == 0:
+			return 0, io.EOF // invalid
+		default:
+			d.left = int(op)
+		}
+	}
+	n, err := d.br.Read(p[:min(len(p), d.left)])
+	d.left -= n
+	return n, err
+}
+
+type readFailOK struct{ r io.Reader }
+
+// Read ends a corrupt stream as if it ended: what decoded so far is scanned.
+func (r readFailOK) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if err != nil && err != io.EOF {
+		err = io.EOF
+	}
+	return n, err
+}
+
+const base85 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-;<=>?@^_`{|}~"
+
+// decode85 decodes one line of a git binary hunk: a length character
+// (A-Z: 1-26, a-z: 27-52) then base85 in groups of five.
+func decode85(l string) ([]byte, bool) {
+	if len(l) < 6 || (len(l)-1)%5 != 0 {
+		return nil, false
+	}
+	var n int
+	switch c := l[0]; {
+	case c >= 'A' && c <= 'Z':
+		n = int(c-'A') + 1
+	case c >= 'a' && c <= 'z':
+		n = int(c-'a') + 27
+	default:
+		return nil, false
+	}
+	out := make([]byte, 0, (len(l)-1)/5*4)
+	for i := 1; i < len(l); i += 5 {
+		var acc uint64
+		for _, c := range []byte(l[i : i+5]) {
+			d := strings.IndexByte(base85, c)
+			if d < 0 {
+				return nil, false
+			}
+			acc = acc*85 + uint64(d)
+		}
+		if acc > 0xffffffff {
+			return nil, false
+		}
+		out = append(out, byte(acc>>24), byte(acc>>16), byte(acc>>8), byte(acc))
+	}
+	if n > len(out) {
+		return nil, false
+	}
+	return out[:n], true
+}
+
 // Scan reads r to the end, returning the first canary whose value (or
 // host) it contains.
 func Scan(r io.Reader, cs []Canary) (*Canary, error) {
 	longest := 0
 	for _, c := range cs {
-		for _, v := range append(c.Values, c.Hosts...) {
+		for _, v := range slices.Concat(c.Values, c.Hosts) {
 			longest = max(longest, len(v))
 		}
 	}

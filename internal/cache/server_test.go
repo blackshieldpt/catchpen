@@ -1,11 +1,14 @@
 package cache
 
 import (
+	"bufio"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -16,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -72,6 +76,22 @@ func newServer(t *testing.T, store string, c *http.Client, kinds ...string) *Ser
 		s.Kinds[k] = true
 	}
 	return s
+}
+
+// stored is how many objects st holds of kind.
+func stored(t *testing.T, st Store, kind string) int {
+	t.Helper()
+	us, err := st.Usage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range us {
+		if u.Kind == kind {
+			return u.Files
+		}
+	}
+	t.Fatalf("no usage of %s", kind)
+	return 0
 }
 
 func get(s *Server, target string, hdr ...string) *httptest.ResponseRecorder {
@@ -170,8 +190,8 @@ func TestIncompleteOrFailedNotStored(t *testing.T) {
 	if locks, _ := filepath.Glob(filepath.Join(s.Store.Dir, "apt", "*", "*.lock")); len(locks) != 0 {
 		t.Errorf("lock files left: %v", locks)
 	}
-	if us, _ := s.Store.Usage(); us[0].Files != 0 {
-		t.Errorf("stored %+v", us)
+	if n := stored(t, s.Store, "apt"); n != 0 {
+		t.Errorf("stored %d", n)
 	}
 }
 
@@ -181,7 +201,15 @@ func TestIndexesPassAndRewrite(t *testing.T) {
 		case r.Host == "registry.npmjs.org":
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("ETag", `"e1"`)
-			io.WriteString(w, `{"versions":{"1.0.0":{"dist":{"tarball":"https://registry.npmjs.org/a/-/a-1.0.0.tgz"}}}}`)
+			body := `{"versions":{"1.0.0":{"dist":{"tarball":"https://registry.npmjs.org/a/-/a-1.0.0.tgz"}}}}`
+			if r.Header.Get("Accept-Encoding") != "gzip" {
+				io.WriteString(w, body)
+				return
+			}
+			w.Header().Set("Content-Encoding", "gzip")
+			zw := gzip.NewWriter(w)
+			io.WriteString(zw, body)
+			zw.Close()
 		case r.Header.Get("If-Modified-Since") != "":
 			w.WriteHeader(http.StatusNotModified)
 		default:
@@ -192,10 +220,10 @@ func TestIndexesPassAndRewrite(t *testing.T) {
 	s := newServer(t, t.TempDir(), c, "npm", "apt")
 	w := get(s, "/npm/a", "Accept-Encoding", "gzip", "Accept", "application/vnd.npm.install-v1+json")
 	want := `{"versions":{"1.0.0":{"dist":{"tarball":"http://10.0.2.102/npm/a/-/a-1.0.0.tgz"}}}}`
-	if w.Code != 200 || w.Body.String() != want || w.Header().Get("Content-Length") != "" || w.Header().Get("ETag") != `"e1"` {
+	if w.Code != 200 || w.Body.String() != want || w.Header().Get("Content-Length") != "" || w.Header().Get("Content-Encoding") != "" || w.Header().Get("ETag") != `"e1"` {
 		t.Errorf("packument: %d %q %v", w.Code, w.Body, w.Header())
 	}
-	if up.last.Get("Accept-Encoding") != "" || up.last.Get("Accept") != "application/vnd.npm.install-v1+json" {
+	if up.last.Get("Accept-Encoding") != "gzip" || up.last.Get("Accept") != "application/vnd.npm.install-v1+json" {
 		t.Errorf("rewritten index fetched with %v", up.last)
 	}
 	if w := get(s, "http://archive.ubuntu.com/ubuntu/dists/noble/InRelease", "If-Modified-Since", "Mon, 01 Jan 2024 00:00:00 GMT"); w.Code != http.StatusNotModified {
@@ -205,8 +233,8 @@ func TestIndexesPassAndRewrite(t *testing.T) {
 		w.Header().Get("Content-Encoding") != "gzip" || up.last.Get("Accept-Encoding") != "gzip" {
 		t.Errorf("pass-through: %q %v %v", w.Body, w.Header(), up.last)
 	}
-	if us, _ := s.Store.Usage(); us[0].Files+us[2].Files != 0 {
-		t.Errorf("indexes stored: %+v", us)
+	if n := stored(t, s.Store, "apt") + stored(t, s.Store, "npm"); n != 0 {
+		t.Errorf("indexes stored: %d", n)
 	}
 }
 
@@ -274,6 +302,9 @@ func TestServeConn(t *testing.T) {
 	}
 	defer l.Close()
 	s := newServer(t, t.TempDir(), c, "go")
+	if err := canary.Save(s.Dir, canary.Generate([]string{"git"})); err != nil {
+		t.Fatal(err)
+	}
 	if w := get(s, "/go/sumdb/sum.golang.org/supported"); w.Code != 200 {
 		t.Errorf("sumdb probe: %d", w.Code)
 	}
@@ -292,13 +323,21 @@ func TestServeConn(t *testing.T) {
 		var d net.Dialer
 		return d.DialContext(ctx, "tcp", l.Addr().String())
 	}}}
-	for range 2 { // keep-alive: one connection, as QEMU spawns one process per connection
+	for i := range 2 { // keep-alive: one connection, as QEMU spawns one process per connection
 		resp, err := guest.Get("http://10.0.2.102/go/x/@v/list")
 		if err != nil {
 			t.Fatal(err)
 		}
+		if resp.StatusCode != 200 {
+			t.Errorf("request %d: status %d", i, resp.StatusCode)
+		}
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
+		if i == 0 { // canaries are read once per connection: breaking the file now changes nothing
+			if err := os.WriteFile(filepath.Join(s.Dir, canary.File), []byte("{broken"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	guest.CloseIdleConnections()
 	select {
@@ -410,7 +449,7 @@ func TestHeadAndHeaders(t *testing.T) {
 	if w := head(file); w.Code != 200 || w.Header().Get("Content-Length") != "5" || w.Body.Len() != 0 || up.count("files.pythonhosted.org/packages/x.whl") != 1 {
 		t.Errorf("HEAD miss: %d %v %q", w.Code, w.Header(), w.Body)
 	}
-	if us, _ := s.Store.Usage(); us[3].Files != 0 {
+	if stored(t, s.Store, "pypi") != 0 {
 		t.Error("HEAD stored the object")
 	}
 	if w := get(s, file, "Authorization", "Basic c2VjcmV0", "Cookie", "c=1"); w.Body.String() != "wheel" ||
@@ -439,8 +478,8 @@ func TestFetchesTrimTheStore(t *testing.T) {
 	if _, err := os.Stat(old); err == nil {
 		t.Error("the store wasn't trimmed to its limit")
 	}
-	if us, _ := s.Store.Usage(); us[2].Files != 1 {
-		t.Errorf("usage %+v", us)
+	if n := stored(t, s.Store, "npm"); n != 1 {
+		t.Errorf("%d stored", n)
 	}
 }
 
@@ -451,6 +490,10 @@ func TestRedirectsChecked(t *testing.T) {
 			http.Redirect(w, r, "https://cdn.example/blob", http.StatusTemporaryRedirect)
 		case "/x/@v/v2.0.0.zip":
 			http.Redirect(w, r, "http://cdn.example/blob", http.StatusTemporaryRedirect)
+		case "/x/@v/v3.0.0.zip":
+			http.Redirect(w, r, "https://cdn.example/hop", http.StatusTemporaryRedirect)
+		case "/hop":
+			http.Redirect(w, r, "https://denied.example/blob", http.StatusTemporaryRedirect)
 		default:
 			io.WriteString(w, "blob")
 		}
@@ -462,10 +505,21 @@ func TestRedirectsChecked(t *testing.T) {
 	if w := get(s, "/go/x/@v/v2.0.0.zip"); w.Code != http.StatusBadGateway {
 		t.Errorf("redirect to http: %d", w.Code)
 	}
+	if err := egress.WriteList(s.Dir, egress.DenylistFile, []string{"denied.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if w := get(s, "/go/x/@v/v3.0.0.zip"); w.Code != http.StatusForbidden || up.count("cdn.example/hop") != 1 || up.count("denied.example/blob") != 0 {
+		t.Errorf("second hop to a denied host: %d, %d requests to it", w.Code, up.count("denied.example/blob"))
+	}
+	if b, _ := os.ReadFile(filepath.Join(s.Dir, egress.LogFile)); !strings.Contains(string(b), `"host":"denied.example","port":443,"action":"deny","reason":"redirect /blob"`) {
+		t.Errorf("denied hop not logged: %s", b)
+	}
 	if err := egress.WriteList(s.Dir, egress.DenylistFile, []string{"cdn.example"}); err != nil {
 		t.Fatal(err)
 	}
-	s.Store.Clear()
+	if err := s.Store.Clear(); err != nil {
+		t.Fatal(err)
+	}
 	before := up.count("cdn.example/blob")
 	if w := get(s, "/go/x/@v/v1.0.0.zip"); w.Code != http.StatusForbidden || up.count("cdn.example/blob") != before {
 		t.Errorf("redirect to a denied host: %d", w.Code)
@@ -493,5 +547,233 @@ func TestCanaryInRequest(t *testing.T) {
 	hit = ""
 	if w := get(s, "/go/x/@v/list"); w.Code != 200 || hit != "" {
 		t.Errorf("clean request: %d %q", w.Code, hit)
+	}
+}
+
+func TestCanaryInHeader(t *testing.T) {
+	up, c := newUpstream(t, func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "x") })
+	s := newServer(t, t.TempDir(), c, "go")
+	cs := canary.Generate([]string{"git"})
+	if err := canary.Save(s.Dir, cs); err != nil {
+		t.Fatal(err)
+	}
+	var hit *canary.Canary
+	s.OnCanary = func(c *canary.Canary, where string) { hit = c }
+	if w := get(s, "/go/x/@v/list", "Authorization", "Bearer "+cs[0].Values[0]); w.Code != http.StatusNotFound || hit == nil {
+		t.Errorf("%d %v", w.Code, hit)
+	}
+	if up.count("proxy.golang.org/x/@v/list") != 0 {
+		t.Error("fetched upstream")
+	}
+}
+
+func TestCanariesUnreadableRefused(t *testing.T) {
+	up, c := newUpstream(t, func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "x") })
+	s := newServer(t, t.TempDir(), c, "go")
+	if err := os.WriteFile(filepath.Join(s.Dir, canary.File), []byte("{broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	s.OnCanary = func(*canary.Canary, string) { called = true }
+	if w := get(s, "/go/x/@v/list"); w.Code != http.StatusServiceUnavailable || called {
+		t.Errorf("%d, OnCanary called: %v", w.Code, called)
+	}
+	if up.count("proxy.golang.org/x/@v/list") != 0 {
+		t.Error("fetched upstream")
+	}
+	if b, _ := os.ReadFile(filepath.Join(s.Dir, egress.LogFile)); !strings.Contains(string(b), `"action":"deny","reason":"canaries unreadable`) {
+		t.Errorf("refusal not logged: %s", b)
+	}
+}
+
+func TestStoredFetchHeaders(t *testing.T) {
+	const body = "tarball-bytes"
+	up, c := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept-Encoding") == "gzip" {
+			w.Header().Set("Content-Encoding", "gzip")
+			zw := gzip.NewWriter(w)
+			io.WriteString(zw, body)
+			zw.Close()
+			return
+		}
+		http.ServeContent(w, r, "", time.Time{}, strings.NewReader(body))
+	})
+	s := newServer(t, t.TempDir(), c, "npm")
+	const tgz = "/npm/a/-/a-1.0.0.tgz"
+	if w := get(s, tgz, "Accept-Encoding", "gzip", "Range", "bytes=0-6"); w.Code != 200 || w.Body.String() != body {
+		t.Errorf("miss: %d %q", w.Code, w.Body)
+	}
+	if up.last.Get("Accept-Encoding") != "" || up.last.Get("Range") != "" {
+		t.Errorf("upstream saw %v", up.last)
+	}
+	s.downloads.Wait()
+	if w := get(s, tgz); w.Body.String() != body || w.Header().Get("Content-Encoding") != "" || up.count("registry.npmjs.org"+strings.TrimPrefix(tgz, "/npm")) != 1 {
+		t.Errorf("hit: %q %v", w.Body, w.Header())
+	}
+}
+
+func TestDefaultClient(t *testing.T) {
+	var hits atomic.Int32
+	local := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer local.Close()
+	s := &Server{}
+	if resp, err := s.client(false).Get(local.URL); err == nil || !strings.Contains(err.Error(), "private") || hits.Load() != 0 {
+		if err == nil {
+			resp.Body.Close()
+		}
+		t.Errorf("dialled a private address: %v", err)
+	}
+	if !s.client(false).Transport.(*http.Transport).DisableCompression {
+		t.Error("stored and pass-through fetches would ask for gzip")
+	}
+	if s.client(true).Transport.(*http.Transport).DisableCompression {
+		t.Error("rewritten indexes fetched uncompressed")
+	}
+}
+
+func TestTokenRealmChecked(t *testing.T) {
+	up, c := newUpstream(t, func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, `{"token":"tok"}`) })
+	s := newServer(t, t.TempDir(), c, "docker")
+	if _, err := s.token(context.Background(), `Bearer realm="http://auth.docker.io/token",service="registry.docker.io"`); err == nil {
+		t.Error("http:// realm used")
+	}
+	if err := egress.WriteList(s.Dir, egress.DenylistFile, []string{"auth.docker.io"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.token(context.Background(), `Bearer realm="https://auth.docker.io/token",service="registry.docker.io"`); !errors.Is(err, errDenied) {
+		t.Errorf("denied realm: %v", err)
+	}
+	if n := up.count("auth.docker.io/token"); n != 0 {
+		t.Errorf("realm fetched %d times", n)
+	}
+}
+
+// eofBody ends cleanly, short of the length its response declares.
+type eofBody struct{ io.Reader }
+
+func (eofBody) Close() error { return nil }
+
+func TestShortBodyNotCommitted(t *testing.T) {
+	st := Store{Dir: t.TempDir()}
+	rt := &route{kind: "go", url: "https://proxy.golang.org/x/@v/v1.0.0.zip"}
+	path := st.path(rt.kind, rt.url)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), tmpPfx+"*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := &http.Response{StatusCode: 200, ContentLength: 100, Header: http.Header{}, Body: eofBody{strings.NewReader("only ten b")}}
+	d := &download{}
+	d.cond.L = &d.mu
+	d.run(st, resp, tmp, rt, path)
+	if _, err := os.Stat(path); err == nil || !d.done || d.n != 10 {
+		t.Errorf("committed: %v, done %v, %d bytes", err, d.done, d.n)
+	}
+	if _, err := os.Stat(tmp.Name()); err == nil {
+		t.Error("temp file left")
+	}
+}
+
+func TestNoRoomRelayedNotStored(t *testing.T) {
+	up, c := newUpstream(t, func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "wheel") })
+	s := newServer(t, t.TempDir(), c, "pypi")
+	s.Store.statfs = func(string) (int64, int64, error) { return 5 << 20, 100 << 20, nil } // at the floor
+	const file = "/pypi/files/packages/x.whl"
+	for range 2 {
+		if w := get(s, file); w.Code != 200 || w.Body.String() != "wheel" {
+			t.Errorf("%d %q", w.Code, w.Body)
+		}
+	}
+	if n := stored(t, s.Store, "pypi"); n != 0 || up.count("files.pythonhosted.org/packages/x.whl") != 2 {
+		t.Errorf("stored %d with no room", n)
+	}
+}
+
+func TestRoomRecheckedWhileDownloading(t *testing.T) {
+	const size = 20 << 20
+	_, c := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(size))
+		io.WriteString(w, strings.Repeat("x", size))
+	})
+	s := newServer(t, t.TempDir(), c, "go")
+	var calls atomic.Int32
+	s.Store.statfs = func(string) (int64, int64, error) {
+		if calls.Add(1) == 1 { // the check before fetching
+			return 100 << 30, 200 << 30, nil
+		}
+		return 10 << 30, 200 << 30, nil // other downloads filled it
+	}
+	w := get(s, "/go/x/@v/v1.0.0.zip")
+	s.downloads.Wait()
+	if w.Header().Get("Content-Length") != strconv.Itoa(size) || w.Body.Len() >= size || calls.Load() < 2 {
+		t.Errorf("guest got %d of %s bytes, %d checks", w.Body.Len(), w.Header().Get("Content-Length"), calls.Load())
+	}
+	if n := stored(t, s.Store, "go"); n != 0 {
+		t.Errorf("stored %d", n)
+	}
+	if tmps, _ := filepath.Glob(filepath.Join(s.Store.Dir, "go", "*", tmpPfx+"*")); len(tmps) != 0 {
+		t.Errorf("temp files left: %v", tmps)
+	}
+}
+
+func TestSlowSteadyGuestServed(t *testing.T) {
+	old := clientStall
+	clientStall = time.Second
+	t.Cleanup(func() { clientStall = old })
+	const size = 4 << 20 // over 3s to read
+	_, c := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(size))
+		io.WriteString(w, strings.Repeat("x", size))
+	})
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	s := newServer(t, t.TempDir(), c, "go")
+	done := make(chan error, 1)
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			done <- err
+			return
+		}
+		conn.(*net.TCPConn).SetWriteBuffer(16 << 10) // the backlog stays in the temp file
+		done <- s.ServeConn(context.Background(), conn)
+	}()
+	// A small receive window, set before connecting: the backlog can't hide in it.
+	d := net.Dialer{Control: func(_, _ string, rc syscall.RawConn) error {
+		return rc.Control(func(fd uintptr) { syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_RCVBUF, 64<<10) })
+	}}
+	conn, err := d.Dial("tcp", l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := io.WriteString(conn, "GET /go/x/@v/v1.0.0.zip HTTP/1.1\r\nHost: 10.0.2.102\r\nConnection: close\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 64<<10)
+	var n int
+	for n < size { // 64 KiB every 50ms: steady, slower than upstream
+		time.Sleep(50 * time.Millisecond)
+		k, err := io.ReadFull(resp.Body, buf)
+		n += k
+		if err != nil {
+			break
+		}
+	}
+	if n != size {
+		t.Errorf("guest got %d of %d bytes", n, size)
+	}
+	conn.Close()
+	if err := <-done; err != nil {
+		t.Error(err)
 	}
 }

@@ -26,10 +26,10 @@ func (m *Manager) IdleTimeout(s *State) time.Duration {
 	return d
 }
 
-// IdleTracker finds running VMs idle past their idle_stop (paused ones are
-// left for you to look at): no connection to
+// IdleTracker finds running VMs idle past their idle_stop: no connection to
 // their ssh or forwarded ports, no running task, and QEMU's CPU use below
-// idleCPU since the previous check.
+// idleCPU since the previous check. VMs a canary hit paused are left for
+// you to look at.
 type IdleTracker struct{ vms map[string]*idleState }
 
 // Idle is a VM due to be stopped.

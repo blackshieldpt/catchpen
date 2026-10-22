@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/blackshieldpt/curral/internal/canary"
 	"github.com/blackshieldpt/curral/internal/config"
@@ -51,13 +52,13 @@ func TestCanariesPlantedAndScanned(t *testing.T) {
 	os.WriteFile(filepath.Join(repo, ".env"), []byte("TOKEN="+cs[0].Values[2]+"\n"), 0o600)
 	gitRun(t, repo, "add", ".env")
 	gitRun(t, repo, "commit", "-qm", "add config")
-	gitRun(t, repo, "update-ref", "refs/curral/c1/leak", "HEAD")
+	gitRun(t, repo, "update-ref", "refs/curral-incoming/c1/leak", "HEAD")
 	gitRun(t, repo, "checkout", "-q", "main")
 	gitRun(t, repo, "branch", "-qD", "work") // only refs/curral/ has the VM's commits
 	if err := m.scanCommits(context.Background(), "c1", repo, "refs/curral/c1/clean"); err != nil {
 		t.Errorf("clean commits: %v", err)
 	}
-	if err := m.scanCommits(context.Background(), "c1", repo, "refs/curral/c1/leak"); !errors.Is(err, ErrCanary) {
+	if err := m.scanCommits(context.Background(), "c1", repo, "refs/curral-incoming/c1/leak"); !errors.Is(err, ErrCanary) {
 		t.Errorf("leaking commit: %v", err)
 	}
 	if b, _ := os.ReadFile(m.P.Audit()); !strings.Contains(string(b), `"canary.hit"`) || !strings.Contains(string(b), `"kind":"env"`) {
@@ -80,24 +81,135 @@ func TestCanariesPlantedAndScanned(t *testing.T) {
 	os.WriteFile(filepath.Join(repo, "m"), []byte(cs[1].Values[0]+"\n"), 0o600)
 	gitRun(t, repo, "add", "m")
 	gitRun(t, repo, "commit", "-qm", "merge")
-	gitRun(t, repo, "update-ref", "refs/curral/c1/merge", "HEAD")
+	gitRun(t, repo, "update-ref", "refs/curral-incoming/c1/merge", "HEAD")
 	gitRun(t, repo, "checkout", "-qb", "bin", "main")
 	os.WriteFile(filepath.Join(repo, "b"), []byte("\x00\x01"+cs[1].Values[0]), 0o600)
 	gitRun(t, repo, "add", "b")
 	gitRun(t, repo, "commit", "-qm", "binary")
-	gitRun(t, repo, "update-ref", "refs/curral/c1/bin", "HEAD")
+	gitRun(t, repo, "update-ref", "refs/curral-incoming/c1/bin", "HEAD")
 	gitRun(t, repo, "checkout", "-q", "main")
 	gitRun(t, repo, "branch", "-qD", "side", "top", "bin")
 	gitRun(t, repo, "checkout", "-qb", "who", "main")
 	os.WriteFile(filepath.Join(repo, "w"), []byte("w\n"), 0o600)
 	gitRun(t, repo, "add", "w")
 	gitRun(t, repo, "-c", "user.email="+cs[0].Values[1]+"@example.com", "commit", "-qm", "clean")
-	gitRun(t, repo, "update-ref", "refs/curral/c1/who", "HEAD")
+	gitRun(t, repo, "update-ref", "refs/curral-incoming/c1/who", "HEAD")
 	gitRun(t, repo, "checkout", "-q", "main")
 	gitRun(t, repo, "branch", "-qD", "who")
-	for _, ref := range []string{"refs/curral/c1/merge", "refs/curral/c1/bin", "refs/curral/c1/who"} {
+
+	// A message git would re-encode (an even-length UTF-16 commit), and a
+	// root commit under a user config that hides root diffs.
+	gitRun(t, repo, "checkout", "-qb", "enc", "main")
+	for msg := "token " + cs[0].Values[1]; ; msg += "x" {
+		gitRun(t, repo, "-c", "i18n.commitEncoding=UTF-16LE", "commit", "-q", "--allow-empty", "-m", msg)
+		raw, _ := exec.Command("git", "-C", repo, "cat-file", "commit", "HEAD").Output()
+		if len(raw)%2 == 0 {
+			break
+		}
+		gitRun(t, repo, "reset", "-q", "--hard", "HEAD~1")
+	}
+	gitRun(t, repo, "update-ref", "refs/curral-incoming/c1/enc", "HEAD")
+	gitRun(t, repo, "checkout", "-q", "--orphan", "root")
+	os.WriteFile(filepath.Join(repo, "r"), []byte(cs[1].Values[0]+"\n"), 0o600)
+	gitRun(t, repo, "add", "r")
+	gitRun(t, repo, "commit", "-qm", "root")
+	gitRun(t, repo, "update-ref", "refs/curral-incoming/c1/root", "HEAD")
+	gitRun(t, repo, "checkout", "-qf", "main")
+	gitRun(t, repo, "branch", "-qD", "enc", "root")
+	gcfg := filepath.Join(t.TempDir(), "gitconfig")
+	os.WriteFile(gcfg, []byte("[log]\n\tshowRoot = false\n[color]\n\tui = always\n"), 0o600)
+	t.Setenv("GIT_CONFIG_GLOBAL", gcfg)
+
+	// refs/curral/ holds earlier pulls, excluded from what's new; what's
+	// being pulled is under refs/curral-incoming/.
+	gitRun(t, repo, "update-ref", "refs/curral/c1/work", "refs/curral/c1/clean")
+	for _, ref := range []string{"refs/curral-incoming/c1/merge", "refs/curral-incoming/c1/bin", "refs/curral-incoming/c1/who",
+		"refs/curral-incoming/c1/enc", "refs/curral-incoming/c1/root"} {
 		if err := m.scanCommits(context.Background(), "c1", repo, ref); !errors.Is(err, ErrCanary) {
 			t.Errorf("%s: %v", ref, err)
 		}
+	}
+
+	// A binary file in a patch; a hit removes the file.
+	patch := filepath.Join(t.TempDir(), "p.mbox")
+	out, err := exec.Command("git", "-C", repo, "format-patch", "--stdout", "main..refs/curral-incoming/c1/bin").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(patch, out, 0o600)
+	if err := m.scanPatch("c1", patch, "in patches"); !errors.Is(err, ErrCanary) || fileExists(patch) {
+		t.Errorf("binary patch: %v, kept %v", err, fileExists(patch))
+	}
+
+	// Ten hits in a minute: three audit records.
+	b, _ := os.ReadFile(m.P.Audit())
+	if n := strings.Count(string(b), `"canary.hit"`); n != 3 {
+		t.Errorf("%d canary.hit audit records, want 3", n)
+	}
+	if !fileExists(m.file("c1", hitFile)) {
+		t.Error("no canary-hit marker")
+	}
+}
+
+// A paused VM: ssh refused with a hint, listed as paused, left alone by idle
+// stop; resume refuses VMs a canary hit didn't pause.
+func TestPausedVM(t *testing.T) {
+	m := testManager(t)
+	m.Cfg.IdleStop = "1m"
+	if err := m.Resume(context.Background(), "p1"); err == nil {
+		t.Error("resumed a VM that isn't running")
+	}
+	for _, n := range []string{"p1", "p2"} {
+		fakeQEMU(t, m, n, 512)
+		writeFile(t, m.file(n, runtimeFile), `{"ssh_port":2222}`)
+	}
+	if err := m.Resume(context.Background(), "p1"); err == nil || !strings.Contains(err.Error(), "not paused") {
+		t.Errorf("resume of a running VM: %v", err)
+	}
+	writeFile(t, m.file("p1", pausedFile), `{"kind":"git"}`)
+	if _, err := m.SSHPort("p1"); err == nil || !strings.Contains(err.Error(), "curral resume p1") {
+		t.Errorf("ssh to a paused VM: %v", err)
+	}
+	if p, err := m.SSHPort("p2"); err != nil || p != 2222 {
+		t.Errorf("ssh port %d %v", p, err)
+	}
+	vms, err := m.List()
+	if err != nil || len(vms) != 2 || !vms[0].Paused || vms[1].Paused {
+		t.Fatalf("list %+v %v", vms, err)
+	}
+	var it IdleTracker
+	if _, err := it.Check(m, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := it.vms["p1"]; ok || it.vms["p2"] == nil {
+		t.Errorf("idle tracker watches %v, want only p2", it.vms)
+	}
+}
+
+func TestGuestText(t *testing.T) {
+	m := testManager(t)
+	m.Cfg.CanaryAction = config.CanaryLog
+	if err := os.MkdirAll(m.dir("g1"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.guestText("g1", "all good", "x"); got != "all good" {
+		t.Errorf("no canaries: %q", got)
+	}
+	cs := canary.Generate([]string{"git"})
+	if err := canary.Save(m.dir("g1"), cs); err != nil {
+		t.Fatal(err)
+	}
+	v := cs[0].Values[0]
+	for _, s := range []string{"token " + v, "token " + v[:8] + "\x01" + v[8:], "token " + v[:8] + "​" + v[8:]} {
+		if got := m.guestText("g1", s, "in the task's result"); !strings.Contains(got, "decoy credentials") {
+			t.Errorf("%q: %q", s, got)
+		}
+	}
+	if got := m.guestText("g1", "fine", "x"); got != "fine" {
+		t.Errorf("clean text: %q", got)
+	}
+	writeFile(t, m.file("g1", canary.File), "{")
+	if got := m.guestText("g1", "fine", "x"); !strings.Contains(got, "couldn't be read") {
+		t.Errorf("unreadable canaries: %q", got)
 	}
 }

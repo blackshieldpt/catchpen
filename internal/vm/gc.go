@@ -113,7 +113,7 @@ func (m *Manager) GC(dryRun bool) ([]GCItem, error) {
 			}
 		}
 	}
-	if n, b, err := m.TrimCache(dryRun); err != nil {
+	if n, b, err := (cache.Store{Dir: m.P.Pkg()}).Trim(m.Cfg.CacheMaxBytes(), dryRun); err != nil {
 		m.logf("warning: trimming the package caches: %v", err)
 	} else if n > 0 {
 		items = append(items, GCItem{Path: m.P.Pkg(), Bytes: b, Why: fmt.Sprintf("%d least recently used package cache files, over cache_max", n)})
@@ -126,12 +126,6 @@ func (m *Manager) GC(dryRun bool) ([]GCItem, error) {
 		m.audit(audit.GC, "", map[string]any{"removed": len(items), "bytes": n})
 	}
 	return items, nil
-}
-
-// TrimCache removes the least recently used package cache objects beyond
-// cache_max, returning how many and their bytes.
-func (m *Manager) TrimCache(dryRun bool) (int, int64, error) {
-	return cache.Store{Dir: m.P.Pkg()}.Trim(m.Cfg.CacheMaxBytes(), dryRun)
 }
 
 // removeBase reports whether base is unused, and (unless dryRun) deletes it

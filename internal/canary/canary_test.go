@@ -1,8 +1,15 @@
 package canary
 
 import (
+	"bytes"
+	"crypto/rand"
 	"io"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -79,7 +86,98 @@ func TestFind(t *testing.T) {
 	if c := In(cs, "GET /v1/x HTTP/1.1\r\nAuthorization: Bearer "+cs[2].Values[0]); c == nil || c.Kind != "git" {
 		t.Errorf("header value: %+v", c)
 	}
+	if c := In(cs, "see https://"+strings.ToUpper(cs[2].Hosts[0])+"/x"); c == nil || c.Kind != "git" {
+		t.Errorf("host in upper case: %+v", c)
+	}
+	if In(cs, strings.ToLower(cs[0].Values[0])) != nil {
+		t.Error("values are matched in any case")
+	}
+	r := httptest.NewRequest("GET", "http://"+cs[1].Hosts[0]+"/x", nil)
+	if c := InRequest(cs, r); c == nil || c.Kind != "env" {
+		t.Errorf("Host header: %+v", c)
+	}
+	r = httptest.NewRequest("GET", "http://example.com/x", nil)
+	r.Header.Set("X-Token", cs[2].Values[0])
+	if c := InRequest(cs, r); c == nil || c.Kind != "git" {
+		t.Errorf("request header: %+v", c)
+	}
+	if c := InRequest(cs, httptest.NewRequest("GET", "http://example.com/x", nil)); c != nil {
+		t.Errorf("clean request: %+v", c)
+	}
 	if c, err := Scan(strings.NewReader("anything"), nil); c != nil || err != nil {
 		t.Errorf("no canaries: %+v %v", c, err)
+	}
+}
+
+func TestScanPatchBinary(t *testing.T) {
+	cs := Generate([]string{"git"})
+	dir := t.TempDir()
+	git := func(args ...string) []byte {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t"}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return out
+	}
+	scan := func(patch []byte) (*Canary, *Canary) {
+		t.Helper()
+		p := filepath.Join(dir, "p")
+		os.WriteFile(p, patch, 0o600)
+		f, err := os.Open(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		plain, _ := Scan(f, cs)
+		f.Seek(0, io.SeekStart)
+		c, err := ScanPatch(f, cs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return plain, c
+	}
+	git("init", "-q")
+	git("commit", "-q", "--allow-empty", "-m", "base")
+	old := make([]byte, 8000)
+	rand.Read(old)
+	os.WriteFile(filepath.Join(dir, "b"), old, 0o600)
+	git("add", "b")
+	git("commit", "-q", "-m", "binary")
+	literal := git("format-patch", "--stdout", "HEAD~1..HEAD")
+	if !bytes.Contains(literal, []byte("\nliteral ")) {
+		t.Fatalf("no literal hunk:\n%s", literal)
+	}
+	if _, c := scan(literal); c != nil {
+		t.Errorf("clean binary: %+v", c)
+	}
+	// Values split across delta ops (at most 127 bytes each) too.
+	for _, n := range []int{0, 60, 100, 120, 125} {
+		pad := make([]byte, n)
+		rand.Read(pad)
+		os.WriteFile(filepath.Join(dir, "b"), append(append(slices.Clone(old), pad...), cs[0].Values[0]...), 0o600)
+		git("commit", "-q", "-am", "token")
+		patch := git("format-patch", "--stdout", "HEAD~1..HEAD")
+		if !bytes.Contains(patch, []byte("\ndelta ")) {
+			t.Fatalf("%d: no delta hunk", n)
+		}
+		if plain, c := scan(patch); plain != nil || c == nil {
+			t.Errorf("delta with %d bytes before the value: plain %+v, ScanPatch %+v", n, plain, c)
+		}
+		git("reset", "-q", "--hard", "HEAD~1")
+	}
+	// A new file holding the value, with headers git apply also takes.
+	os.WriteFile(filepath.Join(dir, "n"), append([]byte{0}, cs[0].Values[0]...), 0o600)
+	git("add", "n")
+	git("commit", "-q", "-m", "new")
+	patch := git("format-patch", "--stdout", "HEAD~1..HEAD")
+	re := regexp.MustCompile(`(?m)^literal (\d+)$`)
+	for _, hdr := range []string{"literal $1", "literal  $1", "literal $1 x", "literal \t$1"} {
+		if plain, c := scan(re.ReplaceAll(patch, []byte(hdr))); plain != nil || c == nil {
+			t.Errorf("header %q: plain %+v, ScanPatch %+v", hdr, plain, c)
+		}
+	}
+	if _, ok := decode85("zzzzz"); ok {
+		t.Error("a short line decoded")
 	}
 }

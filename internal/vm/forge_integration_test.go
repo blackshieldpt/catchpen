@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -17,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blackshieldpt/curral/internal/canary"
+	"github.com/blackshieldpt/curral/internal/config"
 	"github.com/blackshieldpt/curral/internal/egress"
 	"github.com/blackshieldpt/curral/internal/forge"
 	"github.com/blackshieldpt/curral/internal/qemu"
@@ -149,7 +152,7 @@ func TestForges(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Gitea is on a private address, which the proxy only allows with allow_private.
-	if err := os.WriteFile(filepath.Join(m.P.Templates(), "fg.yaml"), []byte("extends: minimal\nnetwork: { allow_private: true }\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(m.P.Templates(), "fg.yaml"), []byte("extends: minimal\nnetwork: { allow_private: true }\ncanaries: [git]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -214,6 +217,44 @@ cd /workspace/lib && echo x > x.txt && git add x.txt && git commit -qm "Add x" &
 	g.api("GET", "/repos/bot/app/pulls?state=open", nil, &prs)
 	if len(prs) != 1 || prs[0]["title"] != "Local change" || prs[0]["html_url"] != url {
 		t.Errorf("pulls: %v (url %s)", prs, url)
+	}
+
+	// Canaries: a pull or PR carrying the VM's decoys is refused, and
+	// nothing moves on the host or the forge.
+	m.Cfg.CanaryAction = config.CanaryLog // keep the VM running for the rest
+	cs, err := canary.Load(m.dir("fg1"))
+	if err != nil || len(cs) != 1 {
+		t.Fatalf("canaries %v %v", cs, err)
+	}
+	hostRef := func(ref string) string {
+		out, _ := exec.Command("git", "-C", host, "for-each-ref", "--format=%(refname) %(objectname)", ref).Output()
+		return string(out)
+	}
+	before := hostRef("refs/curral/")
+	run(`cd /workspace/app && git checkout -q local && echo '` + cs[0].Values[0] + `' > leak.txt && git add leak.txt && git commit -qm "Add config"`)
+	if _, err := m.Pull(ctx, "fg1", PullOpts{Repo: "app", Into: host}); !errors.Is(err, ErrCanary) {
+		t.Errorf("pull of a leaking commit: %v", err)
+	}
+	if after := hostRef("refs/curral/"); after != before || hostRef("refs/curral-incoming/") != "" {
+		t.Errorf("refs after a refused pull:\n%s%s\nwas\n%s", after, hostRef("refs/curral-incoming/"), before)
+	}
+	run(`cd /workspace/app && git checkout -q -b clean2 origin/HEAD && echo z > z.txt && git add z.txt && git commit -qm z && git branch -q "x-` + cs[0].Hosts[0] + `"`)
+	if _, err := m.Pull(ctx, "fg1", PullOpts{Repo: "app", Into: host, Branch: "x-" + cs[0].Hosts[0]}); !errors.Is(err, ErrCanary) {
+		t.Errorf("pull of a branch named after a canary: %v", err)
+	}
+	body := filepath.Join(t.TempDir(), "body.md")
+	if err := os.WriteFile(body, []byte("Deployed to "+cs[0].Hosts[0]), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.PR(ctx, "fg1", PROpts{PullOpts: PullOpts{Repo: "app", Into: host, Branch: "clean2"}, BodyFile: body}); !errors.Is(err, ErrCanary) {
+		t.Errorf("PR with a canary in its body: %v", err)
+	}
+	var branches []map[string]any
+	g.api("GET", "/repos/bot/app/branches", nil, &branches)
+	for _, b := range branches {
+		if strings.Contains(fmt.Sprint(b["name"]), "clean2") {
+			t.Errorf("refused PR pushed %v", b["name"])
+		}
 	}
 
 	// Destroy removes the deploy key and the minted token.

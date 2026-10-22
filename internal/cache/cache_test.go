@@ -31,6 +31,10 @@ func TestResolve(t *testing.T) {
 		{"http://evil.example/pool/x.deb", "", false, http.StatusForbidden},
 		{"http://deb.debian.org:8080/pool/x.deb", "", false, http.StatusForbidden},
 		{"https://deb.debian.org/pool/x.deb", "", false, http.StatusForbidden},
+		{"http://deb.debian.org/debian/pool/../dists/stable/InRelease", "https://deb.debian.org/debian/pool/../dists/stable/InRelease", false, 0},
+		{"http://deb.debian.org/debian/pool/%2e%2e/dists/stable/InRelease", "https://deb.debian.org/debian/pool/%2e%2e/dists/stable/InRelease", false, 0},
+		{"http://deb.debian.org/debian/dists/stable/main/by-hash/MD5Sum/x", "https://deb.debian.org/debian/dists/stable/main/by-hash/MD5Sum/x", false, 0},
+		{"http://deb.debian.org/debian/dists/stable/main/by-hash/SHA256/" + d + "/x", "https://deb.debian.org/debian/dists/stable/main/by-hash/SHA256/" + d + "/x", false, 0},
 
 		{"/go/github.com/!burnt!sushi/toml/@v/v1.4.0.zip", "https://proxy.golang.org/github.com/!burnt!sushi/toml/@v/v1.4.0.zip", true, 0},
 		{"/go/golang.org/x/mod/@v/v0.0.0-20240101000000-abcdef123456.info", "https://proxy.golang.org/golang.org/x/mod/@v/v0.0.0-20240101000000-abcdef123456.info", true, 0},
@@ -42,17 +46,26 @@ func TestResolve(t *testing.T) {
 		{"/go/sumdb/sum.golang.org/latest", "https://sum.golang.org/latest", false, 0},
 		{"/go/sumdb/sum.golang.org/lookup/golang.org/x/text@v0.20.0", "https://sum.golang.org/lookup/golang.org/x/text@v0.20.0", false, 0},
 		{"/go/sumdb/sum.example.org/latest", "", false, http.StatusNotFound},
+		{"/go/sumdb/sum.golang.org/tile/../latest", "https://sum.golang.org/tile/../latest", false, 0},
+		{"/go/sumdb/sum.golang.org/tile/%2E%2E/latest", "https://sum.golang.org/tile/%2E%2E/latest", false, 0},
+		{"/go/x/@v/list/../@v/v1.0.0.zip", "https://proxy.golang.org/x/@v/list/../@v/v1.0.0.zip", false, 0},
+		{"/go/x/./@v/v1.0.0.zip", "https://proxy.golang.org/x/./@v/v1.0.0.zip", false, 0},
+		{"/go/x//@v/v1.0.0.zip", "https://proxy.golang.org/x//@v/v1.0.0.zip", false, 0},
 
 		{"/npm/@types%2fnode", "https://registry.npmjs.org/@types%2fnode", false, 0},
 		{"/npm/@types/node/-/node-22.0.0.tgz", "https://registry.npmjs.org/@types/node/-/node-22.0.0.tgz", true, 0},
 		{"/npm/left-pad/-/left-pad-1.3.0.tgz?x=1", "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz?x=1", false, 0},
+		{"/npm/a/-/..%2f..%2fb.tgz", "https://registry.npmjs.org/a/-/..%2f..%2fb.tgz", false, 0},
 
 		{"/pypi/simple/requests/", "https://pypi.org/simple/requests/", false, 0},
 		{"/pypi/files/packages/ab/cd/ef/requests-2.32.3-py3-none-any.whl", "https://files.pythonhosted.org/packages/ab/cd/ef/requests-2.32.3-py3-none-any.whl", true, 0},
+		{"/pypi/files/packages/../x.whl", "https://files.pythonhosted.org/packages/../x.whl", false, 0},
+		{"/pypi/files/packages/a%5c..%5cx.whl", "https://files.pythonhosted.org/packages/a%5c..%5cx.whl", false, 0},
 
 		{"/v2/library/alpine/manifests/sha256:" + d + "?ns=docker.io", "https://registry-1.docker.io/v2/library/alpine/manifests/sha256:" + d, true, 0},
 		{"/v2/library/alpine/blobs/sha256:" + d, "https://registry-1.docker.io/v2/library/alpine/blobs/sha256:" + d, true, 0},
 		{"/v2/library/alpine/manifests/3.20", "https://registry-1.docker.io/v2/library/alpine/manifests/3.20", false, 0},
+		{"/v2/library/../x/blobs/sha256:" + d, "https://registry-1.docker.io/v2/library/../x/blobs/sha256:" + d, false, 0},
 		{"/v2/library/alpine/tags/list", "", false, http.StatusNotFound},
 		{"/other", "", false, http.StatusNotFound},
 	} {

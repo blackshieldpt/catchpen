@@ -26,6 +26,10 @@ func TestRunCommand(t *testing.T) {
 	if _, err := RunCommand(s, "pi", nil); err == nil || !strings.Contains(err.Error(), "not installed") {
 		t.Errorf("pi missing: %v", err)
 	}
+	s.Agents.OMP = &template.Agent{}
+	if got, err := RunCommand(s, "omp", nil); err != nil || !strings.HasSuffix(got, "-s omp -- 'curral-env' 'omp'") {
+		t.Errorf("omp: %s %v", got, err)
+	}
 	if _, err := RunCommand(s, "bash", nil); err == nil {
 		t.Error("unknown agent accepted")
 	}
