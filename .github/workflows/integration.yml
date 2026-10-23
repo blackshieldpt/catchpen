@@ -1,0 +1,36 @@
+name: integration
+
+# Boots real VMs: slow (about 25 minutes) and downloads cloud images, so it runs
+# nightly and on demand rather than on every push.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration
+  cancel-in-progress: false
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils openssh-client genisoimage tmux
+      - run: go build -o "$HOME/.local/bin/curral" ./cmd/curral && "$HOME/.local/bin/curral" doctor
+      - run: go test -p 1 -tags integration -timeout 100m ./internal/vm/ ./internal/runner/

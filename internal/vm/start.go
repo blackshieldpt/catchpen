@@ -36,8 +36,7 @@ type resume struct{ snap, machine string }
 
 // start boots a VM, or with from resumes it from a memory snapshot.
 func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtime, error) {
-	s, err := m.Load(name)
-	if err != nil {
+	if _, err := m.Load(name); err != nil { // no lock file for a VM that doesn't exist
 		return nil, err
 	}
 	held, unlock, err := m.vm(name).lock()
@@ -52,7 +51,8 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 			unlock()
 		}
 	}()
-	if s, err = m.Load(name); err != nil { // destroyed while we waited for the lock
+	s, err := m.Load(name)
+	if err != nil { // destroyed while we waited for the lock
 		return nil, err
 	}
 	if rt, ok := m.Running(name); ok {

@@ -1,0 +1,48 @@
+version: 2
+
+project_name: curral
+
+builds:
+  - main: ./cmd/curral
+    binary: curral
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .FullCommit }} -X main.date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}" # reproducible: same tag, same bytes
+
+archives:
+  - id: tarball
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: # with the commit's date, so the archive is reproducible too
+      - src: LICENSE
+        info: { mtime: "{{ .CommitDate }}" }
+      - src: README.md
+        info: { mtime: "{{ .CommitDate }}" }
+      - src: CHANGELOG.md
+        info: { mtime: "{{ .CommitDate }}" }
+  - id: binary # the bare binary too, so it has its own checksum and signature
+    formats: [binary]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: SHA256SUMS
+  algorithm: sha256
+
+# Keyless: the signing identity is this repository's release workflow.
+signs:
+  - cmd: cosign
+    artifacts: all
+    signature: "${artifact}.sigstore.json"
+    args: [sign-blob, "--bundle=${signature}", "${artifact}", --yes]
+
+changelog:
+  disable: true # notes come from CHANGELOG.md
+
+release:
+  draft: true # release.yml publishes it after the provenance attestation
+  prerelease: auto

@@ -8,6 +8,13 @@ yet; everything below is on `master`, newest first.
 
 ### Added
 
+- `curral version` prints the version, commit and commit date.
+- Signed release binaries: a tag builds a static linux/amd64 binary and `.tar.gz` with
+  GoReleaser, signs them with cosign keyless and attests build provenance. Verifying
+  them is in [docs/installation.md](docs/installation.md#install).
+- CI on every push and pull request (lint, staticcheck, govulncheck, tests, builds), the
+  integration tests nightly, and the docs site on GitHub Pages.
+
 - The Codex agent (`agents: { codex: {} }`), installed from npm. `auth: api-key` logs
   it in with `OPENAI_API_KEY` at each start; `auth: chatgpt` leaves the sign-in to
   `codex login --device-auth` inside each VM; `auth: none` installs it with no

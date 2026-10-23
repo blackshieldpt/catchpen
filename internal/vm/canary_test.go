@@ -269,7 +269,7 @@ func TestGuestText(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := cs[0].Values[0]
-	for _, s := range []string{"token " + v, "token " + v[:8] + "\x01" + v[8:], "token " + v[:8] + "​" + v[8:]} {
+	for _, s := range []string{"token " + v, "token " + v[:8] + "\x01" + v[8:], "token " + v[:8] + "\u200b" + v[8:]} {
 		if got := m.GuestText("g1", s, "in the task's result"); !strings.Contains(got, "decoy credentials") {
 			t.Errorf("%q: %q", s, got)
 		}

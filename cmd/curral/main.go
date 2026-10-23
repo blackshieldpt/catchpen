@@ -56,7 +56,7 @@ func main() {
 		runCmd(), attachCmd(), recordingsCmd(), auditCmd(), tmuxCmd(), cpCmd(), notifyStdioCmd(),
 		taskCmd(), taskSuperviseCmd(), transcriptsCmd(),
 		snapshotCmd(), snapshotsCmd(), restoreCmd(), rmsnapCmd(), resetCmd(), rebaseCmd(), gcCmd(),
-		daemonCmd(), poolCmd(), cacheCmd(), cacheStdioCmd(),
+		daemonCmd(), poolCmd(), cacheCmd(), cacheStdioCmd(), versionCmd(),
 	)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()

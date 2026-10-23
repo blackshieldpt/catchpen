@@ -32,7 +32,31 @@ sudo usermod -aG kvm $USER          # then log out and back in
 sudo apt install libnotify-bin ssh-askpass tmux   # optional
 ```
 
-Build and install the binary:
+Then install a release binary, or build one (below). A release is a static
+linux/amd64 binary, also packaged as a `.tar.gz` with the license and changelog. Download
+the binary, its `.sigstore.json` and `SHA256SUMS` from the
+[releases page](https://github.com/blackshieldpt/curral/releases), then check it was built
+and signed by this repository's release workflow at that tag (needs
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/) v3, and the `gh`
+CLI for the optional provenance check):
+
+```
+v=0.1.0   # the release you downloaded
+f=curral_${v}_linux_amd64
+sha256sum -c --ignore-missing SHA256SUMS
+cosign verify-blob --bundle $f.sigstore.json \
+  --certificate-identity "https://github.com/blackshieldpt/curral/.github/workflows/release.yml@refs/tags/v$v" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com $f
+gh attestation verify $f --repo blackshieldpt/curral \
+  --signer-workflow blackshieldpt/curral/.github/workflows/release.yml   # build provenance; optional
+install -m 755 $f ~/.local/bin/curral
+curral doctor
+```
+
+Releases are reproducible: building the tag with GoReleaser and the Go version
+`curral version` prints gives the same bytes.
+
+Or build and install the binary:
 
 ```
 git clone git@github.com:blackshieldpt/curral.git
@@ -100,6 +124,9 @@ git pull
 go build -o ~/.local/bin/curral ./cmd/curral
 systemctl --user restart curral      # if the daemon is installed
 ```
+
+With a release binary, download and verify the new one as in [Install](#install), then
+install it over the old one and restart the daemon. `curral version` prints what you run.
 
 Run `curral daemon install` again instead if the binary moved. Check the
 [changelog](https://github.com/blackshieldpt/curral/blob/master/CHANGELOG.md) for changes that need action.

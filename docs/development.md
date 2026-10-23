@@ -34,6 +34,29 @@ Docker).
 | `internal/daemon/` | The daemon's jobs and systemd unit. |
 | `internal/notify/`, `internal/audit/`, `internal/record/` | Notifications, the audit log and recordings. |
 
+## CI and releases
+
+`.github/workflows/ci.yml` runs on every push to `master` and every pull request:
+gofmt, vet and staticcheck (with and without the `integration` tag), govulncheck, the
+unit tests with `-race`, a GoReleaser snapshot build and the docs build.
+`integration.yml` runs the integration tests nightly and on demand, on a runner with
+KVM. `docs.yml` publishes the docs site to GitHub Pages.
+
+To release:
+
+1. Rename `## [Unreleased]` in `CHANGELOG.md` to `## [X.Y.Z] - YYYY-MM-DD` and start a
+   new empty `## [Unreleased]` above it. That section becomes the release notes; the
+   release fails without one. A pre-release needs its own section, such as
+   `## [0.2.0-rc.1]`.
+2. Commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
+`release.yml` reruns CI, then GoReleaser builds the binary (static, `-trimpath`,
+reproducible), uploads it and a `.tar.gz` with `SHA256SUMS` to a draft release, signs
+each with cosign keyless (a `.sigstore.json` bundle whose identity is the release
+workflow at that tag), attests build provenance, and only then publishes the release.
+A tag with a hyphen (`v0.2.0-rc.1`) makes a pre-release.
+Check the release locally with `goreleaser release --snapshot --clean --skip=publish,sign`.
+
 ## Adding an agent
 
 1. Add its field to `Agents` (`internal/template/agents.go`) and its entry to `AgentDefs`
