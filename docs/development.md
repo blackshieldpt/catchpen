@@ -54,6 +54,11 @@ out of step.
 
 - Treat everything from the guest as hostile: output, files, git objects, notifications.
   New host-side handling of guest data needs limits and a test with hostile input.
+- Guest command output (`sshx.Run`, `sshx.Stream`'s stderr, `agents.Remote`, host git
+  over guest commits) comes as `sshx.GuestOutput`: `Raw()` to parse it, `%s` to show it
+  (trimmed, control characters dropped). It can't be converted to a string by accident.
+- Connect to a guest with `dialGuest` or `waitGuest` only: their connections close when
+  a canary hit pauses the VM.
 - Tests run against real git, real files and `httptest` servers rather than mocks.
 - Document user-visible changes in the [changelog](../CHANGELOG.md) and the relevant page
   under `docs/`.

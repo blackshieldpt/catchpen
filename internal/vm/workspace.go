@@ -309,16 +309,17 @@ git config --global credential.helper "store --file=$HOME/.config/curral/git-cre
 	}
 	for _, g := range repos {
 		cmd := fmt.Sprintf(`[ -d %[1]s/.git ] && exit 0; GIT_TERMINAL_PROMPT=0 git clone -q %[2]s %[1]s 2>&1`, shQuote(g.Dir()), shQuote(g.CloneURL()))
-		run := func() ([]byte, error) { return r.Run(ctx, cmd, nil) }
+		run := func() (sshx.GuestOutput, error) { return r.Run(ctx, cmd, nil) }
 		if g.Forge.Auth.Mode != forge.ModeDeployKey && g.Forge.UsesSSH() {
 			// Agent-mode clones need the forwarded agent, which only the system ssh provides.
-			run = func() ([]byte, error) { return m.sshExec(ctx, s.Name, cmd) }
+			run = func() (sshx.GuestOutput, error) { return m.sshExec(ctx, s.Name, cmd) }
 		}
 		if out, err := run(); err != nil {
-			if g.Forge.Auth.Mode == forge.ModeAgent && strings.Contains(string(out), "agent refused operation") {
-				out = append(out, "(the restricted agent refused: confirmation denied, or the forge's SSH server lacks host-bound auth; see curral forge test "+g.Forge.Name+")\n"...)
+			hint := ""
+			if g.Forge.Auth.Mode == forge.ModeAgent && strings.Contains(string(out.Raw()), "agent refused operation") {
+				hint = "\n(the restricted agent refused: confirmation denied, or the forge's SSH server lacks host-bound auth; see curral forge test " + g.Forge.Name + ")"
 			}
-			return fmt.Errorf("clone %s: %w\n%s", g.Repo, err, sshx.Printable(strings.TrimSpace(string(out))))
+			return fmt.Errorf("clone %s: %w\n%s%s", g.Repo, err, out, hint)
 		}
 	}
 	return nil
@@ -381,7 +382,7 @@ func (m *Manager) startAgent(ctx context.Context, s *State) error {
 
 // sshExec runs cmd in the VM through the system ssh and the generated
 // ssh_config, so the VM's agent forwarding applies.
-func (m *Manager) sshExec(ctx context.Context, name, cmd string) ([]byte, error) {
+func (m *Manager) sshExec(ctx context.Context, name, cmd string) (sshx.GuestOutput, error) {
 	c := exec.CommandContext(ctx, "ssh", "-F", m.P.SSHConfig(), "-o", "BatchMode=yes", sshx.AliasPrefix+name, cmd)
 	var buf bytes.Buffer
 	c.Stdout, c.Stderr = &buf, &buf
@@ -389,5 +390,5 @@ func (m *Manager) sshExec(ctx context.Context, name, cmd string) ([]byte, error)
 	if buf.Len() > 64<<10 {
 		buf.Truncate(64 << 10)
 	}
-	return buf.Bytes(), err
+	return sshx.Guest(buf.Bytes()), err
 }

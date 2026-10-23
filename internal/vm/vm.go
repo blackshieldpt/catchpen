@@ -1038,7 +1038,7 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 		var ee *sshx.ExitError
 		if err != nil && !(errors.As(err, &ee) && ee.Status == 2) { // 2 = finished with recoverable errors
 			// The output is guest-controlled; strip control characters before it reaches the terminal.
-			return failed(fmt.Errorf("first boot: %w\n%s", err, sshx.Printable(strings.TrimSpace(string(out)))))
+			return failed(fmt.Errorf("first boot: %w\n%s", err, out))
 		}
 		if err := m.markBooted(name); err != nil {
 			return nil, err
@@ -1071,7 +1071,7 @@ func (m *Manager) Push(ctx context.Context, name string) error {
 
 type sshRemote struct{ c *ssh.Client }
 
-func (r sshRemote) Run(ctx context.Context, cmd string, stdin []byte) ([]byte, error) {
+func (r sshRemote) Run(ctx context.Context, cmd string, stdin []byte) (sshx.GuestOutput, error) {
 	return sshx.Run(ctx, r.c, cmd, bytes.NewReader(stdin))
 }
 

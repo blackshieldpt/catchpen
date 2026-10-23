@@ -65,7 +65,7 @@ func (m *Manager) CopyTranscripts(ctx context.Context, name string) (string, err
 	pw.CloseWithError(serr)
 	r := <-done
 	if r.err == nil && serr != nil {
-		r.err = fmt.Errorf("%w: %s", serr, sshx.Printable(strings.TrimSpace(string(stderr))))
+		r.err = fmt.Errorf("%w: %s", serr, stderr)
 	}
 	if r.err != nil {
 		return dest, fmt.Errorf("transcripts of %s: %w", name, r.err)

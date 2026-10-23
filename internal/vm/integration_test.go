@@ -59,7 +59,7 @@ func guestRunner(t *testing.T, ctx context.Context, c *ssh.Client) func(string) 
 		if err != nil {
 			t.Fatalf("%s: %v\n%s", cmd, err, out)
 		}
-		return strings.TrimSpace(string(out))
+		return strings.TrimSpace(string(out.Raw()))
 	}
 }
 

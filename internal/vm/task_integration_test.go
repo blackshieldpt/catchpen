@@ -274,7 +274,7 @@ echo agent-finished`
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
-	if got := strings.Fields(string(out)); len(got) != 7 || got[0] != "202" || got[6] != "429" {
+	if got := strings.Fields(string(out.Raw())); len(got) != 7 || got[0] != "202" || got[6] != "429" {
 		t.Errorf("hook responses: %q", out)
 	}
 	deadline := time.Now().Add(20 * time.Second)

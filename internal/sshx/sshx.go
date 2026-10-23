@@ -173,6 +173,19 @@ type guestError struct{ msg string }
 
 func (e guestError) Error() string { return e.msg }
 
+// GuestOutput is output the guest controls. Raw gives its bytes, for
+// parsing; printed (with %s or %v, or String) it is trimmed and has no control
+// characters. It's a struct so that a plain conversion can't make it a string.
+type GuestOutput struct{ b []byte }
+
+// Guest wraps bytes that came from the guest.
+func Guest(b []byte) GuestOutput { return GuestOutput{b} }
+
+// Raw is the output as the guest sent it.
+func (g GuestOutput) Raw() []byte { return g.b }
+
+func (g GuestOutput) String() string { return Printable(strings.TrimSpace(string(g.b))) }
+
 // Printable drops control characters (except newline and tab) from guest text
 // before it reaches the host terminal.
 func Printable(s string) string {
@@ -228,7 +241,12 @@ func (e *ExitError) ExitCode() int { return e.Status }
 
 // Stream runs cmd and copies its stdout to w, failing once more than max bytes
 // arrive. Stderr (capped) is returned for diagnostics.
-func Stream(ctx context.Context, c *ssh.Client, cmd string, w io.Writer, max int64) (stderr []byte, err error) {
+func Stream(ctx context.Context, c *ssh.Client, cmd string, w io.Writer, max int64) (stderr GuestOutput, err error) {
+	b, err := stream(ctx, c, cmd, w, max)
+	return Guest(b), err
+}
+
+func stream(ctx context.Context, c *ssh.Client, cmd string, w io.Writer, max int64) ([]byte, error) {
 	s, err := c.NewSession()
 	if err != nil {
 		return nil, err
@@ -297,9 +315,14 @@ func (w *capWriter) Write(p []byte) (int, error) {
 }
 
 // Run executes cmd and returns its combined output, which is guest-controlled:
-// errors never include it, so callers decide whether (and how safely) to show it.
+// errors never include it, so callers decide whether to show it.
 // Cancelling ctx ends the session.
-func Run(ctx context.Context, c *ssh.Client, cmd string, stdin io.Reader) ([]byte, error) {
+func Run(ctx context.Context, c *ssh.Client, cmd string, stdin io.Reader) (GuestOutput, error) {
+	b, err := run(ctx, c, cmd, stdin)
+	return Guest(b), err
+}
+
+func run(ctx context.Context, c *ssh.Client, cmd string, stdin io.Reader) ([]byte, error) {
 	s, err := c.NewSession()
 	if err != nil {
 		return nil, err

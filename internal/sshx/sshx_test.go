@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -100,12 +101,12 @@ func TestGenerateAndDialPinned(t *testing.T) {
 	}
 	defer c.Close()
 	out, err := Run(ctx, c, "echo ok", nil)
-	if err != nil || string(out) != "echo ok" {
+	if err != nil || string(out.Raw()) != "echo ok" {
 		t.Fatalf("Run = %q, %v", out, err)
 	}
 	out, err = Run(ctx, c, "fail", nil)
 	var ee *ExitError
-	if !errors.As(err, &ee) || ee.Status != 3 || string(out) != "fail" {
+	if !errors.As(err, &ee) || ee.Status != 3 || string(out.Raw()) != "fail" {
 		t.Fatalf("Run(fail) = %q, %v; want ExitError status 3 with output returned separately", out, err)
 	}
 	if strings.Contains(err.Error(), "fail\n") || strings.Count(err.Error(), "fail") != 1 {
@@ -319,5 +320,16 @@ func TestRenamePinsTheSameHostKey(t *testing.T) {
 func TestPrintable(t *testing.T) {
 	if got := Printable("a\x1b[2Jb\tc\nd\u009be\u202ef\u2067g\u200fh\u061ci"); got != "a[2Jb\tc\ndefghi" {
 		t.Errorf("%q", got)
+	}
+}
+
+// Guest output prints trimmed and without control characters; Raw keeps it.
+func TestGuestOutput(t *testing.T) {
+	g := Guest([]byte(" a\x1b]0;x\x07b\n"))
+	if s := fmt.Sprintf("%s|%v|%s", g, g, fmt.Errorf("e: %s", g)); s != "a]0;xb|a]0;xb|e: a]0;xb" {
+		t.Errorf("%q", s)
+	}
+	if string(g.Raw()) != " a\x1b]0;x\x07b\n" {
+		t.Errorf("raw %q", g.Raw())
 	}
 }

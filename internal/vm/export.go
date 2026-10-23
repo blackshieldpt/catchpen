@@ -69,11 +69,13 @@ func hostGitExec(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	return exec.CommandContext(ctx, "git", append(base, args...)...)
 }
 
-func hostGitCmd(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmd := hostGitExec(ctx, dir, args...)
-	out, err := cmd.CombinedOutput()
+// hostGitCmd runs git in the host repository dir; its output can come from
+// the guest's commits and refs.
+func hostGitCmd(ctx context.Context, dir string, args ...string) (sshx.GuestOutput, error) {
+	b, err := hostGitExec(ctx, dir, args...).CombinedOutput()
+	out := sshx.Guest(b)
 	if err != nil {
-		return out, fmt.Errorf("git %s: %w: %s", args[0], err, sshx.Printable(strings.TrimSpace(string(out))))
+		return out, fmt.Errorf("git %s: %w: %s", args[0], err, out)
 	}
 	return out, nil
 }
@@ -113,7 +115,7 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 		if err != nil {
 			return nil, fmt.Errorf("finding the current branch: %w", err)
 		}
-		branch = strings.TrimSpace(string(out))
+		branch = strings.TrimSpace(string(out.Raw()))
 	}
 	if err := validBranch(branch); err != nil {
 		return nil, err
@@ -145,9 +147,9 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 		// None (exit 1) for unrelated histories: all the branch's commits.
 		out, err := sshx.Run(ctx, c, "git -C "+dir+" merge-base --all origin/HEAD "+shQuote(branch)+" || [ $? = 1 ]", nil)
 		if err != nil {
-			return nil, fmt.Errorf("finding the branch's base: %w: %s", err, sshx.Printable(strings.TrimSpace(string(out))))
+			return nil, fmt.Errorf("finding the branch's base: %w: %s", err, out)
 		}
-		if err := m.formatPatch(ctx, name, into, ref, strings.Fields(string(out)), f, "in patches pulled from it"); err != nil {
+		if err := m.formatPatch(ctx, name, into, ref, strings.Fields(string(out.Raw())), f, "in patches pulled from it"); err != nil {
 			return nil, err
 		}
 	}
@@ -164,7 +166,7 @@ func pruneIncoming(ctx context.Context, dir string) {
 	if err != nil {
 		return
 	}
-	for _, ref := range strings.Fields(string(out)) {
+	for _, ref := range strings.Fields(string(out.Raw())) {
 		id, _, _ := strings.Cut(strings.TrimPrefix(ref, "refs/curral-incoming/"), "/")
 		if pid, _, ok := strings.Cut(id, "-"); ok {
 			if n, err := strconv.Atoi(pid); err == nil && n > 0 {
@@ -189,7 +191,7 @@ func (m *Manager) fetchBranch(ctx context.Context, c *ssh.Client, name, git, bra
 	defer tmp.Close()
 	stderr, err := sshx.Stream(ctx, c, git+" bundle create - "+shQuote("refs/heads/"+branch), tmp, maxBundle)
 	if err != nil {
-		return fmt.Errorf("bundle %s: %w\n%s", branch, err, sshx.Printable(strings.TrimSpace(string(stderr))))
+		return fmt.Errorf("bundle %s: %w\n%s", branch, err, stderr)
 	}
 	if err := tmp.Close(); err != nil {
 		return err
@@ -236,7 +238,7 @@ func (m *Manager) formatPatch(ctx context.Context, name, dir, ref string, bases 
 	}
 	if err != nil {
 		os.Remove(path)
-		return fmt.Errorf("format-patch: %w: %s", err, sshx.Printable(strings.TrimSpace(stderr.String())))
+		return fmt.Errorf("format-patch: %w: %s", err, sshx.Guest(stderr.Bytes()))
 	}
 	return m.scanPatch(name, path, what)
 }
@@ -307,7 +309,7 @@ func (m *Manager) PR(ctx context.Context, name string, o PROpts) (string, error)
 		if err != nil {
 			return "", err
 		}
-		title = strings.TrimSpace(string(out))
+		title = strings.TrimSpace(string(out.Raw()))
 	}
 	url, err := c.CreatePR(ctx, p.Repo.Repo, head, base, title, body, o.Draft)
 	if err != nil {
@@ -346,12 +348,12 @@ func findRemote(ctx context.Context, dir string, f forge.Forge, repo forge.Repo)
 		return "", err
 	}
 	reg := forge.Registry{Forges: []forge.Forge{f}}
-	for _, name := range strings.Fields(string(out)) {
+	for _, name := range strings.Fields(string(out.Raw())) {
 		u, err := hostGitCmd(ctx, dir, "remote", "get-url", "--push", name)
 		if err != nil {
 			continue
 		}
-		if _, r, err := reg.Resolve(strings.TrimSpace(string(u))); err == nil && strings.EqualFold(r.Path(), repo.Path()) {
+		if _, r, err := reg.Resolve(strings.TrimSpace(string(u.Raw()))); err == nil && strings.EqualFold(r.Path(), repo.Path()) {
 			return name, nil
 		}
 	}

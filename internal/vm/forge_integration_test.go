@@ -338,7 +338,7 @@ func TestAgentForwarding(t *testing.T) {
 	t.Cleanup(func() { _ = m.Destroy("ag2") })
 	ssh := func(cmd string) (string, error) {
 		out, err := m.sshExec(ctx, "ag2", cmd)
-		return strings.TrimSpace(string(out)), err
+		return strings.TrimSpace(string(out.Raw())), err
 	}
 	if _, err := m.Start(ctx, "ag2"); err != nil {
 		if os.Getenv("CURRAL_TEST_DEBUG") != "" {

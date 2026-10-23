@@ -165,7 +165,7 @@ func (m *Manager) takeResume(s *State) (*resume, error) {
 func (m *Manager) claimed(ctx context.Context, c *ssh.Client, name, snap string) {
 	cmd := fmt.Sprintf(`old=$(hostname) && sudo -n hostnamectl set-hostname %[1]s && sudo -n sed -i "s/\<$old\>/%[1]s/g" /etc/hosts`, name)
 	if out, err := sshx.Run(ctx, c, cmd, nil); err != nil {
-		m.logf("warning: setting the hostname of %s: %v %s", name, err, sshx.Printable(string(out)))
+		m.logf("warning: setting the hostname of %s: %v %s", name, err, out)
 	}
 	if err := m.DeleteSnapshot(name, snap); err != nil {
 		m.logf("warning: removing the pool snapshot of %s: %v", name, err)

@@ -398,7 +398,7 @@ func (m *Manager) afterResume(ctx context.Context, name string) error {
 func (m *Manager) syncClock(ctx context.Context, c *ssh.Client) {
 	cmd := fmt.Sprintf("sudo -n date -u -s @%d >/dev/null", time.Now().Unix())
 	if out, err := sshx.Run(ctx, c, cmd, nil); err != nil {
-		m.logf("warning: setting the guest clock: %v %s", err, sshx.Printable(string(out)))
+		m.logf("warning: setting the guest clock: %v %s", err, out)
 	}
 }
 

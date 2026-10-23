@@ -17,12 +17,13 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/blackshieldpt/curral/internal/cloudinit"
+	"github.com/blackshieldpt/curral/internal/sshx"
 	"github.com/blackshieldpt/curral/internal/template"
 )
 
 // Remote runs a shell command in the guest as the VM user.
 type Remote interface {
-	Run(ctx context.Context, cmd string, stdin []byte) ([]byte, error)
+	Run(ctx context.Context, cmd string, stdin []byte) (sshx.GuestOutput, error)
 }
 
 // Secrets resolves secret names on the host.
@@ -164,7 +165,7 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 		if err != nil {
 			return p.res, err
 		}
-		if strings.TrimSpace(string(out)) == "wrapped" {
+		if strings.TrimSpace(string(out.Raw())) == "wrapped" {
 			if err := p.put(claudeEnvFile, envFileContent(claudeEnv)); err != nil {
 				return p.res, err
 			}
@@ -600,10 +601,10 @@ func (p *pusher) getDoc(rel, format string, unmarshal func([]byte, any) error) (
 		return nil, fmt.Errorf("read ~/%s: %w", rel, err)
 	}
 	doc := map[string]any{}
-	if strings.TrimSpace(string(out)) == "" {
+	if strings.TrimSpace(string(out.Raw())) == "" {
 		return doc, nil
 	}
-	if err := unmarshal(out, &doc); err != nil {
+	if err := unmarshal(out.Raw(), &doc); err != nil {
 		why := "was not valid " + format
 		var le limitError
 		if errors.As(err, &le) {

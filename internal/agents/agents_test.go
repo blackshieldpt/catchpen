@@ -14,6 +14,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
+	"github.com/blackshieldpt/curral/internal/sshx"
 	"github.com/blackshieldpt/curral/internal/template"
 )
 
@@ -21,15 +22,15 @@ import (
 // a temp dir, so the real scripts are exercised.
 type localRemote struct{ home string }
 
-func (l localRemote) Run(ctx context.Context, cmd string, stdin []byte) ([]byte, error) {
+func (l localRemote) Run(ctx context.Context, cmd string, stdin []byte) (sshx.GuestOutput, error) {
 	c := exec.CommandContext(ctx, "sh", "-c", cmd)
 	c.Env = []string{"HOME=" + l.home, "PATH=" + os.Getenv("PATH")}
 	c.Stdin = strings.NewReader(string(stdin))
 	out, err := c.Output()
 	if err != nil {
-		return out, fmt.Errorf("%s: %w", cmd, err)
+		return sshx.Guest(out), fmt.Errorf("%s: %w", cmd, err)
 	}
-	return out, nil
+	return sshx.Guest(out), nil
 }
 
 type fakeSecrets map[string]string

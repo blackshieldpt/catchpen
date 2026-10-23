@@ -256,10 +256,7 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 	}
 	defer g.Close()
 	c := g.Client
-	run := func(cmd string) (string, error) {
-		out, err := sshx.Run(ctx, c, cmd, nil)
-		return strings.TrimSpace(string(out)), err
-	}
+	run := func(cmd string) (sshx.GuestOutput, error) { return sshx.Run(ctx, c, cmd, nil) }
 	prompt, err := os.ReadFile(st.Path(id, "prompt.md"))
 	if err != nil {
 		return err
@@ -275,9 +272,11 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 	branch, base := "", ""
 	if t.Spec.Repo != "" {
 		branch = "curral/" + id
-		if base, err = run(cd + "git rev-parse HEAD && git checkout -q -b " + shQuote(branch)); err != nil {
-			return fmt.Errorf("preparing the repo: %w: %s", err, sshx.Printable(base))
+		out, err := run(cd + "git rev-parse HEAD && git checkout -q -b " + shQuote(branch))
+		if err != nil {
+			return fmt.Errorf("preparing the repo: %w: %s", err, out)
 		}
+		base = strings.TrimSpace(string(out.Raw()))
 		set(func(t *task.Task) { t.Branch = branch })
 	}
 
@@ -309,14 +308,14 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 			`git checkout -q -B ` + shQuote(branch)
 		if out, err := run(commit); err != nil {
 			unexported = true // there may be commits; don't destroy them
-			return fmt.Errorf("committing: %w: %s", err, sshx.Printable(out))
+			return fmt.Errorf("committing: %w: %s", err, out)
 		}
 		// Only git's output here: hooks and warnings above could add lines.
 		out, err := run(cd + "git rev-list --count " + shQuote(base) + ".." + shQuote(branch))
-		n, cerr := strconv.Atoi(lastLine(out))
+		n, cerr := strconv.Atoi(lastLine(strings.TrimSpace(string(out.Raw()))))
 		if err != nil || cerr != nil {
 			unexported = true
-			return fmt.Errorf("counting commits: %v %v: %s", err, cerr, sshx.Printable(out))
+			return fmt.Errorf("counting commits: %v %v: %s", err, cerr, out)
 		}
 		set(func(t *task.Task) { t.Commits = n })
 		if n > 0 && t.Spec.Out != task.OutNone {
@@ -356,7 +355,7 @@ func (m *Manager) runAgent(ctx context.Context, c *ssh.Client, t *task.Task, cd 
 	defer cancel()
 	m.logf("task %s: running %s", t.ID, t.Spec.Agent)
 	stderr, err := sshx.Stream(actx, c, cmd, out, maxTaskOutput)
-	_ = os.WriteFile(st.Path(t.ID, "stderr.log"), stderr, 0o600)
+	_ = os.WriteFile(st.Path(t.ID, "stderr.log"), stderr.Raw(), 0o600)
 	var ee *sshx.ExitError
 	switch {
 	case err == nil:
@@ -364,7 +363,7 @@ func (m *Manager) runAgent(ctx context.Context, c *ssh.Client, t *task.Task, cd 
 	case errors.As(err, &ee) && ee.Status == 124:
 		return ee.Status, fmt.Errorf("%s timed out after %s", t.Spec.Agent, t.Spec.Timeout)
 	case errors.As(err, &ee):
-		return ee.Status, fmt.Errorf("%s exited with status %d: %s", t.Spec.Agent, ee.Status, firstLine(sshx.Printable(string(stderr))))
+		return ee.Status, fmt.Errorf("%s exited with status %d: %s", t.Spec.Agent, ee.Status, firstLine(stderr.String()))
 	}
 	return -1, err
 }

@@ -63,7 +63,7 @@ func TestCanaries(t *testing.T) {
 		rctx, rcancel := context.WithTimeout(ctx, 3*time.Minute)
 		defer rcancel()
 		out, _ := sshx.Run(rctx, c, `bash -lc '. ~/.env.production; curl -s -o /dev/null -w %{http_connect} -H "Authorization: Bearer $INTERNAL_API_TOKEN" "$INTERNAL_API_URL/v1/users"; echo " done"'`, nil)
-		done <- string(out)
+		done <- string(out.Raw())
 	}()
 	deadline := time.Now().Add(time.Minute)
 	for !m.Paused("cn") && time.Now().Before(deadline) {
