@@ -126,7 +126,8 @@ On a host without a desktop session:
 - Egress prompts: the daemon always tries to answer them with desktop notifications,
   and without `notify-send` it denies them at once. Either use `on_deny: log` and allow
   hosts with `curral egress allow`, or run `curral egress watch` in a terminal (in tmux,
-  say) and start it before the daemon, which leaves VMs a running watcher serves to it.
+  say) and start it before the daemon: the daemon leaves alone any VM a running watcher
+  already serves.
 - Restricted agents with `confirm: true` need an askpass program and a display. Without
   one, use `confirm: false` or a forge mode other than `agent`.
 - Reach VMs by SSH-ing to the host first: `ssh -t buildhost curral attach dev`. VM ports

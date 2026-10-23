@@ -17,7 +17,9 @@ type Guest struct {
 }
 
 func (g *Guest) Close() error {
-	g.stop()
+	if g.stop != nil { // one built outside DialGuest has none
+		g.stop()
+	}
 	return g.Client.Close()
 }
 

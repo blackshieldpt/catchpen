@@ -29,7 +29,7 @@ The guest reaches the caches at `10.0.2.102`. The store is
 | `apt` | `.deb` files from the Ubuntu and Debian archive and security mirrors; apt lists fetched by hash | `InRelease` |
 | `go` | module files and checksum database tiles from proxy.golang.org and sum.golang.org | version lists |
 | `npm` | tarballs from registry.npmjs.org | package metadata |
-| `pypi` | files from pypi.org and files.pythonhosted.org | indexes |
+| `pypi` | files from files.pythonhosted.org | indexes from pypi.org |
 | `docker` | Docker Hub layers and manifests by digest | tags |
 
 The guest is preconfigured: apt, `GOPROXY`, npm, yarn, pnpm, pip, uv, and Docker's

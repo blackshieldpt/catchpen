@@ -29,6 +29,9 @@ scanned and confirmed by you (`-y` trusts the scan without asking). Forges are s
 | `agent` | nothing; SSH signs with your key through a restricted agent | — |
 | `none` | nothing; anonymous clone; work leaves through `pull`/`pr` | opening PRs |
 
+In every mode, `curral pr` opens pull requests with the forge's token, or the account's
+password for `minted-token` without one.
+
 Deploy keys and minted tokens are removed when the VM is destroyed. Tokens and passwords
 are always `secret:` references; see [configuration.md](configuration.md#secrets).
 

@@ -115,7 +115,7 @@ no inline comment or escape handling. The file must have no group or other permi
 bits (`chmod 600`). Values with a newline, CR or NUL are refused.
 
 The daemon runs as a systemd user service and doesn't see your shell's environment, so
-secrets it needs (notification tokens, forge tokens for rebuilds) belong in
+secrets it needs (notification tokens) belong in
 `secrets.env` or a `command:` source.
 
 ## forges.yaml

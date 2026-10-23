@@ -1,7 +1,5 @@
 //go:build integration
 
-// Package vmtest holds what the integration tests of internal/vm and
-// internal/runner share.
 package vmtest
 
 import (

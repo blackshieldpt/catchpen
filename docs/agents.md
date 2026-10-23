@@ -60,7 +60,7 @@ curral creds push --all
   `~/.config/curral/claude.env`, which only the guest's `claude` command loads: other
   agents and SSH sessions don't get it in their environment. It is not a secret from
   the VM, though: anything running as the agent user can read the file, and programs
-  Claude Code starts inherit its environment. VMs on a base built before this change
+  Claude Code starts inherit its environment. VMs on a base older than this wrapper
   still get it in every session's environment, and curral warns at each start until
   `curral reset --latest` moves them to a current base. With `oauth-token`, setting
   `ANTHROPIC_API_KEY` in `env:` is refused, since it would override the token.

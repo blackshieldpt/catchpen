@@ -31,7 +31,7 @@ you can inspect it. Stop or destroy it afterwards.
 | `/dev/kvm read/write` | `sudo usermod -aG kvm $USER`, then log in again. Check that virtualization is on in the firmware. |
 | `kvm group` (warning) | Access comes only from the login session's ACL, which services and SSH sessions may lack. Add yourself to the group. |
 | `config` | Fix the error it shows in `config.yaml`. Unknown keys are errors. |
-| `data dir` | Check the permissions of `~/.local/share/curral` and `~/.config/curral`. |
+| `data dir` | Check the permissions of `~/.local/share/curral`, `~/.config/curral` and `~/.cache/curral`. |
 | `curral binary` (warning) | You're running from a temp directory (`go run`). Install the binary; QEMU and ssh call it back. |
 | `notify-send` (warning) | `sudo apt install libnotify-bin` for desktop notifications and prompts. |
 | `ssh-agent` (warning) | `ssh.agent: restricted` needs `ssh-agent` and `ssh-add`. |
@@ -117,8 +117,8 @@ users`**: `chmod 600 ~/.config/curral/secrets.env`.
 **`VM <name> is not running`**: `curral start <name>`. **`runtime state missing`**:
 `curral stop <name>`, then start it again.
 
-**`<agent> is not installed in <vm>`**: add `agents.<agent>` to the template; that means
-a new base, so `curral reset <vm> --latest` or a new VM.
+**`<agent> is not installed in <vm>`**: add `agents.<agent>` to the template and create a
+new VM: a VM's agents are fixed when it's created, so `curral reset` doesn't add one.
 
 **`recording: ...`**: the recording couldn't be written. Fix the disk or permissions, or
 set `record: false`.
@@ -130,7 +130,7 @@ A blocked request gets HTTP 403 with
 
 | Reason | Fix |
 |---|---|
-| `not in allowlist` | `curral egress allow <name> host[:port]`, or add it to the template's `network.allow` or `presets`. |
+| `not in allowlist` | `curral egress allow <name> host[:port]`, or, for new VMs, add it to the template's `network.allow` or `presets`. |
 | `denylisted` | `curral egress undeny <name> host`. |
 | a private address | The name resolves to a private or loopback address; set `allow_private` (`curral egress config <name> --allow-private`) if that's intended. |
 | `prompt unavailable: no watcher` | `on_deny: prompt` but nothing is answering: run `curral egress watch` or the daemon. |
@@ -203,8 +203,8 @@ limits.
 `tasks/<id>/supervisor.log`, then `curral task cancel <id>` or `curral task rm <id>`,
 which destroy its VM.
 
-**`kept <vm> because its N commit(s) weren't exported`**: the task failed before its
-commits were exported (the agent failed, timed out or the export failed).
+**`kept <vm> because its N commit(s) weren't exported`**: committing, counting or
+exporting the task's commits failed.
 `curral pull <vm> --branch <branch> --into <repo>`, then `curral destroy <vm>`.
 
 **`<agent> timed out after <timeout>`**: raise `--timeout` (up to 48h) or split the task.
@@ -224,8 +224,8 @@ that saved the snapshot. Stop the VM and restore again, so it starts under the i
 QEMU. If that QEMU is also different (a warning says so) and loading fails, use
 `curral restore <vm> <snapshot> --disk-only`, which keeps the disk and drops the memory.
 
-**`invalid snapshot name`**: letters, digits, `.`, `_` and `-`, not only digits, up to 64
-characters.
+**`invalid snapshot name`**: letters, digits, `.`, `_` and `-`, starting with a letter or
+digit, not only digits, up to 64 characters.
 
 ## Daemon and pool
 
@@ -266,8 +266,9 @@ for that VM while the guest keeps the old decoys.
 
 ## Cleaning up after a crash
 
-- `curral gc --dry-run`, then `curral gc`: removes unused bases and leftovers of
-  interrupted builds, downloads (`*.part`), resets and destroys, after 90 minutes.
+- `curral gc --dry-run`, then `curral gc`: removes unused bases and interrupted destroys,
+  and leftovers of interrupted builds, downloads (`*.part`) and resets once they are 90
+  minutes old.
 - `curral destroy -y <name>` works even when a VM's state file is missing or damaged; it
   warns about deploy keys it might have left on the forge.
 - `curral stop -f <name>` for a QEMU that won't shut down.

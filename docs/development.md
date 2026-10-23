@@ -10,7 +10,8 @@ go test -tags integration -timeout 30m -run '^TestCanaries$' ./internal/vm/   # 
 
 The integration tests need everything a real host does (see
 [installation.md](installation.md)), network access to download cloud images, and time:
-some boot several VMs. Some run a Gitea server to test forges.
+some boot several VMs. Some run a Gitea server in Docker to test forges (skipped without
+Docker).
 
 ## Layout
 
@@ -19,7 +20,7 @@ some boot several VMs. Some run a Gitea server to test forges.
 | `cmd/curral/` | The CLI (spf13/cobra), one file per area. |
 | `internal/vm/` | The VM manager: lifecycle, sessions, exports, snapshots, pool, idle stop, gc, canary handling. A VM's files, state and lock go through `vmDir` (`vmdir.go`, which also gives the lock order). |
 | `internal/runner/` | Headless tasks: submit, schedule on the VM budget, supervise, export. |
-| `internal/vmtest/` | What the integration tests of `vm` and `runner` share: a curral home, a throwaway Gitea. |
+| `internal/vmtest/` | What the tests of `vm` and `runner` share: fake QEMU and supervisor processes, a curral home, a throwaway Gitea. |
 | `internal/template/` | Template loading, `extends` merging and validation; built-in templates in `builtin/`. |
 | `internal/cloudinit/` | Cloud-init and base build script generation, and the seed ISO. |
 | `internal/qemu/` | QEMU command lines, QMP and `qemu-img`. |
@@ -37,8 +38,8 @@ some boot several VMs. Some run a Gitea server to test forges.
 
 ## Adding an agent
 
-1. Add its field to `Agents` and its entry to `AgentDefs` in
-   `internal/template/registry.go`: npm package and environment, whether it needs Node,
+1. Add its field to `Agents` (`internal/template/agents.go`) and its entry to `AgentDefs`
+   (`internal/template/registry.go`): npm package and environment, whether it needs Node,
    its auth modes (or provider keys), its yolo flag and its transcript paths. Merging,
    validation, the install, `curral run`, tasks' agent list, transcripts and the CLI
    help follow from it.

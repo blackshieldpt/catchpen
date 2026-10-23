@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
+	"reflect"
 	"strings"
 	"time"
 	"unicode"
@@ -60,6 +61,34 @@ type Webhook struct {
 	Headers map[string]string `yaml:"headers"` // values may be secret:NAME
 }
 
+// knownKeys refuses keys of mapping n that struct t has no field for, as
+// config.yaml's strict decoding would: Node.Decode doesn't check them.
+func knownKeys(n *yaml.Node, t reflect.Type) error {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if n.Kind != yaml.MappingNode || t.Kind() != reflect.Struct {
+		return nil
+	}
+	fields := map[string]reflect.Type{}
+	for i := range t.NumField() {
+		if name, _, _ := strings.Cut(t.Field(i).Tag.Get("yaml"), ","); name != "" && name != "-" {
+			fields[name] = t.Field(i).Type
+		}
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		k := n.Content[i]
+		ft, ok := fields[k.Value]
+		if !ok {
+			return fmt.Errorf("line %d: field %s not found in type %s", k.Line, k.Value, t)
+		}
+		if err := knownKeys(n.Content[i+1], ft); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Sink) UnmarshalYAML(n *yaml.Node) error {
 	if n.Kind == yaml.ScalarNode {
 		if n.Value != "desktop" {
@@ -71,6 +100,9 @@ func (s *Sink) UnmarshalYAML(n *yaml.Node) error {
 	var m struct {
 		Ntfy    *Ntfy    `yaml:"ntfy"`
 		Webhook *Webhook `yaml:"webhook"`
+	}
+	if err := knownKeys(n, reflect.TypeOf(m)); err != nil {
+		return err
 	}
 	if err := n.Decode(&m); err != nil {
 		return err

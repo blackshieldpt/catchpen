@@ -2,21 +2,19 @@ package vm
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/blackshieldpt/curral/internal/config"
 	"github.com/blackshieldpt/curral/internal/image"
 	"github.com/blackshieldpt/curral/internal/paths"
 	"github.com/blackshieldpt/curral/internal/sshx"
 	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/curral/internal/vmtest"
 )
 
 func testManager(t *testing.T) *Manager {
@@ -289,32 +287,9 @@ func TestCodexHosts(t *testing.T) {
 	}
 }
 
-// fakeQEMU is a live process that qemu.Pid takes for VM name's QEMU.
 func fakeQEMU(t *testing.T, m *Manager, name string, memMB int) {
 	t.Helper()
-	writeFile(t, m.vm(name).path(stateFile), fmt.Sprintf(`{"name":%q,"memory_mb":%d}`, name, memMB))
-	c := exec.Command("bash", "-c", `exec -a qemu-system-x86_64 bash -c 'sleep 60; true' -name curral-`+name)
-	if err := c.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { c.Process.Kill(); c.Wait() })
-	writeFile(t, m.vm(name).path(pidFile), strconv.Itoa(c.Process.Pid))
-	for i := 0; i < 50; i++ {
-		if _, ok := m.Running(name); ok {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("fake QEMU not seen as running")
+	vmtest.FakeQEMU(t, m.Dir(name), name, memMB, func() bool { _, ok := m.Running(name); return ok })
 }
 
-// fakeSupervisor is a live process whose argv looks like curral task-supervise <id>.
-func fakeSupervisor(t *testing.T, id string) int {
-	t.Helper()
-	c := exec.Command("bash", "-c", "sleep 60; true", "task-supervise", id) // "; true": bash would exec a lone command, losing this argv
-	if err := c.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { c.Process.Kill(); c.Wait() })
-	return c.Process.Pid
-}
+func fakeSupervisor(t *testing.T, id string) int { t.Helper(); return vmtest.FakeSupervisor(t, id) }

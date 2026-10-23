@@ -43,7 +43,8 @@ events: [task.done, agent.waiting]
 	if err := c.Validate(); err != nil {
 		t.Error(err)
 	}
-	for _, bad := range []string{"sinks: [email]", "sinks: [{ ntfy: {topic: a}, webhook: {url: 'https://x'} }]"} {
+	for _, bad := range []string{"sinks: [email]", "sinks: [{ ntfy: {topic: a}, webhook: {url: 'https://x'} }]",
+		"sinks: [{ ntfy: {topic: a, tokn: x} }]", "sinks: [{ ntfi: {topic: a} }]"} {
 		var c Config
 		if err := yaml.Unmarshal([]byte(bad), &c); err == nil {
 			t.Errorf("%s accepted", bad)

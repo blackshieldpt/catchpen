@@ -66,7 +66,8 @@ Tasks and the pool react on top of that:
   While it runs (paused included), it counts against the task budget
   (`tasks.max_vms`, `tasks.max_memory`).
 - A pool VM with a hit is never handed out, nor counted in the pool: it's kept for
-  inspection, shown in `curral pool ls` as `canary hit`, until you destroy it.
+  inspection, shown in `curral pool ls` as `canary hit`, until you destroy it or run
+  `curral pool drain`.
 
 If a VM's `canaries.json` can't be read, its proxy, cache and exports refuse everything,
 and its notifications and task results are withheld.
@@ -77,7 +78,8 @@ and its notifications and task results are withheld.
    `curral egress log <name>` shows the surrounding requests.
 2. Inspect the paused VM before resuming it. `curral snapshot <name>` keeps its memory
    and disk for later analysis, and recordings are in `curral recordings <name>`.
-   `curral transcripts` refuses a paused VM; it lists copies made earlier.
+   `curral transcripts` refuses a paused VM; copies made earlier are in
+   `~/.local/share/curral/transcripts/<name>/`.
 3. Then `curral resume <name>` to continue, or `curral destroy <name>`.
 
 ## What goes unseen

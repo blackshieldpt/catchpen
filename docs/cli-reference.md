@@ -79,7 +79,7 @@ builds, downloads, resets and destroys, and trim the package caches to `cache_ma
 
 ### `curral ssh <name> [-- command...]`
 
-Open a shell in a VM (recorded when stdin is a terminal, unless `record: false`), or run
+Open a shell in a VM (recorded when stdin and stdout are a terminal, unless `record: false`), or run
 a command (no tty, not recorded). The command's
 words are joined with spaces, not quoted, so quote for the remote shell yourself.
 
@@ -111,9 +111,9 @@ Forward ports over SSH in the background.
 
 | Flag | Meaning |
 |---|---|
-| `-L PORT\|H:G\|H:HOST:G` | A guest port on the host's `127.0.0.1`. |
-| `-R PORT\|G:H\|G:HOST:H` | A host service into the guest. Bypasses the egress proxy; logged in the VM's egress log. |
-| `-D PORT` | A SOCKS proxy on the host into the guest. |
+| `-L, --local PORT\|H:G\|H:HOST:G` | A guest port on the host's `127.0.0.1`. |
+| `-R, --remote PORT\|G:H\|G:HOST:H` | A host service into the guest. Bypasses the egress proxy; logged in the VM's egress log in allowlist mode. |
+| `-D, --dynamic PORT` | A SOCKS proxy on the host into the guest. |
 | `--list` | List forward sessions. |
 | `--stop` | Stop all of the VM's forward sessions. |
 
@@ -280,10 +280,11 @@ See [snapshots.md](snapshots.md); `reset`, `rebase` and `gc` are under VM lifecy
 | `curral recordings <name>` | List a VM's session recordings. |
 | `curral recordings <name> play <id> [--speed 2] [--idle 2s]` | Replay one, with title and clipboard sequences dropped; `--idle` caps pauses. |
 | `curral doctor` | Check host requirements. |
+| `curral completion bash\|zsh\|fish\|powershell` | Print a shell completion script. |
 
 ## Internal commands
 
-QEMU and ssh call these back; they are hidden from `--help` and not meant to be run by
+QEMU, ssh and `curral task run` call these back; they are hidden from `--help` and not meant to be run by
 hand: `ssh-proxy`, `egress-stdio`, `cache-stdio`, `notify-stdio`, `task-supervise`.
 Because of them, curral must be installed at a stable path; `go run` won't work.
 

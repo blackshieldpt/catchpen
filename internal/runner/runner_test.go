@@ -1,11 +1,8 @@
 package runner
 
 import (
-	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,20 +11,17 @@ import (
 	"github.com/blackshieldpt/curral/internal/paths"
 	"github.com/blackshieldpt/curral/internal/template"
 	"github.com/blackshieldpt/curral/internal/vm"
+	"github.com/blackshieldpt/curral/internal/vmtest"
 
 	"github.com/blackshieldpt/curral/internal/task"
 )
 
-// fakeSupervisor is a live process whose argv looks like curral task-supervise <id>.
-func fakeSupervisor(t *testing.T, id string) int {
+func fakeQEMU(t *testing.T, m *vm.Manager, name string, memMB int) {
 	t.Helper()
-	c := exec.Command("bash", "-c", "sleep 60; true", "task-supervise", id) // "; true": bash would exec a lone command, losing this argv
-	if err := c.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { c.Process.Kill(); c.Wait() })
-	return c.Process.Pid
+	vmtest.FakeQEMU(t, m.Dir(name), name, memMB, func() bool { _, ok := m.Running(name); return ok })
 }
+
+func fakeSupervisor(t *testing.T, id string) int { t.Helper(); return vmtest.FakeSupervisor(t, id) }
 
 func TestClaimSlot(t *testing.T) {
 	r := testRunner(t)
@@ -83,25 +77,6 @@ func TestClaimSlot(t *testing.T) {
 	if _, err := r.claimSlot(d.ID); err == nil {
 		t.Error("a task that isn't queued was claimed again")
 	}
-}
-
-// fakeQEMU is a live process that qemu.Pid takes for VM name's QEMU.
-func fakeQEMU(t *testing.T, m *vm.Manager, name string, memMB int) {
-	t.Helper()
-	writeFile(t, filepath.Join(m.Dir(name), "vm.json"), fmt.Sprintf(`{"name":%q,"memory_mb":%d}`, name, memMB))
-	c := exec.Command("bash", "-c", `exec -a qemu-system-x86_64 bash -c 'sleep 60; true' -name curral-`+name)
-	if err := c.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { c.Process.Kill(); c.Wait() })
-	writeFile(t, filepath.Join(m.Dir(name), "qemu.pid"), strconv.Itoa(c.Process.Pid))
-	for i := 0; i < 50; i++ {
-		if _, ok := m.Running(name); ok {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("fake QEMU not seen as running")
 }
 
 // A claimed task whose VM is already up is counted once, not twice.

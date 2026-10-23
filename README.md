@@ -20,6 +20,21 @@ network.
 - **Operations**: snapshots, warm pool, idle stop, scheduled base rebuilds, shared
   package caches, session recordings and an audit log.
 
+## Quick start
+
+From nothing to Claude Code in a VM, on Ubuntu or Debian (details in the sections below):
+
+1. Check the host has KVM: `ls -l /dev/kvm`.
+2. Install the dependencies: `sudo apt install qemu-system-x86 qemu-utils openssh-client git`, and Go 1.27.
+3. Clone curral: `git clone git@github.com:blackshieldpt/curral.git && cd curral`.
+4. Build it to a stable path: `go build -o ~/.local/bin/curral ./cmd/curral`.
+5. Join the `kvm` group (`sudo usermod -aG kvm $USER`), then log out and back in, which also puts `~/.local/bin` on your `PATH`.
+6. Run `curral doctor` and fix anything it reports.
+7. Get a Claude Code token on a machine with Claude Code installed: `claude setup-token`.
+8. Store it: `mkdir -p ~/.config/curral && touch ~/.config/curral/secrets.env && chmod 600 ~/.config/curral/secrets.env && echo 'CLAUDE_CODE_OAUTH_TOKEN=<token>' >> ~/.config/curral/secrets.env`.
+9. Create and start a VM: `curral up dev`. The first one takes a few minutes to download the image and build its base.
+10. Start Claude Code in it: `curral run dev claude`. Detach with `Ctrl-a d`; the same command reattaches.
+
 ## Requirements
 
 - Linux on x86_64 with KVM (`/dev/kvm` readable and writable; add yourself to the `kvm`

@@ -39,8 +39,8 @@ without a port means ports 80 and 443.
 Presets: `anthropic`, `github`, `npm`, `pypi`, `go`, `apt-ubuntu`, `apt-debian`,
 `docker-apt`, `docker-hub`, `ghcr`.
 
-curral adds hosts the VM needs on its own: the API hosts of the agents' provider keys,
-remote MCP servers and the VM's forges.
+curral adds hosts the VM needs on its own: Claude Code's and Codex's API hosts, the API
+hosts of the agents' provider keys, remote MCP servers and the VM's forges.
 
 ## Changing a running VM
 
@@ -74,9 +74,11 @@ Answered prompts go to the audit log; timeouts are only in the VM's egress log.
 
 ## Logs
 
-`vms/<name>/egress.log` records every allowed and blocked request, plus `CACHE` entries
-for package cache fetches. It rotates at 32 MiB, keeping one old file
-(`egress.log.1`). An allowed connection whose log entry can't be written is refused.
+`vms/<name>/egress.log` records every request the proxy allows or blocks by policy, plus
+`CACHE` entries for package cache fetches; requests refused before a policy check
+(malformed, a disallowed method, over the connection cap) aren't logged. It rotates at
+32 MiB, keeping one old file (`egress.log.1`). An allowed proxy connection whose log
+entry can't be written is refused; a package cache fetch goes ahead.
 
 ## Limits
 
