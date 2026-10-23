@@ -1,7 +1,7 @@
 # Security model
 
 This page lists what curral does to keep a VM contained and what it leaves to you. For
-reporting vulnerabilities, see [SECURITY.md](../SECURITY.md).
+reporting vulnerabilities, see [SECURITY.md](https://github.com/blackshieldpt/curral/blob/master/SECURITY.md).
 
 curral treats the guest as hostile. Everything in a VM (the agent, its tools, the code
 it writes and the packages it installs) may try to escape, read host secrets,

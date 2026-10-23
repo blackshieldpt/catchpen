@@ -102,7 +102,7 @@ systemctl --user restart curral      # if the daemon is installed
 ```
 
 Run `curral daemon install` again instead if the binary moved. Check the
-[changelog](../CHANGELOG.md) for changes that need action.
+[changelog](https://github.com/blackshieldpt/curral/blob/master/CHANGELOG.md) for changes that need action.
 
 ## Uninstalling
 

@@ -1,5 +1,12 @@
 # curral
 
+![Go 1.27](https://img.shields.io/badge/go-1.27-00ADD8?logo=go&logoColor=white)
+![Linux x86_64](https://img.shields.io/badge/platform-linux%20x86__64-informational?logo=linux&logoColor=white)
+![QEMU/KVM](https://img.shields.io/badge/runs%20on-QEMU%2FKVM-orange?logo=qemu&logoColor=white)
+![Agents](https://img.shields.io/badge/agents-claude%20%7C%20opencode%20%7C%20pi%20%7C%20omp%20%7C%20codex-blueviolet)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![Security policy](https://img.shields.io/badge/security-policy-red)](SECURITY.md)
+
 KVM sandboxes for coding agents. `curral` runs Claude Code, opencode, pi, omp and Codex in
 QEMU/KVM virtual machines built from declarative templates, so an agent can install
 packages, run code and use sudo without reaching your host, your credentials or your
@@ -120,5 +127,4 @@ Write your own in `~/.config/curral/templates/`; see
 | [Development](docs/development.md) | Building and testing |
 
 All pages: [docs/README.md](docs/README.md). Changes: [CHANGELOG.md](CHANGELOG.md).
-Reporting vulnerabilities: [SECURITY.md](SECURITY.md). Design and history:
-[PLAN.md](PLAN.md).
+Reporting vulnerabilities: [SECURITY.md](SECURITY.md). License: [AGPL-3.0](LICENSE).

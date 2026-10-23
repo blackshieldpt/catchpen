@@ -34,8 +34,6 @@ Docker).
 | `internal/daemon/` | The daemon's jobs and systemd unit. |
 | `internal/notify/`, `internal/audit/`, `internal/record/` | Notifications, the audit log and recordings. |
 
-[PLAN.md](../PLAN.md) has the design and its history.
-
 ## Adding an agent
 
 1. Add its field to `Agents` (`internal/template/agents.go`) and its entry to `AgentDefs`
@@ -63,5 +61,5 @@ out of step.
 - Connect to a guest with `DialGuest` or `waitGuest` only: their connections close when
   a canary hit pauses the VM.
 - Tests run against real git, real files and `httptest` servers rather than mocks.
-- Document user-visible changes in the [changelog](../CHANGELOG.md) and the relevant page
+- Document user-visible changes in the [changelog](https://github.com/blackshieldpt/curral/blob/master/CHANGELOG.md) and the relevant page
   under `docs/`.

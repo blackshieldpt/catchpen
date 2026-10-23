@@ -23,7 +23,7 @@
 - [Egress](egress.md): the allowlist proxy and prompts
 - [Package caches](package-caches.md)
 - [Canaries](canaries.md): decoy credentials and what happens on a hit
-- [Reporting vulnerabilities](../SECURITY.md)
+- [Reporting vulnerabilities](https://github.com/blackshieldpt/curral/blob/master/SECURITY.md)
 
 ## Operating curral
 
@@ -34,4 +34,4 @@
 ## Contributing
 
 - [Development](development.md): building, tests, code layout
-- [Changelog](../CHANGELOG.md)
+- [Changelog](https://github.com/blackshieldpt/curral/blob/master/CHANGELOG.md)

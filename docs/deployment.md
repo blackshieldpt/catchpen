@@ -145,7 +145,7 @@ are still valid, and the daemon (with lingering enabled) starts again.
    [installation.md](installation.md#upgrading)).
 2. `systemctl --user restart curral` if the daemon runs, or `curral daemon install` if
    the binary moved.
-3. Check the [changelog](../CHANGELOG.md). If the new version changes how bases are
+3. Check the [changelog](https://github.com/blackshieldpt/curral/blob/master/CHANGELOG.md). If the new version changes how bases are
    built, templates get a new base: the next `up` of each builds it (up to 45 minutes),
    the daemon replaces pool VMs, and old bases stay until `curral gc`. Running VMs keep
    running. QEMU starts
