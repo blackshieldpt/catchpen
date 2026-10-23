@@ -57,6 +57,20 @@ func RunCommand(s *State, agent string, args []string) (string, error) {
 	return check + notice + "tmux new-session -A -s " + agent + dirFlag(s) + " -- " + strings.Join(q, " "), nil
 }
 
+// DefaultAgent is the agent curral herdr runs in s: Claude Code if it is
+// installed, else the first installed agent, else "" (a shell).
+func (s *State) DefaultAgent() string {
+	if s.Agents.Get("claude") != nil {
+		return "claude"
+	}
+	for _, n := range template.AgentNames() {
+		if s.Agents.Get(n) != nil {
+			return n
+		}
+	}
+	return ""
+}
+
 // AttachCommand opens (or reattaches) the guest's main tmux session.
 func AttachCommand(s *State) string {
 	return "tmux new-session -A -s main" + dirFlag(s)

@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/blackshieldpt/curral/internal/config"
+	"github.com/blackshieldpt/curral/internal/hostherdr"
 	"github.com/blackshieldpt/curral/internal/hosttmux"
 	"github.com/blackshieldpt/curral/internal/paths"
 	"github.com/blackshieldpt/curral/internal/template"
@@ -37,7 +38,7 @@ func manager() (*vm.Manager, error) {
 	return &vm.Manager{
 		P: p, Cfg: cfg, Tpl: template.Loader{UserDir: p.Templates()},
 		Out: os.Stderr, In: os.Stdin, Bin: bin, Debug: debug,
-		Tmux: &hosttmux.Tmux{Bin: bin},
+		Tmux: &hosttmux.Tmux{Bin: bin}, Herdr: &hostherdr.Herdr{Bin: bin},
 	}, nil
 }
 
@@ -53,7 +54,7 @@ func main() {
 		doctorCmd(), templateCmd(), upCmd(), startCmd(), stopCmd(), resumeCmd(), destroyCmd(), lsCmd(),
 		sshCmd(), sshProxyCmd(), consoleCmd(), egressCmd(), egressStdioCmd(), setupSSHCmd(), credsCmd(),
 		forgeCmd(), pullCmd(), prCmd(), forwardCmd(),
-		runCmd(), attachCmd(), recordingsCmd(), auditCmd(), tmuxCmd(), cpCmd(), notifyStdioCmd(),
+		runCmd(), attachCmd(), recordingsCmd(), auditCmd(), tmuxCmd(), herdrCmd(), cpCmd(), notifyStdioCmd(),
 		taskCmd(), taskSuperviseCmd(), transcriptsCmd(),
 		snapshotCmd(), snapshotsCmd(), restoreCmd(), rmsnapCmd(), resetCmd(), rebaseCmd(), gcCmd(),
 		daemonCmd(), poolCmd(), cacheCmd(), cacheStdioCmd(), versionCmd(),

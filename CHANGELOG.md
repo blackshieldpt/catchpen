@@ -8,6 +8,9 @@ yet; everything below is on `master`, newest first.
 
 ### Added
 
+- `curral herdr` gives each running VM a [herdr](docs/herdr.md) workspace whose agent
+  herdr tracks (working, blocked, idle) and resumes after a restart; `curral start` and
+  `stop` keep the workspaces in step while herdr runs. herdr stays on the host.
 - `curral version` prints the version, commit and commit date.
 - Signed release binaries: a tag builds a static linux/amd64 binary and `.tar.gz` with
   GoReleaser, signs them with cosign keyless and attests build provenance. Verifying

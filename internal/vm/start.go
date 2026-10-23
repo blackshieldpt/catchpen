@@ -18,6 +18,7 @@ import (
 	"github.com/blackshieldpt/curral/internal/cache"
 	"github.com/blackshieldpt/curral/internal/cloudinit"
 	"github.com/blackshieldpt/curral/internal/forge"
+	"github.com/blackshieldpt/curral/internal/hostherdr"
 	"github.com/blackshieldpt/curral/internal/hosttmux"
 	"github.com/blackshieldpt/curral/internal/qemu"
 	"github.com/blackshieldpt/curral/internal/sshx"
@@ -188,6 +189,9 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 	}
 	m.logf("%s is ready: curral ssh %s", name, name)
 	m.tmuxDo(func(t hosttmux.Tmux) error { return t.Add(name) })
+	if s.Task == "" { // a task's agent runs headless; a second one would only get in its way
+		m.herdrDo(func(h hostherdr.Herdr) error { return h.Add(name, s.DefaultAgent()) })
+	}
 	return rt, nil
 }
 

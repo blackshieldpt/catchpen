@@ -23,6 +23,7 @@ import (
 	"github.com/blackshieldpt/curral/internal/egress"
 	"github.com/blackshieldpt/curral/internal/forge"
 	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/curral/internal/hostherdr"
 	"github.com/blackshieldpt/curral/internal/hosttmux"
 	"github.com/blackshieldpt/curral/internal/notify"
 	"github.com/blackshieldpt/curral/internal/paths"
@@ -102,12 +103,13 @@ type Manager struct {
 	P     paths.Paths
 	Cfg   config.Config
 	Tpl   template.Loader
-	Out   io.Writer      // progress messages
-	In    io.Reader      // terminal input for key passphrases (nil: none)
-	Tmux  *hosttmux.Tmux // host tmux session to keep in sync (nil: none)
-	Bin   string         // absolute path of the curral binary (ProxyCommand, guestfwd)
-	Debug bool           // stream the whole build log; log the serial console; keep failed VMs running
-	HTTP  *http.Client   // forge API client (nil: default)
+	Out   io.Writer        // progress messages
+	In    io.Reader        // terminal input for key passphrases (nil: none)
+	Tmux  *hosttmux.Tmux   // host tmux session to keep in sync (nil: none)
+	Herdr *hostherdr.Herdr // host herdr workspaces to keep in sync (nil: none)
+	Bin   string           // absolute path of the curral binary (ProxyCommand, guestfwd)
+	Debug bool             // stream the whole build log; log the serial console; keep failed VMs running
+	HTTP  *http.Client     // forge API client (nil: default)
 }
 
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}[a-z0-9]$|^[a-z]$`)
@@ -126,6 +128,15 @@ func (m *Manager) logf(format string, a ...any) {
 }
 
 func (m *Manager) dir(name string) string { return m.P.VM(name) }
+
+func (m *Manager) herdrDo(fn func(hostherdr.Herdr) error) {
+	if m.Herdr == nil {
+		return
+	}
+	if err := fn(*m.Herdr); err != nil {
+		m.logf("warning: herdr: %v", err)
+	}
+}
 
 func (m *Manager) tmuxDo(fn func(hosttmux.Tmux) error) {
 	if m.Tmux == nil {

@@ -82,7 +82,8 @@ curral stop dev               # shut it down, keeping its disk; curral start dev
 curral destroy dev
 ```
 
-`curral up -t <template>` picks another template, and `--cpus`, `--mem` and `--disk`
+`curral herdr` puts every running VM's agent in [herdr](herdr.md), which shows whether
+each is working, blocked or idle. `curral up -t <template>` picks another template, and `--cpus`, `--mem` and `--disk`
 size the VM. `curral up --ephemeral dev` gives you a VM that is destroyed when you
 leave it. See [Sessions](sessions.md) for recordings and the audit log.
 
@@ -166,6 +167,7 @@ hosts.
 - [Forges, repos and SSH](forges.md): GitHub and Gitea, `pull` and `pr`, SSH agents,
   port forwards
 - [Sessions, recordings and audit](sessions.md)
+- [herdr](herdr.md): every VM's agent in herdr, with its state, resumed after restarts
 - [Headless tasks](tasks.md)
 - [Notifications](notifications.md)
 - [Snapshots, reset and base updates](snapshots.md)

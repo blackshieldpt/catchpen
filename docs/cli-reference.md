@@ -100,6 +100,15 @@ Open a host tmux session `curral` with a window per VM, each running `curral att
 With no names, or `--all`, every running VM gets one. `--sync` adds windows for running
 VMs and closes curral's windows for stopped ones, without attaching.
 
+### `curral herdr [<name>...|--all] [--agent A] | curral herdr --sync`
+
+Give each running VM a [herdr](herdr.md) workspace running an agent through
+`curral run`, then open herdr (or focus the workspace, inside herdr). Starts a herdr
+server if none is running. With no names, or `--all`, every running VM except task VMs
+gets one. `--agent` picks the agent for new workspaces (default: `claude` if installed,
+else the VM's first agent). `--sync` adds workspaces for running VMs and closes curral's
+workspaces for stopped ones, without opening herdr.
+
 ### `curral cp [-r] <src>... <dst>`
 
 Copy files to or from VMs with scp; remote paths are `vm:path`. `-r` copies directories.
@@ -298,4 +307,5 @@ Because of them, curral must be installed at a stable path; `go run` won't work.
 | `SSH_AUTH_SOCK` | Your agent, forwarded when `ssh.agent: host`. |
 | `DISPLAY`, `WAYLAND_DISPLAY`, `SSH_ASKPASS` | Confirmation prompts for the restricted agent. |
 | `TMUX` | Detects a host tmux for `curral tmux`. |
+| `HERDR_ENV` | Set inside herdr panes; `curral herdr` then focuses the workspace instead of opening herdr. |
 | any `NAME` | A `secret:NAME` falls back to the environment variable `NAME`. |

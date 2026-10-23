@@ -30,6 +30,11 @@ each running `curral attach`. `start` and `stop` add and close windows while the
 exists, and `curral tmux --sync` reconciles it. Windows you open there yourself are left
 alone.
 
+## herdr
+
+`curral herdr` does the same with [herdr](herdr.md), which also shows each agent's state
+and resumes it after a restart.
+
 ## Ephemeral VMs
 
 ```

@@ -43,6 +43,7 @@ nav:
       - Agents and credentials: agents.md
       - Forges, repos and SSH: forges.md
       - Sessions, recordings and audit: sessions.md
+      - herdr: herdr.md
       - Headless tasks: tasks.md
       - Notifications: notifications.md
       - Snapshots, reset and base updates: snapshots.md

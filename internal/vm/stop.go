@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/blackshieldpt/curral/internal/audit"
+	"github.com/blackshieldpt/curral/internal/hostherdr"
 	"github.com/blackshieldpt/curral/internal/hosttmux"
 	"github.com/blackshieldpt/curral/internal/qemu"
 )
@@ -74,6 +75,7 @@ func (m *Manager) stopLocked(h heldVM, force bool) error {
 func (m *Manager) cleanupRuntime(name string) error {
 	m.stopForwards(name)
 	m.tmuxDo(func(t hosttmux.Tmux) error { return t.Close(name) })
+	m.herdrDo(func(h hostherdr.Herdr) error { return h.Close(name) })
 	_ = m.agent(name).Stop()
 	for _, f := range []string{runtimeFile, qmpSock, serialSock, pidFile, pausedFile} {
 		_ = os.Remove(m.vm(name).path(f))

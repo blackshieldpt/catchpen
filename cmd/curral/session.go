@@ -228,6 +228,90 @@ func tmuxCmd() *cobra.Command {
 	return c
 }
 
+func herdrCmd() *cobra.Command {
+	var all, sync bool
+	var agent string
+	c := &cobra.Command{
+		Use:   "herdr [<name>...|--all] [--agent A] | herdr --sync",
+		Short: "Open herdr with one workspace per VM, each running an agent herdr tracks and resumes",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			m, err := manager()
+			if err != nil {
+				return err
+			}
+			if agent != "" {
+				if _, ok := template.AgentDefByName(agent); !ok {
+					return fmt.Errorf("unknown agent %q (%s)", agent, strings.Join(template.AgentNames(), ", "))
+				}
+			}
+			running, err := runningVMs(m)
+			if err != nil {
+				return err
+			}
+			// Task VMs run their agent headless; curral herdr leaves them out.
+			var interactive []string
+			agentOf := map[string]string{}
+			for _, n := range running {
+				s, err := m.Load(n)
+				if err != nil {
+					return err
+				}
+				if s.Task != "" {
+					continue
+				}
+				interactive = append(interactive, n)
+				agentOf[n] = s.DefaultAgent()
+				if agent != "" {
+					if s.Agents.Get(agent) == nil {
+						if contains(args, n) {
+							return fmt.Errorf("%s is not installed in %s (add agents.%s to its template)", agent, n, agent)
+						}
+					} else {
+						agentOf[n] = agent
+					}
+				}
+			}
+			of := func(vm string) string { return agentOf[vm] }
+			if err := m.Herdr.StartServer(); err != nil {
+				return err
+			}
+			if sync {
+				if len(args) > 0 || all || agent != "" {
+					return errors.New("--sync takes no VM names or --agent")
+				}
+				return m.Herdr.Sync(interactive, of)
+			}
+			names := args
+			if all || len(names) == 0 {
+				names = interactive
+			}
+			for _, n := range names {
+				if contains(running, n) && !contains(interactive, n) {
+					return fmt.Errorf("%s runs a headless task (curral task logs)", n)
+				}
+				if !contains(interactive, n) {
+					return fmt.Errorf("%s is not running (curral start %s)", n, n)
+				}
+			}
+			if len(names) == 0 {
+				return errors.New("no running VMs")
+			}
+			if err := m.Herdr.Ensure(names, of); err != nil {
+				return err
+			}
+			first := ""
+			if len(args) > 0 {
+				first = args[0]
+			}
+			return m.Herdr.Attach(first)
+		},
+	}
+	c.Flags().BoolVar(&all, "all", false, "a workspace for every running VM (the default with no names)")
+	c.Flags().BoolVar(&sync, "sync", false, "add workspaces for running VMs and close curral workspaces of stopped ones, without attaching")
+	c.Flags().StringVar(&agent, "agent", "", "agent to run in new workspaces (default: claude if installed, else the VM's first agent)")
+	return c
+}
+
 func runningVMs(m *vm.Manager) ([]string, error) {
 	vms, err := m.List()
 	if err != nil {

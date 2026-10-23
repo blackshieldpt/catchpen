@@ -70,3 +70,18 @@ func TestRecordings(t *testing.T) {
 		t.Error("bad name accepted")
 	}
 }
+
+func TestDefaultAgent(t *testing.T) {
+	for _, c := range []struct {
+		agents template.Agents
+		want   string
+	}{
+		{template.Agents{Claude: &template.Agent{}, Pi: &template.Agent{}}, "claude"},
+		{template.Agents{Codex: &template.Agent{}, OpenCode: &template.Agent{}}, "opencode"},
+		{template.Agents{}, ""},
+	} {
+		if got := (&State{Agents: c.agents}).DefaultAgent(); got != c.want {
+			t.Errorf("%+v: %q, want %q", c.agents, got, c.want)
+		}
+	}
+}

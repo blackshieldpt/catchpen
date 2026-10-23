@@ -32,6 +32,7 @@ Docker).
 | `internal/sshx/`, `internal/sshagent/` | SSH clients, ssh_config and restricted agents. |
 | `internal/task/` | Task specs, batch files and storage. |
 | `internal/daemon/` | The daemon's jobs and systemd unit. |
+| `internal/hosttmux/`, `internal/hostherdr/` | Keeping host tmux windows and herdr workspaces in step with running VMs. |
 | `internal/notify/`, `internal/audit/`, `internal/record/` | Notifications, the audit log and recordings. |
 
 ## CI and releases
