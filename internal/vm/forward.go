@@ -141,7 +141,7 @@ func (m *Manager) Forward(ctx context.Context, name string, local, remote, dynam
 	if len(specs) == 0 {
 		return nil, errors.New("nothing to forward (use -L, -R or -D)")
 	}
-	logf, err := os.OpenFile(m.file(name, "forward.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	logf, err := os.OpenFile(m.vm(name).path("forward.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (m *Manager) Forward(ctx context.Context, name string, local, remote, dynam
 	// ExitOnForwardFailure makes ssh exit quickly if a forward can't be set up.
 	select {
 	case err := <-exited:
-		tail, _ := readTail(m.file(name, "forward.log"), 2048)
+		tail, _ := readTail(m.vm(name).path("forward.log"), 2048)
 		return nil, fmt.Errorf("ssh forward exited: %v\n%s", err, strings.TrimSpace(tail))
 	case <-time.After(3 * time.Second):
 	case <-ctx.Done():
@@ -200,13 +200,13 @@ func (m *Manager) forwardAlive(name string, pid int) bool {
 }
 
 func (m *Manager) updateForwards(name string, fn func([]ForwardSession) []ForwardSession) error {
-	unlock, err := fsutil.Lock(m.file(name, forwardsFile+".lock"))
+	unlock, err := fsutil.Lock(m.vm(name).path(forwardsFile + ".lock"))
 	if err != nil {
 		return err
 	}
 	defer unlock()
 	var list []ForwardSession
-	if b, err := os.ReadFile(m.file(name, forwardsFile)); err == nil {
+	if b, err := os.ReadFile(m.vm(name).path(forwardsFile)); err == nil {
 		_ = json.Unmarshal(b, &list)
 	}
 	var alive []ForwardSession
@@ -215,7 +215,7 @@ func (m *Manager) updateForwards(name string, fn func([]ForwardSession) []Forwar
 			alive = append(alive, f)
 		}
 	}
-	return writeJSON(m.file(name, forwardsFile), fn(alive))
+	return writeJSON(m.vm(name).path(forwardsFile), fn(alive))
 }
 
 // Forwards lists a VM's live forward sessions.
@@ -238,7 +238,7 @@ func (m *Manager) StopForwards(name string) error {
 }
 
 func (m *Manager) stopForwards(name string) {
-	if _, err := os.Stat(m.file(name, forwardsFile)); err != nil {
+	if _, err := os.Stat(m.vm(name).path(forwardsFile)); err != nil {
 		return
 	}
 	_ = m.updateForwards(name, func(l []ForwardSession) []ForwardSession {

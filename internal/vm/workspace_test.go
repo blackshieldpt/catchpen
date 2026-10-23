@@ -105,10 +105,10 @@ func TestCreateProvisionsAndReleasesForges(t *testing.T) {
 	if len(s.Repos) != 3 || s.Repos[0].DeployKeyID != 5 || s.Repos[0].Alias != "curral-gd-o-app" || !s.Repos[0].ReadOnly || s.ForgeUsers["gt"] != "tok-owner" {
 		t.Errorf("state: %+v users %v", s.Repos, s.ForgeUsers)
 	}
-	if st, err := os.Stat(filepath.Join(m.file("a", forgeDir), "curral-gd-o-app")); err != nil || st.Mode().Perm() != 0o600 {
+	if st, err := os.Stat(filepath.Join(m.vm("a").path(forgeDir), "curral-gd-o-app")); err != nil || st.Mode().Perm() != 0o600 {
 		t.Errorf("deploy key file: %v", err)
 	}
-	b, _ := os.ReadFile(m.file("a", "allowlist"))
+	b, _ := os.ReadFile(m.vm("a").path("allowlist"))
 	if !strings.Contains(string(b), "git.test:3000\n") || !strings.Contains(string(b), "git.test:2222\n") {
 		t.Errorf("allowlist lacks forge hosts:\n%s", b)
 	}

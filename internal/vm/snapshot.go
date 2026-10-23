@@ -47,7 +47,7 @@ type snapMeta struct {
 
 func (m *Manager) snapMetas(name string) map[string]snapMeta {
 	md := map[string]snapMeta{}
-	if b, err := os.ReadFile(m.file(name, snapMetaFile)); err == nil {
+	if b, err := os.ReadFile(m.vm(name).path(snapMetaFile)); err == nil {
 		_ = json.Unmarshal(b, &md)
 	}
 	return md
@@ -60,7 +60,7 @@ func (m *Manager) setSnapMeta(name, snap string, v *snapMeta) error {
 	} else {
 		md[snap] = *v
 	}
-	return writeJSON(m.file(name, snapMetaFile), md)
+	return writeJSON(m.vm(name).path(snapMetaFile), md)
 }
 
 // Snapshots lists a VM's snapshots, oldest first.
@@ -68,7 +68,7 @@ func (m *Manager) Snapshots(name string) ([]qemu.Snapshot, error) {
 	if _, err := m.Load(name); err != nil {
 		return nil, err
 	}
-	return qemu.Snapshots(m.file(name, diskFile))
+	return qemu.Snapshots(m.vm(name).path(diskFile))
 }
 
 func (m *Manager) findSnap(name, snap string) (*qemu.Snapshot, error) {
@@ -89,7 +89,7 @@ func (m *Manager) findSnap(name, snap string) (*qemu.Snapshot, error) {
 
 // qmp runs fn on the VM's QMP socket.
 func (m *Manager) qmp(name string, fn func(q *qemu.QMP) error) error {
-	q, err := qemu.DialQMP(m.file(name, qmpSock), 5*time.Second)
+	q, err := qemu.DialQMP(m.vm(name).path(qmpSock), 5*time.Second)
 	if err != nil {
 		return err
 	}
@@ -98,6 +98,9 @@ func (m *Manager) qmp(name string, fn func(q *qemu.QMP) error) error {
 }
 
 // busyTask refuses changes under a VM's running headless task.
+// Tasks is the task store (internal/runner runs them).
+func (m *Manager) Tasks() task.Store { return task.Store{Dir: m.P.Tasks()} }
+
 func (m *Manager) busyTask(s *State) error {
 	if s.Task == "" {
 		return nil
@@ -119,7 +122,7 @@ func (m *Manager) Snapshot(ctx context.Context, name, snap string, diskOnly bool
 	if err := validSnap(snap); err != nil {
 		return "", err
 	}
-	unlock, err := fsutil.Lock(m.file(name, lockFile))
+	_, unlock, err := m.vm(name).lock()
 	if err != nil {
 		return "", err
 	}
@@ -136,10 +139,10 @@ func (m *Manager) Snapshot(ctx context.Context, name, snap string, diskOnly bool
 		m.withGuest(ctx, name, func(c *ssh.Client) { _, _ = sshx.Run(ctx, c, "sync", nil) })
 	}
 	if !running {
-		err = qemu.SnapshotOffline("-c", snap, m.file(name, diskFile))
+		err = qemu.SnapshotOffline("-c", snap, m.vm(name).path(diskFile))
 	} else if diskOnly {
 		err = m.qmp(name, func(q *qemu.QMP) error {
-			dev, err := q.BlockDevice(m.file(name, diskFile))
+			dev, err := q.BlockDevice(m.vm(name).path(diskFile))
 			if err != nil {
 				return err
 			}
@@ -208,14 +211,14 @@ func (m *Manager) Restore(ctx context.Context, name, snap string, diskOnly bool)
 	m.saveTranscripts(name) // what the agents wrote since the snapshot
 	if sn.VMStateMB == 0 || diskOnly {
 		return m.whileStopped(ctx, name, func() error {
-			return qemu.SnapshotOffline("-a", snap, m.file(name, diskFile))
+			return qemu.SnapshotOffline("-a", snap, m.vm(name).path(diskFile))
 		}, func() { m.audit(audit.VMRestore, name, map[string]any{"snapshot": snap, "ram": false}) })
 	}
 	meta, ok := m.snapMetas(name)[snap]
 	if !ok {
 		return fmt.Errorf("snapshot %q wasn't saved by curral (no record of its machine type); restore --disk-only uses just its disk", snap)
 	}
-	unlock, err := fsutil.Lock(m.file(name, lockFile))
+	held, unlock, err := m.vm(name).lock()
 	if err != nil {
 		return err
 	}
@@ -258,7 +261,7 @@ func (m *Manager) Restore(ctx context.Context, name, snap string, diskOnly bool)
 	})
 	if err != nil {
 		if m.isPaused(name) { // its memory is half-loaded
-			if serr := m.stopLocked(name, true); serr != nil {
+			if serr := m.stopLocked(held, true); serr != nil {
 				err = errors.Join(err, serr)
 			}
 			err = fmt.Errorf("%w; the VM was stopped (start it, or restore again)", err)
@@ -294,7 +297,7 @@ func qemuVersion() (string, error) {
 
 // DeleteSnapshot removes a snapshot.
 func (m *Manager) DeleteSnapshot(name, snap string) error {
-	unlock, err := fsutil.Lock(m.file(name, lockFile))
+	_, unlock, err := m.vm(name).lock()
 	if err != nil {
 		return err
 	}
@@ -313,7 +316,7 @@ func (m *Manager) DeleteSnapshot(name, snap string) error {
 			return err
 		})
 	} else {
-		err = qemu.SnapshotOffline("-d", snap, m.file(name, diskFile))
+		err = qemu.SnapshotOffline("-d", snap, m.vm(name).path(diskFile))
 	}
 	if err != nil {
 		return err
@@ -326,12 +329,12 @@ func (m *Manager) DeleteSnapshot(name, snap string) error {
 // whileStopped runs fn with the VM stopped and locked; done runs if fn
 // succeeded. A VM that was running is started again either way.
 func (m *Manager) whileStopped(ctx context.Context, name string, fn func() error, done func()) error {
-	unlock, err := fsutil.Lock(m.file(name, lockFile))
+	held, unlock, err := m.vm(name).lock()
 	if err != nil {
 		return err
 	}
 	_, running := m.Running(name)
-	if err := m.stopLocked(name, false); err != nil {
+	if err := m.stopLocked(held, false); err != nil {
 		unlock()
 		return err
 	}
@@ -356,7 +359,7 @@ func (m *Manager) withGuest(ctx context.Context, name string, fn func(c *ssh.Cli
 	if _, err := m.SSHPort(name); err != nil {
 		return
 	}
-	g, _, err := m.dialGuest(ctx, name)
+	g, _, err := m.DialGuest(ctx, name)
 	if err != nil {
 		m.logf("warning: connecting to %s: %v", name, err)
 		return
@@ -455,7 +458,7 @@ func (m *Manager) Reset(ctx context.Context, name string, latest bool) error {
 	}
 	m.saveTranscripts(name)
 	return m.whileStopped(ctx, name, func() error {
-		disk := m.file(name, diskFile)
+		disk := m.vm(name).path(diskFile)
 		tmp := disk + ".reset"
 		_ = os.Remove(tmp)
 		if err := qemu.CreateOverlay(tmp, base, max(s.DiskMB, baseMB)); err != nil {
@@ -482,7 +485,7 @@ func (m *Manager) Reset(ctx context.Context, name string, latest bool) error {
 		if err := os.Rename(tmp, disk); err != nil {
 			return err
 		}
-		_ = os.Remove(m.file(name, snapMetaFile))
+		_ = os.Remove(m.vm(name).path(snapMetaFile))
 		return nil
 	}, func() {
 		m.audit(audit.VMReset, name, map[string]any{"base": base})
@@ -517,7 +520,7 @@ func (m *Manager) Rebase(ctx context.Context, name string) error {
 		return fmt.Errorf("its base %s is missing: %w", s.Base, err)
 	}
 	return m.whileStopped(ctx, name, func() error {
-		disk := m.file(name, diskFile)
+		disk := m.vm(name).path(diskFile)
 		ss, err := qemu.Snapshots(disk)
 		if err != nil {
 			return err
@@ -527,7 +530,7 @@ func (m *Manager) Rebase(ctx context.Context, name string) error {
 				return err
 			}
 		}
-		_ = os.Remove(m.file(name, snapMetaFile))
+		_ = os.Remove(m.vm(name).path(snapMetaFile))
 		m.logf("rebasing %s onto %s (copies what differs into its disk)", name, base)
 		if err := qemu.Rebase(disk, base); err != nil {
 			return err

@@ -7,16 +7,16 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// guest is an SSH connection to a VM's guest. It closes when its context ends
+// Guest is an SSH connection to a VM's guest. It closes when its context ends
 // or a canary hit pauses the VM: closing a session doesn't end a command a
 // paused guest never answers; closing the connection does. Every connection
 // to a guest is made here (a test checks).
-type guest struct {
+type Guest struct {
 	*ssh.Client
 	stop func()
 }
 
-func (g *guest) Close() error {
+func (g *Guest) Close() error {
 	g.stop()
 	return g.Client.Close()
 }
@@ -24,8 +24,8 @@ func (g *guest) Close() error {
 // guestDialTimeout bounds connecting to a running guest.
 const guestDialTimeout = 30 * time.Second
 
-// dialGuest connects to the running VM name as its user, for the life of ctx.
-func (m *Manager) dialGuest(ctx context.Context, name string) (*guest, *State, error) {
+// DialGuest connects to the running VM name as its user, for the life of ctx.
+func (m *Manager) DialGuest(ctx context.Context, name string) (*Guest, *State, error) {
 	s, err := m.Load(name)
 	if err != nil {
 		return nil, nil, err
@@ -45,7 +45,7 @@ func (m *Manager) dialGuest(ctx context.Context, name string) (*guest, *State, e
 
 // waitGuest waits (within wctx) for name's guest to accept SSH on port, for
 // the life of ctx; alive reports whether its QEMU still runs.
-func (m *Manager) waitGuest(ctx, wctx context.Context, name string, port int, user string, alive func() bool) (*guest, error) {
+func (m *Manager) waitGuest(ctx, wctx context.Context, name string, port int, user string, alive func() bool) (*Guest, error) {
 	c, err := m.keys(name).WaitReady(wctx, port, user, alive)
 	if err != nil {
 		return nil, err
@@ -53,15 +53,15 @@ func (m *Manager) waitGuest(ctx, wctx context.Context, name string, port int, us
 	return m.guard(ctx, name, c), nil
 }
 
-func (m *Manager) guard(ctx context.Context, name string, c *ssh.Client) *guest {
-	ctx, cancel := m.cancelOnPause(ctx, name)
+func (m *Manager) guard(ctx context.Context, name string, c *ssh.Client) *Guest {
+	ctx, cancel := m.CancelOnPause(ctx, name)
 	stop := context.AfterFunc(ctx, func() { c.Close() })
-	return &guest{Client: c, stop: func() { stop(); cancel() }}
+	return &Guest{Client: c, stop: func() { stop(); cancel() }}
 }
 
-// cancelOnPause cancels ctx once a canary hit pauses name: nothing in the
+// CancelOnPause cancels ctx once a canary hit pauses name: nothing in the
 // guest answers then.
-func (m *Manager) cancelOnPause(ctx context.Context, name string) (context.Context, func()) {
+func (m *Manager) CancelOnPause(ctx context.Context, name string) (context.Context, func()) {
 	ctx, cancel := context.WithCancel(ctx)
 	go func() {
 		tick := time.NewTicker(2 * time.Second)

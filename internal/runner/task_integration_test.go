@@ -1,6 +1,6 @@
 //go:build integration
 
-package vm
+package runner
 
 import (
 	"bytes"
@@ -18,6 +18,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blackshieldpt/curral/internal/canary"
+	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/curral/internal/vm"
+	"github.com/blackshieldpt/curral/internal/vmtest"
+
 	"github.com/blackshieldpt/curral/internal/config"
 	"github.com/blackshieldpt/curral/internal/forge"
 	"github.com/blackshieldpt/curral/internal/notify"
@@ -28,8 +34,9 @@ import (
 // queueing on the VM budget, branch + leftover commit, PR from the host,
 // transcripts, notifications, cancel. Then a guest agent hook notifies.
 func TestTasks(t *testing.T) {
-	g := startGitea(t, false)
-	m := integrationManager(t)
+	g := vmtest.StartGitea(t, false)
+	r := integrationRunner(t)
+	m := r.M
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 	defer cancel()
 
@@ -68,20 +75,20 @@ func TestTasks(t *testing.T) {
 	var tok struct {
 		SHA1 string `json:"sha1"`
 	}
-	g.api("POST", "/users/bot/tokens", map[string]any{"name": "curral-admin", "scopes": []string{"write:repository", "read:user"}}, &tok)
+	g.API("POST", "/users/bot/tokens", map[string]any{"name": "curral-admin", "scopes": []string{"write:repository", "read:user"}}, &tok)
 	t.Setenv("GITEA_ADMIN", tok.SHA1)
-	keys, err := forge.Scan(ctx, g.ip, g.sshPort)
+	keys, err := forge.Scan(ctx, g.IP, g.SSHPort)
 	if err != nil {
 		t.Fatal(err)
 	}
-	gd := forge.Forge{Name: "gd", Type: forge.Gitea, Host: g.ip, HTTPURL: g.http, SSHPort: g.sshPort,
+	gd := forge.Forge{Name: "gd", Type: forge.Gitea, Host: g.IP, HTTPURL: g.HTTP, SSHPort: g.SSHPort,
 		HostKeys: []string{forge.FormatHostKey(keys[0])}, Auth: forge.Auth{Mode: forge.ModeDeployKey, Token: "secret:GITEA_ADMIN"}}
 	if err := forge.Update(m.P.Forges(), func(r *forge.Registry) error { r.Forges = []forge.Forge{gd}; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(m.P.Templates(), "tk.yaml"), []byte("extends: minimal\nnetwork: { allow_private: true }\n"), 0o600)
 	host := t.TempDir()
-	authURL := strings.Replace(g.http, "http://", "http://bot:"+giteaPassword+"@", 1)
+	authURL := strings.Replace(g.HTTP, "http://", "http://bot:"+vmtest.GiteaPassword+"@", 1)
 	if out, err := exec.Command("git", "clone", "-q", authURL+"/bot/app.git", host).CombinedOutput(); err != nil {
 		t.Fatalf("host clone: %v\n%s", err, out)
 	}
@@ -102,18 +109,18 @@ echo agent-finished`
 			t.Fatal(err)
 		}
 	}
-	t1, err := m.SubmitTask(s1)
+	t1, err := r.Submit(s1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t2, err := m.SubmitTask(s2)
+	t2, err := r.Submit(s2)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		ts, _ := m.Tasks().List()
 		for _, tk := range ts {
-			_ = m.CancelTask(tk.ID)
+			_ = r.Cancel(tk.ID)
 		}
 		time.Sleep(5 * time.Second)
 		for _, tk := range ts {
@@ -151,7 +158,7 @@ echo agent-finished`
 		t.Errorf("result.md: %q", b)
 	}
 	var prs []map[string]any
-	g.api("GET", "/repos/bot/app/pulls?state=open", nil, &prs)
+	g.API("GET", "/repos/bot/app/pulls?state=open", nil, &prs)
 	if len(prs) != 1 || !strings.Contains(fmt.Sprint(prs[0]["body"]), "write the task file") {
 		t.Errorf("PRs: %v", prs)
 	}
@@ -159,7 +166,7 @@ echo agent-finished`
 		t.Error("task VM not destroyed")
 	}
 	var dk []map[string]any
-	g.api("GET", "/repos/bot/app/keys", nil, &dk)
+	g.API("GET", "/repos/bot/app/keys", nil, &dk)
 	if len(dk) != 0 {
 		t.Errorf("deploy key left: %v", dk)
 	}
@@ -182,7 +189,7 @@ echo agent-finished`
 
 	// The second task starts once the first is done; cancelling it destroys its VM.
 	waitState(t2.ID, func(tk *task.Task) bool { return tk.State == task.Running })
-	if err := m.CancelTask(t2.ID); err != nil {
+	if err := r.Cancel(t2.ID); err != nil {
 		t.Fatal(err)
 	}
 	r2 := waitState(t2.ID, func(tk *task.Task) bool { return task.Final(tk.State) })
@@ -205,7 +212,7 @@ echo agent-finished`
 	if err := s3.Normalize(other, other); err != nil {
 		t.Fatal(err)
 	}
-	t3, err := m.SubmitTask(s3)
+	t3, err := r.Submit(s3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +232,7 @@ echo agent-finished`
 	if err := s5.Normalize(other, other); err != nil {
 		t.Fatal(err)
 	}
-	t5, err := m.SubmitTask(s5)
+	t5, err := r.Submit(s5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,14 +246,14 @@ echo agent-finished`
 	if err := s4.Normalize(host, host); err != nil {
 		t.Fatal(err)
 	}
-	t4, err := m.SubmitTask(s4)
+	t4, err := r.Submit(s4)
 	if err != nil {
 		t.Fatal(err)
 	}
 	r4 := waitState(t4.ID, func(tk *task.Task) bool { return tk.State == task.Running })
 	syscall.Kill(r4.PID, syscall.SIGKILL)
 	waitState(t4.ID, func(tk *task.Task) bool { return tk.Status() == "lost" })
-	if err := m.CancelTask(t4.ID); err != nil {
+	if err := r.Cancel(t4.ID); err != nil {
 		t.Fatal(err)
 	}
 	if r4, _ = m.Tasks().Load(t4.ID); r4.State != task.Cancelled {
@@ -263,14 +270,19 @@ echo agent-finished`
 	}
 
 	// A normal VM: an agent hook reaches the notify sinks, rate-limited.
-	if _, err := m.Create(ctx, "nt1", CreateOpts{Template: "tk"}); err != nil {
+	if _, err := m.Create(ctx, "nt1", vm.CreateOpts{Template: "tk"}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = m.Destroy("nt1") })
 	if _, err := m.Start(ctx, "nt1"); err != nil {
 		t.Fatal(err)
 	}
-	out, err := m.sshExec(ctx, "nt1", `for i in 1 2 3 4 5 6 7; do curl -s -o /dev/null -w '%{http_code} ' --noproxy '*' -m 5 -X POST --data '{"agent":"tester","message":"needs input"}' http://10.0.2.101/notify; done`)
+	ng, _, err := m.DialGuest(ctx, "nt1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ng.Close()
+	out, err := sshx.Run(ctx, ng.Client, `for i in 1 2 3 4 5 6 7; do curl -s -o /dev/null -w '%{http_code} ' --noproxy '*' -m 5 -X POST --data '{"agent":"tester","message":"needs input"}' http://10.0.2.101/notify; done`, nil)
 	if err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
@@ -283,5 +295,78 @@ echo agent-finished`
 	}
 	if w := eventsOf(notify.AgentWaiting); len(w) != 5 || w[0].Title != "curral nt1: tester is waiting" || w[0].Message != "needs input" {
 		t.Errorf("agent.waiting: %+v", w)
+	}
+}
+
+func integrationRunner(t *testing.T) *Runner {
+	t.Helper()
+	p, bin := vmtest.Home(t)
+	return &Runner{M: &vm.Manager{P: p, Cfg: config.Default(), Tpl: template.Loader{UserDir: p.Templates()}, Out: vmtest.Writer{T: t}, Bin: bin}}
+}
+
+// TestCanaryTasks: a task using a decoy fails at once and its paused VM is
+// kept; with canary_action log it runs on, and its VM is still kept.
+func TestCanaryTasks(t *testing.T) {
+	r := integrationRunner(t)
+	m := r.M
+	if err := os.WriteFile(filepath.Join(m.P.Templates(), "cn.yaml"), []byte("extends: minimal\ncanaries: [aws, env, git]\ncache: [go]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A task using a decoy fails at once, and its paused VM is kept.
+	spec := task.Spec{Template: "cn", Agent: "cmd", Cmd: `. ~/.env.production; curl -s -m 120 "$INTERNAL_API_URL/x"; sleep 600`, Prompt: "x", Timeout: 20 * time.Minute}
+	dir := t.TempDir()
+	if err := spec.Normalize(dir, dir); err != nil {
+		t.Fatal(err)
+	}
+	tk, err := r.Submit(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Destroy(tk.VM) })
+	until := time.Now().Add(10 * time.Minute)
+	for tk.State != task.Failed && time.Now().Before(until) {
+		time.Sleep(2 * time.Second)
+		if tk, err = m.Tasks().Load(tk.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if tk.State != task.Failed || !strings.Contains(tk.Error, "a canary hit paused") || !m.Paused(tk.VM) {
+		b, _ := os.ReadFile(m.Tasks().Path(tk.ID, "supervisor.log"))
+		t.Fatalf("task %+v, paused %v\n%s", tk, m.Paused(tk.VM), b)
+	}
+
+	// A kept VM holds its share of the task budget until destroyed.
+	if err := m.Destroy(tk.VM); err != nil {
+		t.Fatal(err)
+	}
+
+	// With canary_action log the task runs on, and its VM is still kept.
+	if err := os.WriteFile(m.P.ConfigFile(), []byte("canary_action: log\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec.Cmd = `. ~/.env.production; curl -s -m 30 "$INTERNAL_API_URL/x"; echo finished; echo "token $INTERNAL_API_TOKEN"`
+	tk, err = r.Submit(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Destroy(tk.VM) })
+	until = time.Now().Add(10 * time.Minute)
+	for !task.Final(tk.State) && time.Now().Before(until) {
+		time.Sleep(2 * time.Second)
+		if tk, err = m.Tasks().Load(tk.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if tk.State != task.Done || !strings.Contains(tk.Error, "decoy credentials were used: kept") || m.Paused(tk.VM) {
+		b, _ := os.ReadFile(m.Tasks().Path(tk.ID, "supervisor.log"))
+		t.Fatalf("task %+v, paused %v\n%s", tk, m.Paused(tk.VM), b)
+	}
+	if _, err := os.Stat(m.Dir(tk.VM)); err != nil {
+		t.Errorf("task VM not kept: %v", err)
+	}
+	// Its result, beyond the first line too, is withheld.
+	cs, _ := canary.Load(m.Dir(tk.VM))
+	if b, _ := os.ReadFile(m.Tasks().Path(tk.ID, "result.md")); !strings.Contains(string(b), "(withheld") || strings.Contains(string(b), cs[1].Values[2]) {
+		t.Errorf("task result: %q", b)
 	}
 }

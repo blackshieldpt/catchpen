@@ -2,10 +2,12 @@ package vm
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,7 +16,6 @@ import (
 	"github.com/blackshieldpt/curral/internal/image"
 	"github.com/blackshieldpt/curral/internal/paths"
 	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/task"
 	"github.com/blackshieldpt/curral/internal/template"
 )
 
@@ -195,7 +196,7 @@ func TestCreateRollsBackOnFailure(t *testing.T) {
 		t.Errorf("state = %+v", s)
 	}
 	for _, f := range []string{stateFile, diskFile, seedFile, "allowlist", "ssh"} {
-		if _, err := os.Stat(m.file("a", f)); err != nil {
+		if _, err := os.Stat(m.vm("a").path(f)); err != nil {
 			t.Errorf("missing %s: %v", f, err)
 		}
 	}
@@ -258,7 +259,7 @@ mcp:
 	if s.Agents.Claude == nil || s.Agents.Claude.Auth != "api-key" || s.Env["FOO"] != "secret:FOO" || len(s.MCP) != 3 {
 		t.Errorf("state = %+v", s)
 	}
-	b, _ := os.ReadFile(m.file("a", "allowlist"))
+	b, _ := os.ReadFile(m.vm("a").path("allowlist"))
 	for _, want := range []string{"api.anthropic.com:443", "openrouter.ai:443", "api.x.ai:443", "mcp.example.com:8443", "sse.example.com:80"} {
 		if !strings.Contains(string(b), want+"\n") {
 			t.Errorf("allowlist lacks %s", want)
@@ -274,16 +275,6 @@ mcp:
 }
 
 // A codex task needs an API key: a new VM has no ChatGPT sign-in.
-func TestCodexTaskNeedsAPIKey(t *testing.T) {
-	m := testManager(t)
-	writeFile(t, filepath.Join(m.P.Templates(), "cg.yaml"), "extends: minimal\nruntimes: { node: \"24\" }\nagents: { codex: { auth: chatgpt } }\n")
-	if _, err := m.SubmitTask(task.Spec{Template: "cg", Agent: "codex", Prompt: "x", Out: task.OutNone, Timeout: time.Hour}); err == nil || !strings.Contains(err.Error(), "auth: api-key") {
-		t.Errorf("chatgpt codex task: %v", err)
-	}
-	if _, err := m.SubmitTask(task.Spec{Template: "default", Agent: "codex", Prompt: "x", Out: task.OutNone, Timeout: time.Hour}); err == nil || !strings.Contains(err.Error(), "it has none") {
-		t.Errorf("default template's codex task: %v", err)
-	}
-}
 
 // Codex reaches the API with a key, or ChatGPT's backend and its sign-in host.
 func TestCodexHosts(t *testing.T) {
@@ -298,4 +289,34 @@ func TestCodexHosts(t *testing.T) {
 			t.Errorf("auth %q: hosts %v, want %v", auth, got, want)
 		}
 	}
+}
+
+// fakeQEMU is a live process that qemu.Pid takes for VM name's QEMU.
+func fakeQEMU(t *testing.T, m *Manager, name string, memMB int) {
+	t.Helper()
+	writeFile(t, m.vm(name).path(stateFile), fmt.Sprintf(`{"name":%q,"memory_mb":%d}`, name, memMB))
+	c := exec.Command("bash", "-c", `exec -a qemu-system-x86_64 bash -c 'sleep 60; true' -name curral-`+name)
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Process.Kill(); c.Wait() })
+	writeFile(t, m.vm(name).path(pidFile), strconv.Itoa(c.Process.Pid))
+	for i := 0; i < 50; i++ {
+		if _, ok := m.Running(name); ok {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("fake QEMU not seen as running")
+}
+
+// fakeSupervisor is a live process whose argv looks like curral task-supervise <id>.
+func fakeSupervisor(t *testing.T, id string) int {
+	t.Helper()
+	c := exec.Command("bash", "-c", "sleep 60; true", "task-supervise", id) // "; true": bash would exec a lone command, losing this argv
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { c.Process.Kill(); c.Wait() })
+	return c.Process.Pid
 }

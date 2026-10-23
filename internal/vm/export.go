@@ -69,9 +69,9 @@ func hostGitExec(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	return exec.CommandContext(ctx, "git", append(base, args...)...)
 }
 
-// hostGitCmd runs git in the host repository dir; its output can come from
+// HostGit runs git in the host repository dir; its output can come from
 // the guest's commits and refs.
-func hostGitCmd(ctx context.Context, dir string, args ...string) (sshx.GuestOutput, error) {
+func HostGit(ctx context.Context, dir string, args ...string) (sshx.GuestOutput, error) {
 	b, err := hostGitExec(ctx, dir, args...).CombinedOutput()
 	out := sshx.Guest(b)
 	if err != nil {
@@ -99,10 +99,10 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 	if into, err = filepath.Abs(into); err != nil {
 		return nil, err
 	}
-	if _, err := hostGitCmd(ctx, into, "rev-parse", "--git-dir"); err != nil {
+	if _, err := HostGit(ctx, into, "rev-parse", "--git-dir"); err != nil {
 		return nil, fmt.Errorf("%s is not a git repository (use --into): %w", into, err)
 	}
-	g, _, err := m.dialGuest(ctx, name)
+	g, _, err := m.DialGuest(ctx, name)
 	if err != nil {
 		return nil, err
 	}
@@ -129,14 +129,14 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 	ref := "refs/curral/" + name + "/" + branch
 	incoming := fmt.Sprintf("refs/curral-incoming/%d-%d/%s/%s", os.Getpid(), time.Now().UnixNano(), name, branch)
 	pruneIncoming(ctx, into)
-	if err := m.fetchBranch(ctx, c, name, "git -C "+dir, branch, into, incoming); err != nil {
+	if err := m.FetchBranch(ctx, c, name, "git -C "+dir, branch, into, incoming); err != nil {
 		return nil, err
 	}
-	defer hostGitCmd(context.WithoutCancel(ctx), into, "update-ref", "-d", incoming)
+	defer HostGit(context.WithoutCancel(ctx), into, "update-ref", "-d", incoming)
 	if err := m.scanCommits(ctx, name, into, incoming); err != nil {
 		return nil, err
 	}
-	if _, err := hostGitCmd(ctx, into, "update-ref", ref, incoming); err != nil {
+	if _, err := HostGit(ctx, into, "update-ref", ref, incoming); err != nil {
 		return nil, err
 	}
 	if o.Patches != "" {
@@ -149,7 +149,7 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 		if err != nil {
 			return nil, fmt.Errorf("finding the branch's base: %w: %s", err, out)
 		}
-		if err := m.formatPatch(ctx, name, into, ref, strings.Fields(string(out.Raw())), f, "in patches pulled from it"); err != nil {
+		if err := m.FormatPatch(ctx, name, into, ref, strings.Fields(string(out.Raw())), f, "in patches pulled from it"); err != nil {
 			return nil, err
 		}
 	}
@@ -162,7 +162,7 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 // up (their process is gone) and of older versions (no process in the name):
 // they hold unscanned guest commits.
 func pruneIncoming(ctx context.Context, dir string) {
-	out, err := hostGitCmd(ctx, dir, "for-each-ref", "--format=%(refname)", "refs/curral-incoming/")
+	out, err := HostGit(ctx, dir, "for-each-ref", "--format=%(refname)", "refs/curral-incoming/")
 	if err != nil {
 		return
 	}
@@ -175,14 +175,14 @@ func pruneIncoming(ctx context.Context, dir string) {
 				}
 			}
 		}
-		_, _ = hostGitCmd(ctx, dir, "update-ref", "-d", ref)
+		_, _ = HostGit(ctx, dir, "update-ref", "-d", ref)
 	}
 }
 
-// fetchBranch copies branch out of the VM as a git bundle (git: the guest's
+// FetchBranch copies branch out of the VM as a git bundle (git: the guest's
 // git command for the repo) and fetches it into ref of the host repository
 // into.
-func (m *Manager) fetchBranch(ctx context.Context, c *ssh.Client, name, git, branch, into, ref string) error {
+func (m *Manager) FetchBranch(ctx context.Context, c *ssh.Client, name, git, branch, into, ref string) error {
 	tmp, err := os.CreateTemp("", "curral-bundle-*")
 	if err != nil {
 		return err
@@ -196,20 +196,20 @@ func (m *Manager) fetchBranch(ctx context.Context, c *ssh.Client, name, git, bra
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if _, err := hostGitCmd(ctx, into, "bundle", "verify", "-q", tmp.Name()); err != nil {
+	if _, err := HostGit(ctx, into, "bundle", "verify", "-q", tmp.Name()); err != nil {
 		return fmt.Errorf("bundle from %s failed verification: %w", name, err)
 	}
-	_, err = hostGitCmd(ctx, into, "fetch", "--no-tags", "--no-write-fetch-head", tmp.Name(), "+refs/heads/"+branch+":"+ref)
+	_, err = HostGit(ctx, into, "fetch", "--no-tags", "--no-write-fetch-head", tmp.Name(), "+refs/heads/"+branch+":"+ref)
 	return err
 }
 
 var commitID = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 
-// formatPatch writes to path the patches for the commits of ref that aren't
+// FormatPatch writes to path the patches for the commits of ref that aren't
 // in bases (none: all of them), from the host repository dir. It scans
 // exactly those commits first, then the patches: a binary delta in a patch
 // can build a decoy out of bytes no scan of the patch sees.
-func (m *Manager) formatPatch(ctx context.Context, name, dir, ref string, bases []string, path, what string) error {
+func (m *Manager) FormatPatch(ctx context.Context, name, dir, ref string, bases []string, path, what string) error {
 	revs := []string{ref}
 	for _, b := range bases {
 		if !commitID.MatchString(b) {
@@ -290,7 +290,7 @@ func (m *Manager) PR(ctx context.Context, name string, o PROpts) (string, error)
 	}
 	pctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
-	if _, err := hostGitCmd(pctx, p.Into, "push", remote, p.Ref+":refs/heads/"+head); err != nil {
+	if _, err := HostGit(pctx, p.Into, "push", remote, p.Ref+":refs/heads/"+head); err != nil {
 		return "", err
 	}
 	c, err := m.apiClient(ctx, f)
@@ -305,7 +305,7 @@ func (m *Manager) PR(ctx context.Context, name string, o PROpts) (string, error)
 	}
 	title := o.Title
 	if title == "" {
-		out, err := hostGitCmd(ctx, p.Into, "log", "-1", "--format=%s", p.Ref)
+		out, err := HostGit(ctx, p.Into, "log", "-1", "--format=%s", p.Ref)
 		if err != nil {
 			return "", err
 		}
@@ -343,13 +343,13 @@ func (m *Manager) apiClient(ctx context.Context, f forge.Forge) (*forge.Client, 
 
 // findRemote returns the host repo's remote for repo on forge f.
 func findRemote(ctx context.Context, dir string, f forge.Forge, repo forge.Repo) (string, error) {
-	out, err := hostGitCmd(ctx, dir, "remote")
+	out, err := HostGit(ctx, dir, "remote")
 	if err != nil {
 		return "", err
 	}
 	reg := forge.Registry{Forges: []forge.Forge{f}}
 	for _, name := range strings.Fields(string(out.Raw())) {
-		u, err := hostGitCmd(ctx, dir, "remote", "get-url", "--push", name)
+		u, err := HostGit(ctx, dir, "remote", "get-url", "--push", name)
 		if err != nil {
 			continue
 		}

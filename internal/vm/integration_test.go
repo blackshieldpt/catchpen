@@ -21,35 +21,16 @@ import (
 
 	"github.com/blackshieldpt/curral/internal/config"
 	"github.com/blackshieldpt/curral/internal/egress"
-	"github.com/blackshieldpt/curral/internal/paths"
 	"github.com/blackshieldpt/curral/internal/sshx"
 	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/curral/internal/vmtest"
 )
 
 // integrationManager sets up a throwaway CURRAL_HOME (reusing downloaded images) and builds curral.
 func integrationManager(t *testing.T) *Manager {
 	t.Helper()
-	root := t.TempDir()
-	t.Setenv("CURRAL_HOME", root)
-	p := paths.Default()
-	if err := p.Ensure(); err != nil {
-		t.Fatal(err)
-	}
-	images := os.Getenv("CURRAL_TEST_IMAGES")
-	if images == "" {
-		home, _ := os.UserHomeDir()
-		images = filepath.Join(home, ".local/share/curral/images")
-	}
-	if ents, err := os.ReadDir(images); err == nil {
-		for _, e := range ents {
-			_ = os.Symlink(filepath.Join(images, e.Name()), filepath.Join(p.Images(), e.Name()))
-		}
-	}
-	bin := filepath.Join(root, "curral")
-	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/curral").CombinedOutput(); err != nil {
-		t.Fatalf("build: %v\n%s", err, out)
-	}
-	return &Manager{P: p, Cfg: config.Default(), Tpl: template.Loader{UserDir: p.Templates()}, Out: testWriter{t}, Bin: bin}
+	p, bin := vmtest.Home(t)
+	return &Manager{P: p, Cfg: config.Default(), Tpl: template.Loader{UserDir: p.Templates()}, Out: vmtest.Writer{T: t}, Bin: bin}
 }
 
 func guestRunner(t *testing.T, ctx context.Context, c *ssh.Client) func(string) string {
@@ -225,11 +206,4 @@ mcp:
 	if got := run("claude CLAUDE_CODE_OAUTH_TOKEN"); got != oauth {
 		t.Errorf("claude's token = %q", got)
 	}
-}
-
-type testWriter struct{ t *testing.T }
-
-func (w testWriter) Write(b []byte) (int, error) {
-	w.t.Log(strings.TrimRight(string(b), "\n"))
-	return len(b), nil
 }

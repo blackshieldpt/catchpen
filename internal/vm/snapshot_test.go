@@ -66,7 +66,7 @@ func offlineVM(t *testing.T, m *Manager, name string) (*State, *Resolved) {
 	if err := m.keys(name).Generate(name); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := exec.Command("qemu-img", "create", "-q", "-f", "qcow2", "-F", "qcow2", "-b", base, m.file(name, diskFile)).CombinedOutput(); err != nil {
+	if out, err := exec.Command("qemu-img", "create", "-q", "-f", "qcow2", "-F", "qcow2", "-b", base, m.vm(name).path(diskFile)).CombinedOutput(); err != nil {
 		t.Fatalf("%v %s", err, out)
 	}
 	s := &State{Name: name, Template: r.T.Name, Distro: r.Distro.Name, User: r.User, Base: base, DiskMB: 4, Booted: true, Created: time.Now()}
@@ -80,7 +80,7 @@ func TestOfflineSnapshots(t *testing.T) {
 	m := testManager(t)
 	offlineVM(t, m, "v1")
 	ctx := context.Background()
-	disk := m.file("v1", diskFile)
+	disk := m.vm("v1").path(diskFile)
 	qio(t, disk, 0x11, "64k")
 	before := view(t, disk)
 	if _, err := m.Snapshot(ctx, "v1", "s1", false); err != nil {
@@ -118,7 +118,7 @@ func TestRebaseKeepsContents(t *testing.T) {
 	m := testManager(t)
 	s, r := offlineVM(t, m, "v1")
 	ctx := context.Background()
-	disk := m.file("v1", diskFile)
+	disk := m.vm("v1").path(diskFile)
 	qio(t, disk, 0x33, "128k")
 	before := view(t, disk)
 	if _, err := m.Snapshot(ctx, "v1", "s1", false); err != nil {
@@ -159,7 +159,7 @@ func TestResetFreshDisk(t *testing.T) {
 	m := testManager(t)
 	s, r := offlineVM(t, m, "v1")
 	ctx := context.Background()
-	disk := m.file("v1", diskFile)
+	disk := m.vm("v1").path(diskFile)
 	qio(t, disk, 0x44, "0")
 	gen2 := r.basePath(m.P, 2)
 	if out, err := exec.Command("qemu-img", "create", "-q", "-f", "qcow2", gen2, "8M").CombinedOutput(); err != nil {
@@ -173,7 +173,7 @@ func TestResetFreshDisk(t *testing.T) {
 	if ns.Booted || ns.Base != s.Base || string(view(t, disk)) != string(view(t, s.Base)) {
 		t.Errorf("reset: booted %v base %s", ns.Booted, ns.Base)
 	}
-	if _, err := os.Stat(m.file("v1", seedFile)); err != nil {
+	if _, err := os.Stat(m.vm("v1").path(seedFile)); err != nil {
 		t.Error("no seed for first boot")
 	}
 	if err := m.Reset(ctx, "v1", true); err != nil {
@@ -266,7 +266,7 @@ func TestGCKeepsInUseAndCurrent(t *testing.T) {
 	}
 	writeFile(t, def.basePath(m.P, 2), "base")
 	os.MkdirAll(m.dir("v1"), 0o700)
-	if err := qemuCreateOverlay(m.file("v1", diskFile), byDisk); err != nil {
+	if err := qemuCreateOverlay(m.vm("v1").path(diskFile), byDisk); err != nil {
 		t.Fatal(err)
 	}
 	writeJSON(filepath.Join(m.dir("v1"), stateFile), State{Name: "v1", Base: def.basePath(m.P, 2)})
@@ -274,7 +274,7 @@ func TestGCKeepsInUseAndCurrent(t *testing.T) {
 	oldTime := time.Now().Add(-gcTempAge - time.Hour)
 	stem := strings.TrimSuffix(def.basePath(m.P, 3), ".qcow2")
 	var dead []string
-	for _, p := range []string{def.basePath(m.P, 3) + ".building", def.basePath(m.P, 3) + ".seed.iso", stem + ".egress", m.file("v1", diskFile+".reset")} {
+	for _, p := range []string{def.basePath(m.P, 3) + ".building", def.basePath(m.P, 3) + ".seed.iso", stem + ".egress", m.vm("v1").path(diskFile + ".reset")} {
 		writeFile(t, p, "x")
 		os.Chtimes(p, oldTime, oldTime)
 		dead = append(dead, p)
@@ -365,7 +365,7 @@ func TestSnapshotMetaAndDiskOnlyRestore(t *testing.T) {
 	if err := m.Reset(ctx, "v1", false); err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := os.Stat(m.file("v1", diskFile)); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(m.vm("v1").path(diskFile)); st.Mode().Perm() != 0o600 {
 		t.Errorf("reset disk mode %v", st.Mode().Perm())
 	}
 }

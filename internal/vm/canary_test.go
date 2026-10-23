@@ -40,7 +40,7 @@ func TestCanariesPlantedAndScanned(t *testing.T) {
 	if err != nil || len(cs) != 2 || !slices.Equal(s.Canaries, []string{"env", "git"}) {
 		t.Fatalf("canaries %+v %v, state %v", cs, err, s.Canaries)
 	}
-	if seed, _ := os.ReadFile(m.file("c1", seedFile)); !bytes.Contains(seed, []byte(cs[1].Values[0])) {
+	if seed, _ := os.ReadFile(m.vm("c1").path(seedFile)); !bytes.Contains(seed, []byte(cs[1].Values[0])) {
 		t.Error("seed lacks the git canary")
 	}
 
@@ -172,22 +172,22 @@ func TestCanariesPlantedAndScanned(t *testing.T) {
 	if err := m.scanCommits(context.Background(), "c1", repo, "refs/curral-incoming/c1/delta"); !errors.Is(err, ErrCanary) {
 		t.Errorf("delta commit: %v", err)
 	}
-	// formatPatch scans the commits it exports itself, whatever else the
+	// FormatPatch scans the commits it exports itself, whatever else the
 	// host repository has.
 	halves, _ := exec.Command("git", "-C", repo, "rev-parse", "refs/curral/c1/halves").Output()
-	if err := m.formatPatch(context.Background(), "c1", repo, "refs/curral-incoming/c1/delta", strings.Fields(string(halves)), patch, "in patches"); !errors.Is(err, ErrCanary) || fileExists(patch) {
+	if err := m.FormatPatch(context.Background(), "c1", repo, "refs/curral-incoming/c1/delta", strings.Fields(string(halves)), patch, "in patches"); !errors.Is(err, ErrCanary) || fileExists(patch) {
 		t.Errorf("delta patch: %v, written %v", err, fileExists(patch))
 	}
 	mainID, _ := exec.Command("git", "-C", repo, "rev-parse", "main").Output()
-	if err := m.formatPatch(context.Background(), "c1", repo, "refs/curral/c1/clean", strings.Fields(string(mainID)), patch, "in patches"); err != nil {
+	if err := m.FormatPatch(context.Background(), "c1", repo, "refs/curral/c1/clean", strings.Fields(string(mainID)), patch, "in patches"); err != nil {
 		t.Errorf("clean patch: %v", err)
 	} else if b, _ := os.ReadFile(patch); !bytes.Contains(b, []byte("Subject: [PATCH] clean change")) {
 		t.Errorf("clean patch:\n%s", b)
 	}
-	if err := m.formatPatch(context.Background(), "c1", repo, "refs/curral/c1/clean", []string{"--output=x"}, patch, "in patches"); err == nil {
+	if err := m.FormatPatch(context.Background(), "c1", repo, "refs/curral/c1/clean", []string{"--output=x"}, patch, "in patches"); err == nil {
 		t.Error("took an option as the base")
 	}
-	if err := m.formatPatch(context.Background(), "c1", repo, "refs/curral/c1/clean", nil, patch, "in patches"); err != nil {
+	if err := m.FormatPatch(context.Background(), "c1", repo, "refs/curral/c1/clean", nil, patch, "in patches"); err != nil {
 		t.Errorf("patch with no base: %v", err)
 	} else if b, _ := os.ReadFile(patch); !bytes.Contains(b, []byte("Subject: [PATCH 1/2] base")) {
 		t.Errorf("patch with no base:\n%s", b)
@@ -215,7 +215,7 @@ func TestCanariesPlantedAndScanned(t *testing.T) {
 	if n := strings.Count(string(b), `"canary.hit"`); n != 3 {
 		t.Errorf("%d canary.hit audit records, want 3", n)
 	}
-	if !fileExists(m.file("c1", hitFile)) {
+	if !m.vm("c1").has(hitFile) {
 		t.Error("no canary-hit marker")
 	}
 }
@@ -230,12 +230,12 @@ func TestPausedVM(t *testing.T) {
 	}
 	for _, n := range []string{"p1", "p2"} {
 		fakeQEMU(t, m, n, 512)
-		writeFile(t, m.file(n, runtimeFile), `{"ssh_port":2222}`)
+		writeFile(t, m.vm(n).path(runtimeFile), `{"ssh_port":2222}`)
 	}
 	if err := m.Resume(context.Background(), "p1"); err == nil || !strings.Contains(err.Error(), "not paused") {
 		t.Errorf("resume of a running VM: %v", err)
 	}
-	writeFile(t, m.file("p1", pausedFile), `{"kind":"git"}`)
+	writeFile(t, m.vm("p1").path(pausedFile), `{"kind":"git"}`)
 	if _, err := m.SSHPort("p1"); err == nil || !strings.Contains(err.Error(), "curral resume p1") {
 		t.Errorf("ssh to a paused VM: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestGuestText(t *testing.T) {
 	if err := os.MkdirAll(m.dir("g1"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if got := m.guestText("g1", "all good", "x"); got != "all good" {
+	if got := m.GuestText("g1", "all good", "x"); got != "all good" {
 		t.Errorf("no canaries: %q", got)
 	}
 	cs := canary.Generate([]string{"git"})
@@ -270,15 +270,15 @@ func TestGuestText(t *testing.T) {
 	}
 	v := cs[0].Values[0]
 	for _, s := range []string{"token " + v, "token " + v[:8] + "\x01" + v[8:], "token " + v[:8] + "​" + v[8:]} {
-		if got := m.guestText("g1", s, "in the task's result"); !strings.Contains(got, "decoy credentials") {
+		if got := m.GuestText("g1", s, "in the task's result"); !strings.Contains(got, "decoy credentials") {
 			t.Errorf("%q: %q", s, got)
 		}
 	}
-	if got := m.guestText("g1", "fine", "x"); got != "fine" {
+	if got := m.GuestText("g1", "fine", "x"); got != "fine" {
 		t.Errorf("clean text: %q", got)
 	}
-	writeFile(t, m.file("g1", canary.File), "{")
-	if got := m.guestText("g1", "fine", "x"); !strings.Contains(got, "couldn't be read") {
+	writeFile(t, m.vm("g1").path(canary.File), "{")
+	if got := m.GuestText("g1", "fine", "x"); !strings.Contains(got, "couldn't be read") {
 		t.Errorf("unreadable canaries: %q", got)
 	}
 }
@@ -291,8 +291,8 @@ func TestCanaryHitStops(t *testing.T) {
 		m.Cfg.CanaryAction = action
 		fakeQEMU(t, m, "h1", 512) // with no QMP socket
 		m.CanaryHit("h1", &canary.Canary{Kind: "git"}, "in a test")
-		if _, ok := m.Running("h1"); ok || m.Paused("h1") || !fileExists(m.file("h1", hitFile)) {
-			t.Errorf("%s: running %v, paused %v, hit recorded %v", action, ok, m.Paused("h1"), fileExists(m.file("h1", hitFile)))
+		if _, ok := m.Running("h1"); ok || m.Paused("h1") || !m.vm("h1").has(hitFile) {
+			t.Errorf("%s: running %v, paused %v, hit recorded %v", action, ok, m.Paused("h1"), m.vm("h1").has(hitFile))
 		}
 		if b, _ := os.ReadFile(m.P.Audit()); !strings.Contains(string(b), `"action":"`+action+`"`) || !strings.Contains(string(b), `"vm.stop"`) {
 			t.Errorf("%s: audit log:\n%s", action, b)

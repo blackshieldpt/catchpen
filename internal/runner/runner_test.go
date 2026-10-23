@@ -1,11 +1,19 @@
-package vm
+package runner
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/blackshieldpt/curral/internal/config"
+	"github.com/blackshieldpt/curral/internal/paths"
+	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/curral/internal/vm"
 
 	"github.com/blackshieldpt/curral/internal/task"
 )
@@ -22,7 +30,8 @@ func fakeSupervisor(t *testing.T, id string) int {
 }
 
 func TestClaimSlot(t *testing.T) {
-	m := testManager(t)
+	r := testRunner(t)
+	m := r.M
 	m.Cfg.Tasks.MaxVMs = 2
 	m.Cfg.Tasks.MaxMemory = "10G"
 	st := m.Tasks()
@@ -39,7 +48,7 @@ func TestClaimSlot(t *testing.T) {
 	}
 	claim := func(tk *task.Task) bool {
 		t.Helper()
-		ok, err := m.claimSlot(tk.ID)
+		ok, err := r.claimSlot(tk.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -71,21 +80,21 @@ func TestClaimSlot(t *testing.T) {
 	if got, _ := st.Load(d.ID); got.State != task.Starting || got.Started.IsZero() {
 		t.Errorf("claimed task: %+v", got)
 	}
-	if _, err := m.claimSlot(d.ID); err == nil {
+	if _, err := r.claimSlot(d.ID); err == nil {
 		t.Error("a task that isn't queued was claimed again")
 	}
 }
 
 // fakeQEMU is a live process that qemu.Pid takes for VM name's QEMU.
-func fakeQEMU(t *testing.T, m *Manager, name string, memMB int) {
+func fakeQEMU(t *testing.T, m *vm.Manager, name string, memMB int) {
 	t.Helper()
-	writeFile(t, m.file(name, stateFile), fmt.Sprintf(`{"name":%q,"memory_mb":%d}`, name, memMB))
+	writeFile(t, filepath.Join(m.Dir(name), "vm.json"), fmt.Sprintf(`{"name":%q,"memory_mb":%d}`, name, memMB))
 	c := exec.Command("bash", "-c", `exec -a qemu-system-x86_64 bash -c 'sleep 60; true' -name curral-`+name)
 	if err := c.Start(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { c.Process.Kill(); c.Wait() })
-	writeFile(t, m.file(name, pidFile), strconv.Itoa(c.Process.Pid))
+	writeFile(t, filepath.Join(m.Dir(name), "qemu.pid"), strconv.Itoa(c.Process.Pid))
 	for i := 0; i < 50; i++ {
 		if _, ok := m.Running(name); ok {
 			return
@@ -97,7 +106,8 @@ func fakeQEMU(t *testing.T, m *Manager, name string, memMB int) {
 
 // A claimed task whose VM is already up is counted once, not twice.
 func TestClaimSlotCountsRunningTaskVMOnce(t *testing.T) {
-	m := testManager(t)
+	r := testRunner(t)
+	m := r.M
 	m.Cfg.Tasks.MaxVMs = 2
 	st := m.Tasks()
 	a := &task.Task{ID: task.NewID(), State: task.Running, Created: time.Now(), MemoryMB: 1024}
@@ -109,7 +119,39 @@ func TestClaimSlotCountsRunningTaskVMOnce(t *testing.T) {
 	b.VM = "task-" + b.ID
 	b.PID = fakeSupervisor(t, b.ID)
 	st.Create(b, "p")
-	if ok, err := m.claimSlot(b.ID); err != nil || !ok {
+	if ok, err := r.claimSlot(b.ID); err != nil || !ok {
 		t.Errorf("second task not admitted with one VM running and max_vms 2: %v %v", ok, err)
+	}
+}
+
+func TestCodexTaskNeedsAPIKey(t *testing.T) {
+	r := testRunner(t)
+	m := r.M
+	writeFile(t, filepath.Join(m.P.Templates(), "cg.yaml"), "extends: minimal\nruntimes: { node: \"24\" }\nagents: { codex: { auth: chatgpt } }\n")
+	if _, err := r.Submit(task.Spec{Template: "cg", Agent: "codex", Prompt: "x", Out: task.OutNone, Timeout: time.Hour}); err == nil || !strings.Contains(err.Error(), "auth: api-key") {
+		t.Errorf("chatgpt codex task: %v", err)
+	}
+	if _, err := r.Submit(task.Spec{Template: "default", Agent: "codex", Prompt: "x", Out: task.OutNone, Timeout: time.Hour}); err == nil || !strings.Contains(err.Error(), "it has none") {
+		t.Errorf("default template's codex task: %v", err)
+	}
+}
+
+func testRunner(t *testing.T) *Runner {
+	t.Helper()
+	root := t.TempDir()
+	p := paths.Paths{Config: filepath.Join(root, "config"), Data: filepath.Join(root, "data"), Cache: filepath.Join(root, "cache")}
+	if err := p.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	return &Runner{M: &vm.Manager{P: p, Cfg: config.Default(), Tpl: template.Loader{UserDir: p.Templates()}, Bin: "/usr/local/bin/curral"}}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

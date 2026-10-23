@@ -12,7 +12,6 @@ import (
 
 	"github.com/blackshieldpt/curral/internal/config"
 	"github.com/blackshieldpt/curral/internal/egress"
-	"github.com/blackshieldpt/curral/internal/fsutil"
 	"github.com/blackshieldpt/curral/internal/qemu"
 	"github.com/blackshieldpt/curral/internal/template"
 )
@@ -50,7 +49,7 @@ func poolManager(t *testing.T, ready ...string) *Manager {
 
 func TestPoolVMHasNothingToSteal(t *testing.T) {
 	m := poolManager(t, "pool-a")
-	if b, _ := os.ReadFile(m.file("pool-a", "allowlist")); len(bytes.TrimSpace(b)) != 0 {
+	if b, _ := os.ReadFile(m.vm("pool-a").path("allowlist")); len(bytes.TrimSpace(b)) != 0 {
 		t.Errorf("pool VM allowlist = %q", b)
 	}
 	if b, _ := os.ReadFile(m.P.SSHConfig()); strings.Contains(string(b), "pool-a") {
@@ -69,7 +68,7 @@ func TestPoolVMHasNothingToSteal(t *testing.T) {
 
 func TestClaimSkipsLockedPoolVM(t *testing.T) {
 	m := poolManager(t, "pool-a")
-	unlock, err := fsutil.Lock(m.file("pool-a", lockFile))
+	_, unlock, err := m.vm("pool-a").lock()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,11 +118,11 @@ func TestCreateClaimsMatchingPoolVM(t *testing.T) {
 	if b, _ := os.ReadFile(m.keys("work").KnownHosts()); !strings.HasPrefix(string(b), "curral-work ssh-ed25519 ") {
 		t.Errorf("known_hosts = %q", b)
 	}
-	seed, _ := os.ReadFile(m.file("work", seedFile))
+	seed, _ := os.ReadFile(m.vm("work").path(seedFile))
 	if !bytes.Contains(seed, []byte("instance-id: "+pool.Instance+"\nlocal-hostname: work\n")) {
 		t.Error("seed keeps neither the instance nor the new name")
 	}
-	if b, _ := os.ReadFile(m.file("work", "allowlist")); !strings.Contains(string(b), "api.anthropic.com:443") {
+	if b, _ := os.ReadFile(m.vm("work").path("allowlist")); !strings.Contains(string(b), "api.anthropic.com:443") {
 		t.Errorf("claimed allowlist = %q", b)
 	}
 	if b, _ := os.ReadFile(m.P.SSHConfig()); !strings.Contains(string(b), "Host curral-work\n") {
@@ -173,14 +172,14 @@ func TestTakeResume(t *testing.T) {
 		t.Skip("no qemu-system:", err)
 	}
 	for name, ver := range map[string]string{"pool-a": v, "pool-b": "1.0.0"} {
-		if err := qemu.SnapshotOffline("-c", poolSnap, m.file(name, diskFile)); err != nil {
+		if err := qemu.SnapshotOffline("-c", poolSnap, m.vm(name).path(diskFile)); err != nil {
 			t.Fatal(err)
 		}
 		if err := m.setSnapMeta(name, poolSnap, &snapMeta{QEMU: ver, Machine: "pc-q35-9.2"}); err != nil {
 			t.Fatal(err)
 		}
 		s, _ := m.Load(name)
-		from, err := m.takeResume(s)
+		from, err := m.takeResume(heldVM{m.vm(name)}, s)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -218,7 +217,7 @@ func TestCachesAndThePool(t *testing.T) {
 	if s.Resume != "" || !slices.Equal(s.Cache, []string{"apt", "npm"}) { // docker: the template has none
 		t.Errorf("state = %+v", s)
 	}
-	if seed, _ := os.ReadFile(m.file("work", seedFile)); !bytes.Contains(seed, []byte("npm_config_registry=http://10.0.2.102/npm/")) {
+	if seed, _ := os.ReadFile(m.vm("work").path(seedFile)); !bytes.Contains(seed, []byte("npm_config_registry=http://10.0.2.102/npm/")) {
 		t.Error("seed lacks the npm cache")
 	}
 	wants, err := m.poolWants()
@@ -281,7 +280,7 @@ func TestCanariesAndThePool(t *testing.T) {
 
 func TestPoolVMWithCanaryHitNotClaimed(t *testing.T) {
 	m := poolManager(t, "pool-a")
-	writeFile(t, m.file("pool-a", hitFile), "{}")
+	writeFile(t, m.vm("pool-a").path(hitFile), "{}")
 	if err := os.Mkdir(m.dir("w1"), 0o700); err != nil {
 		t.Fatal(err)
 	}

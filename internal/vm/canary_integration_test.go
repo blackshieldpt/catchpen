@@ -13,7 +13,6 @@ import (
 	"github.com/blackshieldpt/curral/internal/canary"
 	"github.com/blackshieldpt/curral/internal/qemu"
 	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/task"
 )
 
 // TestCanaries plants decoys, uses one from the guest and checks the VM is
@@ -30,7 +29,7 @@ func TestCanaries(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = m.Destroy("cn") })
 	// As a crash or reboot while paused leaves it.
-	if err := os.WriteFile(m.file("cn", pausedFile), []byte("{}"), 0o600); err != nil {
+	if err := os.WriteFile(m.vm("cn").path(pausedFile), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.Start(ctx, "cn"); err != nil {
@@ -72,7 +71,7 @@ func TestCanaries(t *testing.T) {
 	if !m.Paused("cn") {
 		t.Fatal("not paused after a canary hit")
 	}
-	q, err := qemu.DialQMP(m.file("cn", qmpSock), 5*time.Second)
+	q, err := qemu.DialQMP(m.vm("cn").path(qmpSock), 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,62 +121,5 @@ func TestCanaries(t *testing.T) {
 	}
 	if err := m.Resume(ctx, "cn"); err != nil {
 		t.Fatal(err)
-	}
-
-	// A task using a decoy fails at once, and its paused VM is kept.
-	spec := task.Spec{Template: "cn", Agent: "cmd", Cmd: `. ~/.env.production; curl -s -m 120 "$INTERNAL_API_URL/x"; sleep 600`, Prompt: "x", Timeout: 20 * time.Minute}
-	dir := t.TempDir()
-	if err := spec.Normalize(dir, dir); err != nil {
-		t.Fatal(err)
-	}
-	tk, err := m.SubmitTask(spec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = m.Destroy(tk.VM) })
-	until := time.Now().Add(10 * time.Minute)
-	for tk.State != task.Failed && time.Now().Before(until) {
-		time.Sleep(2 * time.Second)
-		if tk, err = m.Tasks().Load(tk.ID); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if tk.State != task.Failed || !strings.Contains(tk.Error, "a canary hit paused") || !m.Paused(tk.VM) {
-		b, _ := os.ReadFile(m.Tasks().Path(tk.ID, "supervisor.log"))
-		t.Fatalf("task %+v, paused %v\n%s", tk, m.Paused(tk.VM), b)
-	}
-
-	// A kept VM holds its share of the task budget until destroyed.
-	if err := m.Destroy(tk.VM); err != nil {
-		t.Fatal(err)
-	}
-
-	// With canary_action log the task runs on, and its VM is still kept.
-	if err := os.WriteFile(m.P.ConfigFile(), []byte("canary_action: log\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	spec.Cmd = `. ~/.env.production; curl -s -m 30 "$INTERNAL_API_URL/x"; echo finished; echo "token $INTERNAL_API_TOKEN"`
-	tk, err = m.SubmitTask(spec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = m.Destroy(tk.VM) })
-	until = time.Now().Add(10 * time.Minute)
-	for !task.Final(tk.State) && time.Now().Before(until) {
-		time.Sleep(2 * time.Second)
-		if tk, err = m.Tasks().Load(tk.ID); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if tk.State != task.Done || !strings.Contains(tk.Error, "decoy credentials were used: kept") || m.Paused(tk.VM) {
-		b, _ := os.ReadFile(m.Tasks().Path(tk.ID, "supervisor.log"))
-		t.Fatalf("task %+v, paused %v\n%s", tk, m.Paused(tk.VM), b)
-	}
-	if _, err := os.Stat(m.Dir(tk.VM)); err != nil {
-		t.Errorf("task VM not kept: %v", err)
-	}
-	// Its result, beyond the first line too, is withheld.
-	if b, _ := os.ReadFile(m.Tasks().Path(tk.ID, "result.md")); !strings.Contains(string(b), "(withheld") || strings.Contains(string(b), cs[1].Values[2]) {
-		t.Errorf("task result: %q", b)
 	}
 }

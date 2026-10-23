@@ -1,4 +1,4 @@
-package vm
+package runner
 
 import (
 	"context"
@@ -20,44 +20,53 @@ import (
 	"github.com/blackshieldpt/curral/internal/sshx"
 	"github.com/blackshieldpt/curral/internal/task"
 	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/curral/internal/vm"
 )
 
 const maxTaskOutput = 512 << 20
 
-// Tasks is the task store.
-func (m *Manager) Tasks() task.Store { return task.Store{Dir: m.P.Tasks()} }
+// Runner submits, schedules and supervises headless tasks, each in a VM of
+// its own on M.
+type Runner struct{ M *vm.Manager }
 
-// SubmitTask records a task and starts its supervisor (curral task-supervise)
+func lastLine(s string) string {
+	lines := strings.Split(strings.TrimRight(s, "\r\n\x00 "), "\n")
+	return strings.TrimSpace(lines[len(lines)-1])
+}
+
+func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+
+// Submit records a task and starts its supervisor (curral task-supervise)
 // in the background. The spec must be normalized.
-func (m *Manager) SubmitTask(spec task.Spec) (*task.Task, error) {
+func (r *Runner) Submit(spec task.Spec) (*task.Task, error) {
 	if spec.Template == "" {
-		spec.Template = m.Cfg.Defaults.Template
+		spec.Template = r.M.Cfg.Defaults.Template
 	}
-	r, err := m.Resolve(spec.Template, "")
+	res, err := r.M.Resolve(spec.Template, "")
 	if err != nil {
 		return nil, err
 	}
 	if spec.Agent != "cmd" {
-		a := r.T.Agents.Get(spec.Agent)
+		a := res.T.Agents.Get(spec.Agent)
 		if a == nil {
-			return nil, fmt.Errorf("template %s doesn't install %s", r.T.Name, spec.Agent)
+			return nil, fmt.Errorf("template %s doesn't install %s", res.T.Name, spec.Agent)
 		}
 		if spec.Agent == "codex" && (a.Auth == template.CodexChatGPT || a.Auth == template.CodexNone) {
-			return nil, fmt.Errorf("codex tasks need agents.codex.auth: api-key in template %s (it has %s; a new VM has no sign-in)", r.T.Name, a.Auth)
+			return nil, fmt.Errorf("codex tasks need agents.codex.auth: api-key in template %s (it has %s; a new VM has no sign-in)", res.T.Name, a.Auth)
 		}
 	}
 	if spec.Into != "" {
-		if _, err := hostGitCmd(context.Background(), spec.Into, "rev-parse", "--git-dir"); err != nil {
+		if _, err := vm.HostGit(context.Background(), spec.Into, "rev-parse", "--git-dir"); err != nil {
 			return nil, fmt.Errorf("--out %s needs a host repository: %s is not one (use --into)", spec.Out, spec.Into)
 		}
 	}
-	mem, err := template.ParseSize(m.Cfg.Defaults.Resources.Override(r.T.Resources).Memory)
+	mem, err := template.ParseSize(r.M.Cfg.Defaults.Resources.Override(res.T.Resources).Memory)
 	if err != nil {
 		return nil, err
 	}
 	id := task.NewID()
 	t := &task.Task{ID: id, Spec: spec, State: task.Queued, VM: "task-" + id, Created: time.Now().UTC(), MemoryMB: int(mem)}
-	st := m.Tasks()
+	st := r.M.Tasks()
 	if err := st.Create(t, spec.Prompt); err != nil {
 		return nil, err
 	}
@@ -66,7 +75,7 @@ func (m *Manager) SubmitTask(spec task.Spec) (*task.Task, error) {
 		return nil, err
 	}
 	defer logf.Close()
-	cmd := exec.Command(m.Bin, "task-supervise", id)
+	cmd := exec.Command(r.M.Bin, "task-supervise", id)
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
@@ -81,23 +90,23 @@ func (m *Manager) SubmitTask(spec task.Spec) (*task.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	m.audit(audit.TaskSubmit, t.VM, map[string]any{"task": id, "agent": spec.Agent, "repo": spec.Repo, "out": spec.Out})
+	r.M.AuditEvent(audit.TaskSubmit, t.VM, map[string]any{"task": id, "agent": spec.Agent, "repo": spec.Repo, "out": spec.Out})
 	return t, nil
 }
 
 // claimSlot moves a queued task to starting if the budget allows.
-func (m *Manager) claimSlot(id string) (bool, error) {
-	unlock, err := fsutil.Lock(m.P.Tasks() + "/.schedule.lock")
+func (r *Runner) claimSlot(id string) (bool, error) {
+	unlock, err := fsutil.Lock(r.M.P.Tasks() + "/.schedule.lock")
 	if err != nil {
 		return false, err
 	}
 	defer unlock()
-	st := m.Tasks()
+	st := r.M.Tasks()
 	t, err := st.Load(id)
 	if err != nil {
 		return false, err
 	}
-	vms, err := m.List()
+	vms, err := r.M.List()
 	if err != nil {
 		return false, err
 	}
@@ -127,7 +136,7 @@ func (m *Manager) claimSlot(id string) (bool, error) {
 			batch++
 		}
 	}
-	lim := m.Cfg.Tasks
+	lim := r.M.Cfg.Tasks
 	if n > 0 && (n+1 > lim.MaxVMs || (lim.MaxMemoryMB() > 0 && mem+int64(t.MemoryMB) > lim.MaxMemoryMB())) {
 		return false, nil
 	}
@@ -144,10 +153,10 @@ func (m *Manager) claimSlot(id string) (bool, error) {
 	return err == nil, err
 }
 
-// RunTask is the supervisor body: wait for budget, create the VM, run the
+// Run is the supervisor body: wait for budget, create the VM, run the
 // agent, commit, export, copy transcripts, destroy.
-func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
-	st := m.Tasks()
+func (r *Runner) Run(ctx context.Context, id string) (err error) {
+	st := r.M.Tasks()
 	t, err := st.Update(id, func(t *task.Task) error {
 		if t.State != task.Queued {
 			return fmt.Errorf("task %s is %s", id, t.State)
@@ -172,12 +181,12 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 		// result.md was scanned when it was written.
 		result := firstLine(readFile(st.Path(id, "result.md")))
 		if err != nil {
-			if g := m.guestText(t.VM, err.Error(), "in the task's error"); g != err.Error() {
+			if g := r.M.GuestText(t.VM, err.Error(), "in the task's error"); g != err.Error() {
 				err = errors.New(g)
 			}
 		}
 		state, msg := task.Done, ""
-		paused := created && m.Paused(t.VM)
+		paused := created && r.M.Paused(t.VM)
 		switch {
 		case paused:
 			state, msg = task.Failed, fmt.Sprintf("a canary hit paused %s; kept it (curral resume %[1]s, or curral destroy %[1]s)", t.VM)
@@ -188,7 +197,7 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 			state, msg = task.Failed, sshx.Printable(err.Error())
 		}
 		// Whatever canary_action did, the VM is the evidence.
-		hit := created && fileExists(m.file(t.VM, hitFile))
+		hit := created && r.M.Hit(t.VM)
 		keep := t.Spec.Keep || (unexported && state == task.Failed) || hit
 		if unexported && state == task.Failed && !t.Spec.Keep && !paused {
 			msg += fmt.Sprintf("; kept %s because its %d commit(s) weren't exported (curral pull %s --branch %s, then curral destroy %s)", t.VM, t.Commits, t.VM, t.Branch, t.VM)
@@ -199,18 +208,18 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 		if created && !paused { // a paused guest doesn't answer
 			// Copy transcripts and tear down without the signal's context.
 			bg, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-			if _, terr := m.CopyTranscripts(bg, t.VM); terr != nil {
-				m.logf("warning: %v", terr)
+			if _, terr := r.M.CopyTranscripts(bg, t.VM); terr != nil {
+				r.M.Logf("warning: %v", terr)
 			}
 			cancel()
 			if !keep {
-				if derr := m.destroy(t.VM, false); derr != nil {
-					m.logf("warning: destroying %s: %v", t.VM, derr)
+				if derr := r.M.DestroyWithoutTranscripts(t.VM); derr != nil {
+					r.M.Logf("warning: destroying %s: %v", t.VM, derr)
 				}
 			}
 		}
 		set(func(t *task.Task) { t.State, t.Error, t.Ended = state, msg, time.Now().UTC() })
-		m.audit(audit.TaskEnd, t.VM, map[string]any{"task": id, "state": state, "output": t.Output, "commits": t.Commits})
+		r.M.AuditEvent(audit.TaskEnd, t.VM, map[string]any{"task": id, "state": state, "output": t.Output, "commits": t.Commits})
 		kind := notify.TaskDone
 		text := t.Output
 		if state != task.Done {
@@ -218,12 +227,12 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 		} else if text == "" {
 			text = result
 		}
-		m.notify(notify.Event{Kind: kind, VM: t.VM, Title: fmt.Sprintf("curral task %s %s", id, state), Message: text})
-		m.logf("task %s %s %s", id, state, msg)
+		r.M.Notify(notify.Event{Kind: kind, VM: t.VM, Title: fmt.Sprintf("curral task %s %s", id, state), Message: text})
+		r.M.Logf("task %s %s %s", id, state, msg)
 	}()
 
 	for {
-		ok, err := m.claimSlot(id)
+		ok, err := r.claimSlot(id)
 		if err != nil {
 			return err
 		}
@@ -236,21 +245,21 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 		case <-time.After(5 * time.Second):
 		}
 	}
-	m.logf("task %s: starting %s", id, t.VM)
-	o := CreateOpts{Template: t.Spec.Template, ReadOnly: !t.Spec.RW, Task: id}
+	r.M.Logf("task %s: starting %s", id, t.VM)
+	o := vm.CreateOpts{Template: t.Spec.Template, ReadOnly: !t.Spec.RW, Task: id}
 	if t.Spec.Repo != "" {
 		o.Repos = []string{t.Spec.Repo}
 	}
-	if _, err := m.Create(ctx, t.VM, o); err != nil {
+	if _, err := r.M.Create(ctx, t.VM, o); err != nil {
 		return err
 	}
 	created = true
-	ctx, stopWatch = m.cancelOnPause(ctx, t.VM)
-	if _, err := m.Start(ctx, t.VM); err != nil {
+	ctx, stopWatch = r.M.CancelOnPause(ctx, t.VM)
+	if _, err := r.M.Start(ctx, t.VM); err != nil {
 		return err
 	}
 	set(func(t *task.Task) { t.State = task.Running })
-	g, s, err := m.dialGuest(ctx, t.VM)
+	g, s, err := r.M.DialGuest(ctx, t.VM)
 	if err != nil {
 		return err
 	}
@@ -261,10 +270,10 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 	if err != nil {
 		return err
 	}
-	if err := agents.WriteFile(ctx, sshRemote{c}, task.GuestPrompt, prompt); err != nil {
+	if err := agents.WriteFile(ctx, vm.GuestRemote(c), task.GuestPrompt, prompt); err != nil {
 		return err
 	}
-	wd := WorkDir(s)
+	wd := vm.WorkDir(s)
 	cd := ""
 	if wd != "" {
 		cd = "cd " + shQuote(wd) + " && "
@@ -280,7 +289,7 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 		set(func(t *task.Task) { t.Branch = branch })
 	}
 
-	exit, aerr := m.runAgent(ctx, c, t, cd)
+	exit, aerr := r.runAgent(ctx, c, t, cd)
 	set(func(t *task.Task) { t.Exit = &exit })
 	f, err := os.Open(st.Path(id, "output.jsonl"))
 	if err != nil {
@@ -289,7 +298,7 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 	sum := task.Summarize(t.Spec.Agent, f)
 	f.Close()
 	// task show, the PR body and notifications show it on the host.
-	if err := os.WriteFile(st.Path(id, "result.md"), []byte(m.guestText(t.VM, sum.Result, "in the task's result")), 0o600); err != nil {
+	if err := os.WriteFile(st.Path(id, "result.md"), []byte(r.M.GuestText(t.VM, sum.Result, "in the task's result")), 0o600); err != nil {
 		return err
 	}
 	set(func(t *task.Task) { t.Usage = sum.Usage })
@@ -321,7 +330,7 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 		if n > 0 && t.Spec.Out != task.OutNone {
 			unexported = true
 			set(func(t *task.Task) { t.State = task.Exporting })
-			out, err := m.exportTask(ctx, c, t, cd, base)
+			out, err := r.exportTask(ctx, c, t, cd, base)
 			if err != nil {
 				return fmt.Errorf("export: %w", err)
 			}
@@ -342,8 +351,8 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 
 // runAgent runs the agent headless with the task's timeout, streaming its
 // stdout to output.jsonl and stderr to stderr.log on the host.
-func (m *Manager) runAgent(ctx context.Context, c *ssh.Client, t *task.Task, cd string) (int, error) {
-	st := m.Tasks()
+func (r *Runner) runAgent(ctx context.Context, c *ssh.Client, t *task.Task, cd string) (int, error) {
+	st := r.M.Tasks()
 	out, err := os.OpenFile(st.Path(t.ID, "output.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return -1, err
@@ -353,7 +362,7 @@ func (m *Manager) runAgent(ctx context.Context, c *ssh.Client, t *task.Task, cd 
 	cmd := cd + "timeout -k 30 " + strconv.Itoa(secs) + " curral-env bash -c " + shQuote(task.Command(t.Spec))
 	actx, cancel := context.WithTimeout(ctx, t.Spec.Timeout+2*time.Minute)
 	defer cancel()
-	m.logf("task %s: running %s", t.ID, t.Spec.Agent)
+	r.M.Logf("task %s: running %s", t.ID, t.Spec.Agent)
 	stderr, err := sshx.Stream(actx, c, cmd, out, maxTaskOutput)
 	_ = os.WriteFile(st.Path(t.ID, "stderr.log"), stderr.Raw(), 0o600)
 	var ee *sshx.ExitError
@@ -368,12 +377,12 @@ func (m *Manager) runAgent(ctx context.Context, c *ssh.Client, t *task.Task, cd 
 	return -1, err
 }
 
-func (m *Manager) exportTask(ctx context.Context, c *ssh.Client, t *task.Task, cd, base string) (string, error) {
-	st := m.Tasks()
-	po := PullOpts{Branch: t.Branch, Into: t.Spec.Into}
+func (r *Runner) exportTask(ctx context.Context, c *ssh.Client, t *task.Task, cd, base string) (string, error) {
+	st := r.M.Tasks()
+	po := vm.PullOpts{Branch: t.Branch, Into: t.Spec.Into}
 	switch t.Spec.Out {
 	case task.OutBundle:
-		p, err := m.Pull(ctx, t.VM, po)
+		p, err := r.M.Pull(ctx, t.VM, po)
 		if err != nil {
 			return "", err
 		}
@@ -382,7 +391,7 @@ func (m *Manager) exportTask(ctx context.Context, c *ssh.Client, t *task.Task, c
 		// Patches are made on the host from the task's commits, scanned in
 		// a scratch repository; the commits before the task's aren't (a tag:
 		// a branch could be the repo's HEAD, whose attributes git reads).
-		if !commitID.MatchString(base) {
+		if !vm.IsCommitID(base) {
 			return "", fmt.Errorf("bad base commit %q", sshx.Printable(base))
 		}
 		dir, err := os.MkdirTemp("", "curral-patch-*")
@@ -391,17 +400,17 @@ func (m *Manager) exportTask(ctx context.Context, c *ssh.Client, t *task.Task, c
 		}
 		defer os.RemoveAll(dir)
 		incoming := "refs/curral-incoming/" + t.VM + "/" + t.Branch
-		if _, err := hostGitCmd(ctx, dir, "init", "-q", "--bare"); err != nil {
+		if _, err := vm.HostGit(ctx, dir, "init", "-q", "--bare"); err != nil {
 			return "", err
 		}
-		if err := m.fetchBranch(ctx, c, t.VM, cd+"git", t.Branch, dir, incoming); err != nil {
+		if err := r.M.FetchBranch(ctx, c, t.VM, cd+"git", t.Branch, dir, incoming); err != nil {
 			return "", err
 		}
-		if _, err := hostGitCmd(ctx, dir, "update-ref", "refs/tags/base", base); err != nil {
+		if _, err := vm.HostGit(ctx, dir, "update-ref", "refs/tags/base", base); err != nil {
 			return "", err
 		}
-		path := st.Path(t.ID, t.ID+".mbox") // formatPatch scans the commits
-		if err := m.formatPatch(ctx, t.VM, dir, incoming, []string{base}, path, "in the task's patches"); err != nil {
+		path := st.Path(t.ID, t.ID+".mbox") // FormatPatch scans the commits
+		if err := r.M.FormatPatch(ctx, t.VM, dir, incoming, []string{base}, path, "in the task's patches"); err != nil {
 			return "", err
 		}
 		return path, nil
@@ -420,7 +429,7 @@ func (m *Manager) exportTask(ctx context.Context, c *ssh.Client, t *task.Task, c
 	if err := os.WriteFile(bodyFile, []byte(body), 0o600); err != nil {
 		return "", err
 	}
-	return m.PR(ctx, t.VM, PROpts{PullOpts: po, Title: title, BodyFile: bodyFile})
+	return r.M.PR(ctx, t.VM, vm.PROpts{PullOpts: po, Title: title, BodyFile: bodyFile})
 }
 
 // cut shortens s to at most n runes, saying so.
@@ -445,10 +454,10 @@ func firstLine(s string) string {
 	return s
 }
 
-// CancelTask stops a task's supervisor, which then destroys its VM. A task
+// Cancel stops a task's supervisor, which then destroys its VM. A task
 // whose supervisor died is marked cancelled and its VM destroyed here.
-func (m *Manager) CancelTask(id string) error {
-	t, err := m.Tasks().Load(id)
+func (r *Runner) Cancel(id string) error {
+	t, err := r.M.Tasks().Load(id)
 	if err != nil {
 		return err
 	}
@@ -458,10 +467,10 @@ func (m *Manager) CancelTask(id string) error {
 	if t.Alive() {
 		return t.Signal(syscall.SIGTERM)
 	}
-	if err := m.reapTask(t); err != nil {
+	if err := r.reapTask(t); err != nil {
 		return err
 	}
-	_, err = m.Tasks().Update(id, func(t *task.Task) error {
+	_, err = r.M.Tasks().Update(id, func(t *task.Task) error {
 		t.State, t.Error, t.Ended = task.Cancelled, "cancelled after its supervisor died", time.Now().UTC()
 		return nil
 	})
@@ -469,16 +478,16 @@ func (m *Manager) CancelTask(id string) error {
 }
 
 // reapTask destroys the VM of a task whose supervisor is gone.
-func (m *Manager) reapTask(t *task.Task) error {
-	if _, err := os.Stat(m.dir(t.VM)); err != nil {
+func (r *Runner) reapTask(t *task.Task) error {
+	if _, err := os.Stat(r.M.Dir(t.VM)); err != nil {
 		return nil
 	}
-	return m.Destroy(t.VM)
+	return r.M.Destroy(t.VM)
 }
 
-// RemoveTask deletes a finished task's record.
-func (m *Manager) RemoveTask(id string) error {
-	t, err := m.Tasks().Load(id)
+// Remove deletes a finished task's record.
+func (r *Runner) Remove(id string) error {
+	t, err := r.M.Tasks().Load(id)
 	if err != nil {
 		return err
 	}
@@ -486,9 +495,9 @@ func (m *Manager) RemoveTask(id string) error {
 		if t.Alive() {
 			return fmt.Errorf("task %s is %s; cancel it first", id, t.State)
 		}
-		if err := m.reapTask(t); err != nil {
+		if err := r.reapTask(t); err != nil {
 			return err
 		}
 	}
-	return os.RemoveAll(m.Tasks().Path(id, ""))
+	return os.RemoveAll(r.M.Tasks().Path(id, ""))
 }

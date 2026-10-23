@@ -4,7 +4,7 @@
 go build -o ~/.local/bin/curral ./cmd/curral
 go vet ./...
 go test -race ./...                                           # unit tests
-go test -tags integration -timeout 30m ./internal/vm/         # boots real VMs (KVM and network)
+go test -tags integration -timeout 30m ./internal/vm/ ./internal/runner/   # boots real VMs (KVM and network)
 go test -tags integration -timeout 30m -run '^TestCanaries$' ./internal/vm/   # one integration test
 ```
 
@@ -17,7 +17,9 @@ some boot several VMs. Some run a Gitea server to test forges.
 | Path | Contents |
 |---|---|
 | `cmd/curral/` | The CLI (spf13/cobra), one file per area. |
-| `internal/vm/` | The VM manager: lifecycle, sessions, exports, tasks, snapshots, pool, idle stop, gc, canary handling. |
+| `internal/vm/` | The VM manager: lifecycle, sessions, exports, snapshots, pool, idle stop, gc, canary handling. A VM's files, state and lock go through `vmDir` (`vmdir.go`, which also gives the lock order). |
+| `internal/runner/` | Headless tasks: submit, schedule on the VM budget, supervise, export. |
+| `internal/vmtest/` | What the integration tests of `vm` and `runner` share: a curral home, a throwaway Gitea. |
 | `internal/template/` | Template loading, `extends` merging and validation; built-in templates in `builtin/`. |
 | `internal/cloudinit/` | Cloud-init and base build script generation, and the seed ISO. |
 | `internal/qemu/` | QEMU command lines, QMP and `qemu-img`. |
@@ -43,7 +45,7 @@ some boot several VMs. Some run a Gitea server to test forges.
 2. Write its push in `internal/agents` (settings, MCP servers, credentials, the
    notification hook) and add it to `pushers`.
 3. Add its task command and event-stream parsing to `internal/task/agent.go`, and the
-   API hosts it needs to `agentHosts` in `internal/vm/vm.go` if it doesn't take
+   API hosts it needs to `agentHosts` in `internal/vm/create.go` if it doesn't take
    provider keys.
 4. Document it in `docs/agents.md`.
 
@@ -57,7 +59,7 @@ out of step.
 - Guest command output (`sshx.Run`, `sshx.Stream`'s stderr, `agents.Remote`, host git
   over guest commits) comes as `sshx.GuestOutput`: `Raw()` to parse it, `%s` to show it
   (trimmed, control characters dropped). It can't be converted to a string by accident.
-- Connect to a guest with `dialGuest` or `waitGuest` only: their connections close when
+- Connect to a guest with `DialGuest` or `waitGuest` only: their connections close when
   a canary hit pauses the VM.
 - Tests run against real git, real files and `httptest` servers rather than mocks.
 - Document user-visible changes in the [changelog](../CHANGELOG.md) and the relevant page

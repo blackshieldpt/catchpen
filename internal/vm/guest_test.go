@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Guest connections come from dialGuest or waitGuest, which close them when
+// Guest connections come from DialGuest or waitGuest, which close them when
 // a canary hit pauses the VM; a raw Dial would hang on a paused guest.
 func TestGuestConnectionsGuarded(t *testing.T) {
 	raw := regexp.MustCompile(`\.keys\([^)]*\)\.(Dial|WaitReady)\(`)
@@ -23,7 +23,7 @@ func TestGuestConnectionsGuarded(t *testing.T) {
 		}
 		for i, l := range strings.Split(string(b), "\n") {
 			if raw.MatchString(l) {
-				t.Errorf("%s:%d dials a guest directly; use dialGuest or waitGuest", f, i+1)
+				t.Errorf("%s:%d dials a guest directly; use DialGuest or waitGuest", f, i+1)
 			}
 		}
 	}

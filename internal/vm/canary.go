@@ -31,7 +31,7 @@ const (
 // seen) and acts on it as config canary_action says.
 func (m *Manager) CanaryHit(name string, c *canary.Canary, where string) {
 	action := cmp.Or(m.Cfg.CanaryAction, config.CanaryPause)
-	_ = writeJSON(m.file(name, hitFile), map[string]any{"kind": c.Kind, "where": where, "time": time.Now().UTC()})
+	_ = writeJSON(m.vm(name).path(hitFile), map[string]any{"kind": c.Kind, "where": where, "time": time.Now().UTC()})
 	then := map[string]string{config.CanaryPause: "paused it (curral resume " + name + ")", config.CanaryStop: "stopped it", config.CanaryLog: "left it running"}[action]
 	var err error
 	switch action {
@@ -56,7 +56,7 @@ func (m *Manager) CanaryHit(name string, c *canary.Canary, where string) {
 	}
 	// A guest retrying in a loop (action log) gets a few records, not one each
 	// (the audit log is shared and rotates).
-	lim := notify.Limiter{Path: m.file(name, "canary.bucket"), Burst: 3, Every: time.Minute}
+	lim := notify.Limiter{Path: m.vm(name).path("canary.bucket"), Burst: 3, Every: time.Minute}
 	if ok, _ := lim.Allow(time.Now()); ok {
 		m.audit(audit.CanaryHit, name, map[string]any{"kind": c.Kind, "where": where, "action": action})
 		m.notify(notify.Event{Kind: notify.CanaryHit, VM: name, Title: "curral " + name + ": canary used",
@@ -67,7 +67,7 @@ func (m *Manager) CanaryHit(name string, c *canary.Canary, where string) {
 func (m *Manager) pause(name string, c *canary.Canary, where string) error {
 	// QMP takes one client at a time, and each guest connection is its own
 	// process: another hit may hold it for a moment.
-	sock := m.file(name, qmpSock)
+	sock := m.vm(name).path(qmpSock)
 	var q *qemu.QMP
 	var err error
 	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(250 * time.Millisecond) {
@@ -88,7 +88,7 @@ func (m *Manager) pause(name string, c *canary.Canary, where string) error {
 	}
 	// Marked while QMP is still held, so resume can't come in between; a VM
 	// that can't be marked couldn't be resumed, so it runs on.
-	if err := writeJSON(m.file(name, pausedFile), map[string]any{"kind": c.Kind, "where": where, "time": time.Now().UTC()}); err != nil {
+	if err := writeJSON(m.vm(name).path(pausedFile), map[string]any{"kind": c.Kind, "where": where, "time": time.Now().UTC()}); err != nil {
 		_, _ = q.Execute("cont", nil)
 		return err
 	}
@@ -96,7 +96,7 @@ func (m *Manager) pause(name string, c *canary.Canary, where string) error {
 }
 
 // Paused reports whether a canary hit paused the VM.
-func (m *Manager) Paused(name string) bool { return fileExists(m.file(name, pausedFile)) }
+func (m *Manager) Paused(name string) bool { return m.vm(name).paused() }
 
 // Resume continues a VM a canary hit paused, and sets its clock (which
 // stood still).
@@ -104,7 +104,7 @@ func (m *Manager) Resume(ctx context.Context, name string) error {
 	if _, ok := m.Running(name); !ok || !m.Paused(name) {
 		return fmt.Errorf("%s was not paused by a canary hit", name)
 	}
-	q, err := qemu.DialQMP(m.file(name, qmpSock), 5*time.Second)
+	q, err := qemu.DialQMP(m.vm(name).path(qmpSock), 5*time.Second)
 	if err != nil {
 		return err
 	}
@@ -112,7 +112,7 @@ func (m *Manager) Resume(ctx context.Context, name string) error {
 	if _, err := q.Execute("cont", nil); err != nil {
 		return err
 	}
-	_ = os.Remove(m.file(name, pausedFile))
+	_ = os.Remove(m.vm(name).path(pausedFile))
 	m.audit(audit.VMResume, name, nil)
 	m.withGuest(ctx, name, func(c *ssh.Client) { m.syncClock(ctx, c) })
 	return nil
@@ -127,10 +127,10 @@ func (m *Manager) scanExport(name string, r io.Reader, what string) error {
 	return m.scanWith(name, what, func(cs []canary.Canary) (*canary.Canary, error) { return canary.Scan(r, cs) })
 }
 
-// guestText returns s, or a note in its place when s carries one of
+// GuestText returns s, or a note in its place when s carries one of
 // name's decoys (as written, or as the task record and notifications clean
 // it) or they can't be read. A hit is acted on.
-func (m *Manager) guestText(name, s, what string) string {
+func (m *Manager) GuestText(name, s, what string) string {
 	if s == "" {
 		return s
 	}

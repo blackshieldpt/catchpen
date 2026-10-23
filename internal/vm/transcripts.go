@@ -32,7 +32,7 @@ var transcriptLimits = safetar.Limits{Bytes: 1 << 30, Files: 200_000}
 // regular files and directories are unpacked. It returns the directory, or
 // "" when there was nothing to copy.
 func (m *Manager) CopyTranscripts(ctx context.Context, name string) (string, error) {
-	g, _, err := m.dialGuest(ctx, name)
+	g, _, err := m.DialGuest(ctx, name)
 	if err != nil {
 		return "", err
 	}

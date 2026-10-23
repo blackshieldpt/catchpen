@@ -38,7 +38,7 @@ func TestForwardSpecs(t *testing.T) {
 
 func TestForwardNeedsRunningVM(t *testing.T) {
 	m := testManager(t)
-	writeFile(t, m.file("a", stateFile), `{"name":"a"}`)
+	writeFile(t, m.vm("a").path(stateFile), `{"name":"a"}`)
 	if _, err := m.Forward(context.Background(), "a", []string{"3000"}, nil, nil); err == nil || !strings.Contains(err.Error(), "not running") {
 		t.Errorf("err = %v", err)
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/blackshieldpt/curral/internal/jsonl"
+	"github.com/blackshieldpt/curral/internal/runner"
 	"github.com/blackshieldpt/curral/internal/task"
 	"github.com/blackshieldpt/curral/internal/vm"
 )
@@ -73,7 +74,7 @@ Tasks wait for the budget in config.yaml tasks: (max_vms, max_memory).
 			}
 			var ids []string
 			for _, sp := range specs {
-				t, err := m.SubmitTask(sp)
+				t, err := (&runner.Runner{M: m}).Submit(sp)
 				if err != nil {
 					return fmt.Errorf("%w (submitted so far: %s)", err, strings.Join(ids, " "))
 				}
@@ -296,7 +297,7 @@ func taskCancelCmd() *cobra.Command {
 			}
 			var errs []error
 			for _, id := range args {
-				errs = append(errs, m.CancelTask(id))
+				errs = append(errs, (&runner.Runner{M: m}).Cancel(id))
 			}
 			return errors.Join(errs...)
 		},
@@ -315,7 +316,7 @@ func taskRmCmd() *cobra.Command {
 			}
 			var errs []error
 			for _, id := range args {
-				errs = append(errs, m.RemoveTask(id))
+				errs = append(errs, (&runner.Runner{M: m}).Remove(id))
 			}
 			return errors.Join(errs...)
 		},
@@ -334,7 +335,7 @@ func taskSuperviseCmd() *cobra.Command {
 				return err
 			}
 			m.In = nil // detached: no terminal for passphrases
-			return m.RunTask(cmd.Context(), args[0])
+			return (&runner.Runner{M: m}).Run(cmd.Context(), args[0])
 		},
 	}
 }

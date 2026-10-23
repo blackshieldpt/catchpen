@@ -119,7 +119,7 @@ func (m *Manager) provisionForges(ctx context.Context, s *State) error {
 		return nil
 	}
 	sec := m.resolver()
-	dir := m.file(s.Name, forgeDir)
+	dir := m.vm(s.Name).path(forgeDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -229,7 +229,7 @@ func (m *Manager) releaseForges(s *State) {
 }
 
 func (m *Manager) mintedTokens(name string) (map[string]mintedToken, error) {
-	b, err := os.ReadFile(filepath.Join(m.file(name, forgeDir), tokensFile))
+	b, err := os.ReadFile(filepath.Join(m.vm(name).path(forgeDir), tokensFile))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -285,7 +285,7 @@ func (m *Manager) pushForges(ctx context.Context, r agents.Remote, s *State, gcr
 	}
 	for _, rs := range s.Repos {
 		if rs.Alias != "" {
-			key, err := os.ReadFile(filepath.Join(m.file(s.Name, forgeDir), rs.Alias))
+			key, err := os.ReadFile(filepath.Join(m.vm(s.Name).path(forgeDir), rs.Alias))
 			if err != nil {
 				return err
 			}

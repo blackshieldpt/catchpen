@@ -107,14 +107,14 @@ func (m *Manager) claimPool(name string, key poolKey) (*State, error) {
 		if !v.Ready() || keyOf(&v.State) != key {
 			continue
 		}
-		vunlock, ok, err := fsutil.TryLock(m.file(v.Name, lockFile))
+		_, vunlock, ok, err := m.vm(v.Name).tryLock()
 		if err != nil || !ok {
 			continue
 		}
 		s, err := m.Load(v.Name)
 		_, running := m.Running(v.Name)
 		// A canary hit while warming: not handed out.
-		if err != nil || !s.Pool || s.Resume != poolSnap || keyOf(s) != key || running || fileExists(m.file(v.Name, hitFile)) {
+		if err != nil || !s.Pool || s.Resume != poolSnap || keyOf(s) != key || running || m.vm(v.Name).hit() {
 			vunlock()
 			continue
 		}
@@ -142,7 +142,7 @@ func (m *Manager) claimPool(name string, key poolKey) (*State, error) {
 // takeResume decides how a claimed pool VM starts, with its lock held: from
 // its saved memory when this QEMU can load it, else a normal boot. Later
 // starts boot normally either way.
-func (m *Manager) takeResume(s *State) (*resume, error) {
+func (m *Manager) takeResume(_ heldVM, s *State) (*resume, error) {
 	snap := s.Resume
 	s.Resume = ""
 	if err := m.save(s); err != nil {
@@ -153,7 +153,7 @@ func (m *Manager) takeResume(s *State) (*resume, error) {
 		return &resume{snap: snap, machine: meta.Machine}, nil
 	}
 	m.logf("%s's saved memory is from another QEMU version: booting it instead", s.Name)
-	if err := qemu.SnapshotOffline("-d", snap, m.file(s.Name, diskFile)); err != nil {
+	if err := qemu.SnapshotOffline("-d", snap, m.vm(s.Name).path(diskFile)); err != nil {
 		m.logf("warning: removing snapshot %s of %s: %v", snap, s.Name, err)
 	}
 	_ = m.setSnapMeta(s.Name, snap, nil)
@@ -307,12 +307,12 @@ func (m *Manager) fillOne(ctx context.Context, e config.PoolEntry) (err error) {
 	if _, err := m.Snapshot(ctx, name, poolSnap, false); err != nil {
 		return err
 	}
-	unlock, err := fsutil.Lock(m.file(name, lockFile))
+	held, unlock, err := m.vm(name).lock()
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	if err := m.stopLocked(name, true); err != nil { // its memory is saved: no shutdown
+	if err := m.stopLocked(held, true); err != nil { // its memory is saved: no shutdown
 		return err
 	}
 	s, err := m.Load(name)
