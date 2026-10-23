@@ -6,7 +6,7 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ## [Unreleased]
 
-## [0.1.0-rc.1] - 2026-10-24
+## [0.1.0] - 2026-10-24
 
 ### Added
 
