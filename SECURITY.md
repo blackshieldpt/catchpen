@@ -24,8 +24,8 @@ you publish details.
 
 ## Supported versions
 
-curral has no tagged releases yet. Security fixes land on `master`; run a recent build
-of it. Once releases start, this section will list which ones get fixes.
+Only the latest release gets security fixes: they land on `master` and ship in the next
+release. Release candidates (`-rc` tags) are for testing and aren't supported.
 
 ## Threat model
 
