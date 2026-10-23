@@ -18,10 +18,11 @@ import (
 	"time"
 
 	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/curral/internal/template"
 )
 
 // Agents a task can run; "cmd" runs Spec.Cmd with the prompt on stdin.
-var Agents = []string{"claude", "opencode", "pi", "omp", "codex", "cmd"}
+var Agents = append(template.AgentNames(), "cmd")
 
 // Output modes.
 const (

@@ -12,20 +12,18 @@ import (
 
 	"github.com/blackshieldpt/curral/internal/safetar"
 	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/curral/internal/template"
 )
 
 // Agent session stores copied as transcripts, relative to the guest home.
 // Credentials (claude's .credentials.json, opencode's auth.json, pi's
 // auth.json, omp's agent.db and .env, codex's auth.json) live outside these paths.
-var transcriptPaths = []string{
-	".claude/projects",
-	".local/share/opencode/opencode.db",
-	".local/share/opencode/opencode.db-wal",
-	".local/share/opencode/opencode.db-shm",
-	".pi/agent/sessions",
-	".omp/agent/sessions",
-	".codex/sessions",
-}
+var transcriptPaths = func() (out []string) {
+	for _, d := range template.AgentDefs {
+		out = append(out, d.Transcripts...)
+	}
+	return out
+}()
 
 var transcriptLimits = safetar.Limits{Bytes: 1 << 30, Files: 200_000}
 

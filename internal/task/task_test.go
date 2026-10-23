@@ -1,6 +1,7 @@
 package task
 
 import (
+	"github.com/blackshieldpt/curral/internal/template"
 	"os"
 	"path/filepath"
 	"strings"
@@ -237,5 +238,15 @@ func TestRender(t *testing.T) {
 	}
 	if r := Render("opencode", []byte("not json")); r != "not json" {
 		t.Errorf("raw line: %q", r)
+	}
+}
+
+// Every registered agent has a task command of its own, not cmd's.
+func TestEveryAgentHasTaskCommand(t *testing.T) {
+	cmd := Command(Spec{Agent: "cmd", Cmd: "x"})
+	for _, d := range template.AgentDefs {
+		if c := Command(Spec{Agent: d.Name, Cmd: "x"}); c == cmd || strings.HasPrefix(c, "CURRAL_PROMPT_FILE=") {
+			t.Errorf("%s runs as cmd: %s", d.Name, c)
+		}
 	}
 }

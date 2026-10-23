@@ -831,9 +831,9 @@ func agentHosts(t *template.Template) []string {
 			hosts = append(hosts, "api.openai.com:443")
 		}
 	}
-	for _, a := range []*template.Agent{t.Agents.OpenCode, t.Agents.Pi, t.Agents.OMP} {
-		if a != nil {
-			for _, k := range a.Keys {
+	for _, d := range template.AgentDefs {
+		if a := *d.Get(&t.Agents); a != nil {
+			for _, k := range a.Keys { // only agents without auth take keys
 				hosts = append(hosts, template.Providers[k].Host+":443")
 			}
 		}

@@ -14,6 +14,7 @@ import (
 	"github.com/blackshieldpt/curral/internal/audit"
 	"github.com/blackshieldpt/curral/internal/record"
 	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/curral/internal/template"
 	"github.com/blackshieldpt/curral/internal/vm"
 )
 
@@ -47,12 +48,18 @@ func sshCmd() *cobra.Command {
 }
 
 func runCmd() *cobra.Command {
+	var yolo []string
+	for _, d := range template.AgentDefs {
+		if d.Yolo != "" {
+			yolo = append(yolo, d.Name)
+		}
+	}
 	return &cobra.Command{
-		Use:   "run <name> claude|opencode|pi|omp|codex [-- agent args...]",
+		Use:   "run <name> " + strings.Join(template.AgentNames(), "|") + " [-- agent args...]",
 		Short: "Start (or reattach to) an agent in a guest tmux session",
 		Long: `The agent runs in a guest tmux session named after it, in the VM's repo when it has
 exactly one (else /workspace), so it survives disconnects. Guest tmux prefix: C-a.
-Template agents.<name>.yolo: true starts claude/opencode/codex without permission prompts.`,
+Template agents.<name>.yolo: true starts ` + strings.Join(yolo, "/") + ` without permission prompts.`,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()

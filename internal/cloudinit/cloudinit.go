@@ -3,6 +3,7 @@ package cloudinit
 
 import (
 	"bytes"
+	"cmp"
 	_ "embed"
 	"encoding/base64"
 	"fmt"
@@ -130,22 +131,15 @@ func ompTag(a *tpl.Agent) string {
 // agentInstall returns the npm packages, binaries to smoke-test and static
 // environment for the template's agents.
 func agentInstall(a tpl.Agents) (pkgs, bins, env []string) {
-	add := func(ag *tpl.Agent, pkg, bin string, e ...string) {
-		if ag == nil {
-			return
+	for _, d := range tpl.AgentDefs {
+		ag := *d.Get(&a)
+		if ag == nil || d.Package == "" {
+			continue
 		}
-		v := ag.Version
-		if v == "" {
-			v = "latest"
-		}
-		pkgs = append(pkgs, pkg+"@"+v)
-		bins = append(bins, bin)
-		env = append(env, e...)
+		pkgs = append(pkgs, d.Package+"@"+cmp.Or(ag.Version, "latest"))
+		bins = append(bins, d.Name)
+		env = append(env, d.Env...)
 	}
-	add(a.Claude, "@anthropic-ai/claude-code", "claude", "DISABLE_AUTOUPDATER=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1")
-	add(a.OpenCode, "opencode-ai", "opencode", "OPENCODE_DISABLE_AUTOUPDATE=1", "OPENCODE_DISABLE_MODELS_FETCH=1", "OPENCODE_DISABLE_SHARE=1")
-	add(a.Pi, "@earendil-works/pi-coding-agent", "pi", "PI_OFFLINE=1", "PI_SKIP_VERSION_CHECK=1", "PI_TELEMETRY=0")
-	add(a.Codex, "@openai/codex", "codex") // update checks and telemetry are off in its config.toml
 	return pkgs, bins, env
 }
 

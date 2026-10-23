@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -587,6 +588,36 @@ func TestPushCodex(t *testing.T) {
 		}
 		if b, _ := os.ReadFile(filepath.Join(home, codexConfig)); !strings.Contains(string(b), "check_for_update_on_startup = false") {
 			t.Errorf("%s: config not written:\n%.200s", name, b)
+		}
+	}
+}
+
+// Every registered agent is configured by Push and gets curral's
+// notification hook.
+func TestEveryAgentPushedWithHook(t *testing.T) {
+	if len(pushers) != len(template.AgentDefs) {
+		t.Errorf("%d pushers for %d agents", len(pushers), len(template.AgentDefs))
+	}
+	for _, d := range template.AgentDefs {
+		if pushers[d.Name] == nil {
+			t.Errorf("no pusher for %s", d.Name)
+			continue
+		}
+		home := t.TempDir()
+		var s Spec
+		*d.Get(&s.Agents) = &template.Agent{Auth: map[string]string{"codex": template.CodexNone}[d.Name]}
+		if _, err := Push(context.Background(), localRemote{home}, s, fakeSecrets{}); err != nil {
+			t.Fatalf("%s: %v", d.Name, err)
+		}
+		found := false
+		filepath.WalkDir(home, func(path string, e fs.DirEntry, err error) error {
+			if b, _ := os.ReadFile(path); err == nil && !e.IsDir() && strings.Contains(string(b), notifyURL) {
+				found = true
+			}
+			return nil
+		})
+		if !found {
+			t.Errorf("%s: no notification hook pushed", d.Name)
 		}
 	}
 }

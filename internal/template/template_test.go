@@ -3,6 +3,7 @@ package template
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -317,6 +318,26 @@ func TestParseInterval(t *testing.T) {
 	for _, s := range []string{"30s", "-1h", "soon", "0"} {
 		if _, err := ParseInterval(s); err == nil {
 			t.Errorf("ParseInterval(%q) accepted", s)
+		}
+	}
+}
+
+// Every Agents field is in the registry under its YAML name, and the other
+// way round.
+func TestAgentRegistryMatchesAgents(t *testing.T) {
+	typ := reflect.TypeOf(Agents{})
+	if typ.NumField() != len(AgentDefs) {
+		t.Fatalf("%d Agents fields, %d registered agents", typ.NumField(), len(AgentDefs))
+	}
+	for i, d := range AgentDefs {
+		var a Agents
+		*d.Get(&a) = &Agent{}
+		v := reflect.ValueOf(a)
+		for j := range typ.NumField() {
+			name, _, _ := strings.Cut(typ.Field(j).Tag.Get("yaml"), ",")
+			if set := !v.Field(j).IsNil(); set != (name == d.Name) {
+				t.Errorf("agent %d (%s): field %s set %v", i, d.Name, typ.Field(j).Name, set)
+			}
 		}
 	}
 }

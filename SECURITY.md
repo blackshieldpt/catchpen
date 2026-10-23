@@ -18,8 +18,8 @@ Include what you can of:
 - the steps to reproduce, and what the guest or attacker gains;
 - whether you've seen it exploited.
 
-We aim to acknowledge reports within 5 working days and to agree a disclosure date with
-you once the issue is understood. Please give us a reasonable time to ship a fix before
+We don't commit to a response time. Once the issue is understood, we'll agree a
+disclosure date with you. Please give us a reasonable time to ship a fix before
 you publish details.
 
 ## Supported versions

@@ -78,6 +78,20 @@ type pusher struct {
 	sec    Secrets
 	res    Result
 	missed map[string]bool
+
+	claudeKey string // Claude's API key, in api-key mode
+}
+
+// pushers configure each agent in the guest: its settings, MCP servers and,
+// for some, its credentials.
+var pushers = map[string]func(p *pusher, a *template.Agent, servers []template.MCP) error{
+	"claude": func(p *pusher, _ *template.Agent, servers []template.MCP) error {
+		return p.claude(p.claudeKey, servers)
+	},
+	"opencode": (*pusher).opencode,
+	"pi":       (*pusher).pi,
+	"omp":      (*pusher).omp,
+	"codex":    (*pusher).codex,
 }
 
 // resolve returns a literal value, or the secret it references.
@@ -126,7 +140,6 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 	for k, v := range s.ExtraEnv {
 		env[k] = v
 	}
-	var claudeKey string
 	if c := s.Agents.Claude; c != nil {
 		name := claudeOAuthEnv
 		if c.Auth == template.ClaudeAPIKey {
@@ -140,7 +153,7 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 		if ok {
 			claudeEnv[name] = v
 			if name == anthropicKeyEnv {
-				claudeKey = v
+				p.claudeKey = v
 			}
 		} else if name == claudeOAuthEnv {
 			p.warn("claude: no %s on the host; run `claude setup-token` and store the token (secrets.env or config.yaml secrets)", claudeOAuthEnv)
@@ -169,29 +182,11 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 	if err != nil {
 		return p.res, err
 	}
-	if s.Agents.Claude != nil {
-		if err := p.claude(claudeKey, servers); err != nil {
-			return p.res, err
-		}
-	}
-	if a := s.Agents.OpenCode; a != nil {
-		if err := p.opencode(a, servers); err != nil {
-			return p.res, err
-		}
-	}
-	if a := s.Agents.Pi; a != nil {
-		if err := p.pi(a, servers); err != nil {
-			return p.res, err
-		}
-	}
-	if a := s.Agents.OMP; a != nil {
-		if err := p.omp(a, servers); err != nil {
-			return p.res, err
-		}
-	}
-	if a := s.Agents.Codex; a != nil {
-		if err := p.codex(a, servers); err != nil {
-			return p.res, err
+	for _, d := range template.AgentDefs {
+		if a := *d.Get(&s.Agents); a != nil {
+			if err := pushers[d.Name](p, a, servers); err != nil {
+				return p.res, err
+			}
 		}
 	}
 	if s.Sync.Git() && (s.GitName != "" || s.GitEmail != "") {

@@ -31,22 +31,11 @@ const (
 // RunCommand is the guest command for `curral run`: the agent in a tmux
 // session of its own name (reattached if it exists), in the VM's repo.
 func RunCommand(s *State, agent string, args []string) (string, error) {
-	var a *template.Agent
-	yolo := "" // the agent's skip-permission flag
-	switch agent {
-	case "claude":
-		a, yolo = s.Agents.Claude, "--dangerously-skip-permissions"
-	case "opencode":
-		a, yolo = s.Agents.OpenCode, "--auto"
-	case "pi":
-		a = s.Agents.Pi
-	case "omp":
-		a = s.Agents.OMP
-	case "codex":
-		a, yolo = s.Agents.Codex, "--yolo"
-	default:
-		return "", fmt.Errorf("unknown agent %q (claude, opencode, pi, omp or codex)", agent)
+	d, ok := template.AgentDefByName(agent)
+	if !ok {
+		return "", fmt.Errorf("unknown agent %q (%s)", agent, strings.Join(template.AgentNames(), ", "))
 	}
+	a, yolo := s.Agents.Get(agent), d.Yolo // yolo: the agent's skip-permission flag
 	if a == nil {
 		return "", fmt.Errorf("%s is not installed in %s (add agents.%s to its template)", agent, s.Name, agent)
 	}

@@ -33,6 +33,23 @@ some boot several VMs. Some run a Gitea server to test forges.
 
 [PLAN.md](../PLAN.md) has the design and its history.
 
+## Adding an agent
+
+1. Add its field to `Agents` and its entry to `AgentDefs` in
+   `internal/template/registry.go`: npm package and environment, whether it needs Node,
+   its auth modes (or provider keys), its yolo flag and its transcript paths. Merging,
+   validation, the install, `curral run`, tasks' agent list, transcripts and the CLI
+   help follow from it.
+2. Write its push in `internal/agents` (settings, MCP servers, credentials, the
+   notification hook) and add it to `pushers`.
+3. Add its task command and event-stream parsing to `internal/task/agent.go`, and the
+   API hosts it needs to `agentHosts` in `internal/vm/vm.go` if it doesn't take
+   provider keys.
+4. Document it in `docs/agents.md`.
+
+Tests fail while the registry, `Agents`, `pushers`, the hook or the task command are
+out of step.
+
 ## Conventions
 
 - Treat everything from the guest as hostile: output, files, git objects, notifications.
