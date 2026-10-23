@@ -1017,11 +1017,12 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 		dropClaimed()
 		return nil, fmt.Errorf("%s: %w (VM stopped; retry with --debug to keep it running and log the console)", name, err)
 	}
-	c, err := m.keys(name).WaitReady(wctx, rt.SSHPort, s.User, alive)
+	g, err := m.waitGuest(ctx, wctx, name, rt.SSHPort, s.User, alive)
 	if err != nil {
 		return failed(err)
 	}
-	defer c.Close()
+	defer g.Close()
+	c := g.Client
 	if err := m.startAgent(ctx, s); err != nil {
 		return failed(fmt.Errorf("ssh agent: %w", err))
 	}
@@ -1046,7 +1047,7 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 	if s.Pool {
 		return rt, nil
 	}
-	if err := m.push(ctx, c, s); err != nil {
+	if err := m.push(ctx, g, s); err != nil {
 		return rt, fmt.Errorf("%s is running, but pushing credentials failed: %w (retry: curral creds push %s)", name, err, name)
 	}
 	m.logf("%s is ready: curral ssh %s", name, name)
@@ -1056,20 +1057,12 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 
 // Push delivers credentials and agent config into a running VM.
 func (m *Manager) Push(ctx context.Context, name string) error {
-	s, err := m.Load(name)
+	g, s, err := m.dialGuest(ctx, name)
 	if err != nil {
 		return err
 	}
-	port, err := m.SSHPort(name)
-	if err != nil {
-		return err
-	}
-	c, err := m.keys(name).Dial(ctx, port, s.User)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-	if err := m.push(ctx, c, s); err != nil {
+	defer g.Close()
+	if err := m.push(ctx, g, s); err != nil {
 		return err
 	}
 	m.logf("pushed credentials to %s", name)
@@ -1082,8 +1075,7 @@ func (r sshRemote) Run(ctx context.Context, cmd string, stdin []byte) ([]byte, e
 	return sshx.Run(ctx, r.c, cmd, bytes.NewReader(stdin))
 }
 
-func (m *Manager) push(ctx context.Context, c *ssh.Client, s *State) error {
-	defer m.closeOnPause(ctx, s.Name, c)()
+func (m *Manager) push(ctx context.Context, g *guest, s *State) error {
 	spec := agents.Spec{Agents: s.Agents, Env: s.Env, MCP: s.MCP, Sync: s.Sync}
 	if s.Sync.Claude() {
 		spec.ClaudeDir = hostClaudeDir()
@@ -1099,7 +1091,7 @@ func (m *Manager) push(ctx context.Context, c *ssh.Client, s *State) error {
 		return err
 	}
 	spec.ExtraEnv = forge.GitHubEnv(gcreds)
-	res, err := agents.Push(ctx, sshRemote{c}, spec, m.resolver())
+	res, err := agents.Push(ctx, sshRemote{g.Client}, spec, m.resolver())
 	for _, w := range res.Warnings {
 		m.logf("warning: %s", w)
 	}
@@ -1111,7 +1103,7 @@ func (m *Manager) push(ctx context.Context, c *ssh.Client, s *State) error {
 	if err != nil {
 		return err
 	}
-	return m.pushForges(cloneCtx, sshRemote{c}, s, gcreds)
+	return m.pushForges(cloneCtx, sshRemote{g.Client}, s, gcreds)
 }
 
 func hostClaudeDir() string {

@@ -225,34 +225,3 @@ func (m *Manager) scanGit(ctx context.Context, name, dir string, args []string) 
 	}
 	return nil
 }
-
-// closeOnPause closes c when ctx ends or a canary hit pauses name: closing a
-// session doesn't end a command a paused guest never answers; closing the
-// connection does. The returned func stops watching.
-func (m *Manager) closeOnPause(ctx context.Context, name string, c *ssh.Client) func() {
-	ctx, cancel := m.cancelOnPause(ctx, name)
-	stop := context.AfterFunc(ctx, func() { c.Close() })
-	return func() { stop(); cancel() }
-}
-
-// cancelOnPause cancels ctx once a canary hit pauses name: nothing in the
-// guest answers then.
-func (m *Manager) cancelOnPause(ctx context.Context, name string) (context.Context, func()) {
-	ctx, cancel := context.WithCancel(ctx)
-	go func() {
-		tick := time.NewTicker(2 * time.Second)
-		defer tick.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-tick.C:
-				if m.Paused(name) {
-					cancel()
-					return
-				}
-			}
-		}
-	}()
-	return ctx, cancel
-}

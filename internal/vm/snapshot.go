@@ -350,24 +350,19 @@ func (m *Manager) whileStopped(ctx context.Context, name string, fn func() error
 
 // withGuest runs fn on an ssh connection to the running VM (best effort).
 func (m *Manager) withGuest(ctx context.Context, name string, fn func(c *ssh.Client)) {
-	s, err := m.Load(name)
-	if err != nil {
+	if _, err := m.Load(name); err != nil {
 		return
 	}
-	port, err := m.SSHPort(name)
-	if err != nil {
+	if _, err := m.SSHPort(name); err != nil {
 		return
 	}
-	dctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	c, err := m.keys(name).Dial(dctx, port, s.User)
+	g, _, err := m.dialGuest(ctx, name)
 	if err != nil {
 		m.logf("warning: connecting to %s: %v", name, err)
 		return
 	}
-	defer c.Close()
-	defer m.closeOnPause(ctx, name, c)()
-	fn(c)
+	defer g.Close()
+	fn(g.Client)
 }
 
 // afterResume fixes up a VM resumed from saved memory: its clock is the
@@ -384,16 +379,14 @@ func (m *Manager) afterResume(ctx context.Context, name string) error {
 	wctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	alive := func() bool { _, ok := m.Running(name); return ok }
-	c, err := m.keys(name).WaitReady(wctx, port, s.User, alive)
-	if err == nil {
-		defer m.closeOnPause(ctx, name, c)()
-	}
+	g, err := m.waitGuest(ctx, wctx, name, port, s.User, alive)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
+	defer g.Close()
+	c := g.Client
 	m.syncClock(ctx, c)
-	if err := m.push(ctx, c, s); err != nil {
+	if err := m.push(ctx, g, s); err != nil {
 		return fmt.Errorf("%s was restored, but pushing credentials failed: %w (retry: curral creds push %s)", name, err, name)
 	}
 	m.logf("%s restored", name)

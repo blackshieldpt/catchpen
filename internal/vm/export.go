@@ -100,16 +100,12 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 	if _, err := hostGitCmd(ctx, into, "rev-parse", "--git-dir"); err != nil {
 		return nil, fmt.Errorf("%s is not a git repository (use --into): %w", into, err)
 	}
-	port, err := m.SSHPort(name)
+	g, _, err := m.dialGuest(ctx, name)
 	if err != nil {
 		return nil, err
 	}
-	c, err := m.keys(name).Dial(ctx, port, s.User)
-	if err != nil {
-		return nil, err
-	}
-	defer c.Close()
-	defer m.closeOnPause(ctx, name, c)()
+	defer g.Close()
+	c := g.Client
 	dir := shQuote(forge.GuestRepo{Repo: rs.Repo}.Dir())
 	branch := o.Branch
 	if branch == "" {

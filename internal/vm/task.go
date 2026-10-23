@@ -250,20 +250,12 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 		return err
 	}
 	set(func(t *task.Task) { t.State = task.Running })
-	s, err := m.Load(t.VM)
+	g, s, err := m.dialGuest(ctx, t.VM)
 	if err != nil {
 		return err
 	}
-	port, err := m.SSHPort(t.VM)
-	if err != nil {
-		return err
-	}
-	c, err := m.keys(t.VM).Dial(ctx, port, s.User)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-	defer m.closeOnPause(ctx, t.VM, c)()
+	defer g.Close()
+	c := g.Client
 	run := func(cmd string) (string, error) {
 		out, err := sshx.Run(ctx, c, cmd, nil)
 		return strings.TrimSpace(string(out)), err

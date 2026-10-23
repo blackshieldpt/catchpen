@@ -32,20 +32,12 @@ var transcriptLimits = safetar.Limits{Bytes: 1 << 30, Files: 200_000}
 // regular files and directories are unpacked. It returns the directory, or
 // "" when there was nothing to copy.
 func (m *Manager) CopyTranscripts(ctx context.Context, name string) (string, error) {
-	s, err := m.Load(name)
+	g, _, err := m.dialGuest(ctx, name)
 	if err != nil {
 		return "", err
 	}
-	port, err := m.SSHPort(name)
-	if err != nil {
-		return "", err
-	}
-	c, err := m.keys(name).Dial(ctx, port, s.User)
-	if err != nil {
-		return "", err
-	}
-	defer c.Close()
-	defer m.closeOnPause(ctx, name, c)()
+	defer g.Close()
+	c := g.Client
 	dest := filepath.Join(m.P.Transcripts(), name, time.Now().UTC().Format("20060102-150405"))
 	if err := os.MkdirAll(dest, 0o700); err != nil {
 		return "", err
