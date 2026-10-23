@@ -102,7 +102,7 @@ func TestLoadDaemonSettings(t *testing.T) {
 	}
 	for _, bad := range []string{
 		"idle_stop: 10s\n", "rebuild: monthly\n", "pool: [{ size: 1 }]\n", "pool: [{ template: a, size: 99 }]\n",
-		"pool: [{ template: a, size: 1 }, { template: a, size: 2 }]\n", "cache_max: 20GB\n", "canary_action: destroy\n",
+		"pool: [{ template: a, size: 1 }, { template: a, size: 2 }]\n", "cache_max: 20GB\n", "cache_max: 9000000T\n", "canary_action: destroy\n",
 	} {
 		os.WriteFile(p, []byte(bad), 0o600)
 		if _, err := Load(p); err == nil {

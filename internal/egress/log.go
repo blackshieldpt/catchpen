@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/blackshieldpt/curral/internal/jsonl"
+	"github.com/blackshieldpt/curral/internal/sshx"
 )
 
 const (
@@ -48,10 +49,12 @@ func appendLog(dir string, e LogEntry) error {
 func formatEntry(line string) string {
 	var e LogEntry
 	if err := json.Unmarshal([]byte(line), &e); err != nil {
-		return line
+		return sshx.Printable(line)
 	}
+	// Hosts and reasons can come from upstreams or the guest: one line each.
+	p := func(s string) string { return strings.ReplaceAll(sshx.Printable(s), "\n", " ") }
 	s := fmt.Sprintf("%s %-5s %s  %s %s  %s", e.Time.UTC().Format(time.RFC3339),
-		strings.ToUpper(e.Action), e.VM, e.Method, net.JoinHostPort(e.Host, strconv.Itoa(e.Port)), e.Reason)
+		strings.ToUpper(p(e.Action)), p(e.VM), p(e.Method), net.JoinHostPort(p(e.Host), strconv.Itoa(e.Port)), p(e.Reason))
 	return strings.TrimRight(s, " ")
 }
 

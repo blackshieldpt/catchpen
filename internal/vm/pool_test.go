@@ -289,4 +289,22 @@ func TestPoolVMWithCanaryHitNotClaimed(t *testing.T) {
 	if got, err := m.claimPool("w1", keyOf(pool)); err != nil || got != nil {
 		t.Errorf("claimed a pool VM with a canary hit: %+v %v", got, err)
 	}
+	// Not counted as ready, so the pool refills, and kept for inspection.
+	wants, err := m.poolWants()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.recyclePool(wants, true); err != nil {
+		t.Fatal(err)
+	}
+	if vms, _ := m.PoolVMs(); len(vms) != 1 || vms[0].Ready() || !vms[0].Hit {
+		t.Errorf("pool VM with a canary hit: %+v", vms)
+	}
+	// Draining removes it too.
+	if n, err := m.DrainPool(); err != nil || n != 1 {
+		t.Errorf("drain: %d %v", n, err)
+	}
+	if vms, _ := m.PoolVMs(); len(vms) != 0 {
+		t.Errorf("after drain: %+v", vms)
+	}
 }

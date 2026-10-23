@@ -78,6 +78,13 @@ export default function (pi: any) {
 	return nil
 }
 
+// curlPost is a shell command posting data (curl's --data-binary argument,
+// shell-quoted; @- reads stdin) to the notification relay, failures ignored.
+func curlPost(data, query string) string {
+	return "curl -s -m 5 --noproxy '*' -X POST -H 'Content-Type: application/json' --data-binary " + data +
+		" '" + notifyURL + query + "' >/dev/null 2>&1 || true"
+}
+
 // claudeHooks adds curral's Notification and Stop hooks to the guest's
 // settings.json, keeping any others.
 func (p *pusher) claudeHooks() error {
@@ -89,8 +96,7 @@ func (p *pusher) claudeHooks() error {
 	if hooks == nil {
 		hooks = map[string]any{}
 	}
-	cmd := "curl -s -m 5 --noproxy '*' -X POST -H 'Content-Type: application/json' --data-binary @- '" +
-		notifyURL + "?agent=claude' >/dev/null 2>&1 || true"
+	cmd := curlPost("@-", "?agent=claude")
 	for _, ev := range []string{"Notification", "Stop"} {
 		list, _ := hooks[ev].([]any)
 		var keep []any

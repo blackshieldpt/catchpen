@@ -219,6 +219,13 @@ func TestPushAPIKeyModeAndRepush(t *testing.T) {
 	}
 }
 
+// The tests run on the host (or in a curral VM, whose base has the real
+// path): bases without the claude wrapper, unless a test says otherwise.
+func TestMain(m *testing.M) {
+	claudeReal = "/nonexistent/curral-test/claude"
+	os.Exit(m.Run())
+}
+
 // In a base that wraps claude, its token or key goes only to the wrapper's
 // file; older bases get it in the shared environment, with a warning.
 func TestPushClaudeCredentialOnlyForClaude(t *testing.T) {
@@ -359,10 +366,10 @@ func TestPushClaudeConfig(t *testing.T) {
 
 func TestPushRefusesHugeGuestJSON(t *testing.T) {
 	home := t.TempDir()
-	big := strings.Repeat(" ", maxGuestJSON+1)
+	big := strings.Repeat(" ", maxGuestDoc+1)
 	write(t, filepath.Join(home, ".claude.json"), "{"+big+"}")
 	_, err := Push(context.Background(), localRemote{home}, Spec{Agents: template.Agents{Claude: &template.Agent{}}}, fakeSecrets{})
-	if err == nil || !strings.Contains(err.Error(), ".claude.json") {
+	if err == nil || !strings.Contains(err.Error(), "~/.claude.json is over 4 MiB") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -520,7 +527,6 @@ func TestPushCodex(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(home, ".codex/auth.json")); string(b) != `{"auth_mode":"chatgpt"}` {
 		t.Errorf("chatgpt sign-in changed: %q", b)
 	}
-	home = t.TempDir()
 	// Installed only: no login, no warning, and an old API key login is dropped.
 	home = t.TempDir()
 	if _, err := Push(context.Background(), localRemote{home}, s, sec); err != nil {
@@ -537,17 +543,21 @@ func TestPushCodex(t *testing.T) {
 	}
 	// A config.toml that isn't TOML, or that would take the host's parser too
 	// deep or too long, is kept aside and replaced.
-	for name, body := range map[string]string{
-		"invalid":   "[[not toml",
-		"deep":      "a = " + strings.Repeat("[", 1<<20) + strings.Repeat("]", 1<<20),
-		"large":     strings.Repeat("# filler\n", maxCodexConfig/8),
-		"notify":    "notify = [\"my-notifier\"]\n",
-		"dotted":    strings.Repeat("a.", (maxCodexConfig-8)/2) + "a = 1\n",
-		"mcpscalar": "mcp_servers = 1\nanalytics = \"x\"\n",
+	for name, c := range map[string]struct{ body, why string }{
+		"invalid":   {"[[not toml", "was not valid TOML"},
+		"deep":      {"a = " + strings.Repeat("[", 100) + strings.Repeat("]", 100), "nests more than 64 levels"},
+		"large":     {strings.Repeat("# filler\n", maxCodexConfig/8), "is over 256 KiB"},
+		"notify":    {"notify = [\"my-notifier\"]\n", ""},
+		"dotted":    {strings.Repeat("a.", (maxCodexConfig-8)/2) + "a = 1\n", "nests more than 64 levels"},
+		"mcpscalar": {"mcp_servers = 1\nanalytics = \"x\"\n", ""},
 	} {
 		home = t.TempDir()
-		write(t, filepath.Join(home, codexConfig), body)
-		res, err = Push(context.Background(), localRemote{home}, chatgpt, sec)
+		write(t, filepath.Join(home, codexConfig), c.body)
+		spec := chatgpt
+		if name == "mcpscalar" {
+			spec = s // with MCP servers, so mcp_servers is merged into
+		}
+		res, err = Push(context.Background(), localRemote{home}, spec, sec)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -562,8 +572,13 @@ func TestPushCodex(t *testing.T) {
 			if backedUp == nil {
 				t.Errorf("%s: replaced", name)
 			}
+			cfg := map[string]any{}
+			b, _ := os.ReadFile(filepath.Join(home, codexConfig))
+			if err := toml.Unmarshal(b, &cfg); err != nil || get(cfg, "mcp_servers", "docs", "url") == nil {
+				t.Errorf("%s: MCP servers not merged in: %v\n%s", name, err, b)
+			}
 		default:
-			if backedUp != nil || !strings.Contains(w, "not valid TOML") {
+			if backedUp != nil || !strings.Contains(w, "~/"+codexConfig+" "+c.why+";") {
 				t.Errorf("%s: warnings %v", name, res.Warnings)
 			}
 			if b, _ := os.ReadFile(filepath.Join(home, codexConfig)); !strings.Contains(string(b), "sandbox_mode = 'danger-full-access'") {

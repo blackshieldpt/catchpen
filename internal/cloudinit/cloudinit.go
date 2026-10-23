@@ -29,6 +29,14 @@ const (
 	NotifyPort = 80
 )
 
+// Claude Code's token or key goes to ClaudeEnvFile (under the guest home),
+// which only the base's claude wrapper loads before running ClaudeReal.
+const (
+	ClaudeReal    = "/usr/local/lib/curral/claude"
+	ClaudeEnvFile = ".config/curral/claude.env"
+	withEnv       = "/usr/local/lib/curral/with-env"
+)
+
 const (
 	BuildOK   = "CURRAL-BUILD-OK"
 	BuildFail = "CURRAL-BUILD-FAIL"
@@ -81,25 +89,28 @@ func BuildScript(t *tpl.Template, user string, caches []string) (string, error) 
 	pkgs, bins, env := agentInstall(t.Agents)
 	var b bytes.Buffer
 	err := buildTmpl.Execute(&b, map[string]any{
-		"GH":        slices.Contains(t.Tools, "gh"),
-		"Tea":       slices.Contains(t.Tools, "tea"),
-		"AgentPkgs": pkgs,
-		"AgentBins": bins,
-		"AgentEnv":  env,
-		"Claude":    t.Agents.Claude != nil,
-		"User":      user,
-		"Packages":  t.Packages,
-		"Docker":    t.HasDocker(),
-		"Node":      t.Runtimes.Node,
-		"Go":        t.Runtimes.Go,
-		"UV":        t.Runtimes.Python == "uv",
-		"Scripts":   scripts,
-		"OMP":       ompTag(t.Agents.OMP),
-		"Proxy":     fmt.Sprintf("http://%s:%d", ProxyAddr, ProxyPort),
-		"Caches":    len(caches) > 0,
-		"CacheAddr": cache.Addr,
-		"CacheEnv":  cacheEnv(caches),
-		"CacheApt":  cacheApt(caches),
+		"GH":            slices.Contains(t.Tools, "gh"),
+		"Tea":           slices.Contains(t.Tools, "tea"),
+		"AgentPkgs":     pkgs,
+		"AgentBins":     bins,
+		"AgentEnv":      env,
+		"Claude":        t.Agents.Claude != nil,
+		"ClaudeReal":    ClaudeReal,
+		"ClaudeEnvFile": ClaudeEnvFile,
+		"WithEnv":       withEnv,
+		"User":          user,
+		"Packages":      t.Packages,
+		"Docker":        t.HasDocker(),
+		"Node":          t.Runtimes.Node,
+		"Go":            t.Runtimes.Go,
+		"UV":            t.Runtimes.Python == "uv",
+		"Scripts":       scripts,
+		"OMP":           ompTag(t.Agents.OMP),
+		"Proxy":         fmt.Sprintf("http://%s:%d", ProxyAddr, ProxyPort),
+		"Caches":        len(caches) > 0,
+		"CacheAddr":     cache.Addr,
+		"CacheEnv":      cacheEnv(caches),
+		"CacheApt":      cacheApt(caches),
 	})
 	return b.String(), err
 }
@@ -240,7 +251,7 @@ KbdInteractiveAuthentication no
 PermitRootLogin no
 AllowUsers %s
 X11Forwarding no
-# curral pushes agent credentials to ~/.ssh/environment (0600)
+# curral pushes the template's env: values to ~/.ssh/environment (0600)
 PermitUserEnvironment yes
 `
 

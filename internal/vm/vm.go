@@ -1083,6 +1083,7 @@ func (r sshRemote) Run(ctx context.Context, cmd string, stdin []byte) ([]byte, e
 }
 
 func (m *Manager) push(ctx context.Context, c *ssh.Client, s *State) error {
+	defer m.closeOnPause(ctx, s.Name, c)()
 	spec := agents.Spec{Agents: s.Agents, Env: s.Env, MCP: s.MCP, Sync: s.Sync}
 	if s.Sync.Claude() {
 		spec.ClaudeDir = hostClaudeDir()
@@ -1277,6 +1278,7 @@ type Info struct {
 	State
 	Running bool
 	Paused  bool // by a canary hit
+	Hit     bool // its canaries were used
 	Runtime *Runtime
 }
 
@@ -1298,7 +1300,7 @@ func (m *Manager) List() ([]Info, error) {
 			continue
 		}
 		rt, ok := m.Running(e.Name())
-		out = append(out, Info{State: *s, Running: ok, Paused: ok && m.Paused(e.Name()), Runtime: rt})
+		out = append(out, Info{State: *s, Running: ok, Paused: ok && m.Paused(e.Name()), Hit: fileExists(m.file(e.Name(), hitFile)), Runtime: rt})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil

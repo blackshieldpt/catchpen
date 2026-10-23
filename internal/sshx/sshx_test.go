@@ -315,3 +315,9 @@ func TestRenamePinsTheSameHostKey(t *testing.T) {
 		t.Errorf("known_hosts %q -> %q", before, after)
 	}
 }
+
+func TestPrintable(t *testing.T) {
+	if got := Printable("a\x1b[2Jb\tc\nd\u009be\u202ef\u2067g\u200fh\u061ci"); got != "a[2Jb\tc\ndefghi" {
+		t.Errorf("%q", got)
+	}
+}

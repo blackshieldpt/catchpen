@@ -168,8 +168,9 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 	stopWatch := func() {}
 	defer func() {
 		defer stopWatch()
-		// The guest's words go to the task record and notification sinks.
-		result := m.guestText(t.VM, firstLine(readFile(st.Path(id, "result.md"))), "in the task's result")
+		// The guest's words go to the task record and notification sinks;
+		// result.md was scanned when it was written.
+		result := firstLine(readFile(st.Path(id, "result.md")))
 		if err != nil {
 			if g := m.guestText(t.VM, err.Error(), "in the task's error"); g != err.Error() {
 				err = errors.New(g)
@@ -262,9 +263,7 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 		return err
 	}
 	defer c.Close()
-	// Closing a session doesn't end a command a paused guest never answers;
-	// closing the connection does.
-	defer context.AfterFunc(ctx, func() { c.Close() })()
+	defer m.closeOnPause(ctx, t.VM, c)()
 	run := func(cmd string) (string, error) {
 		out, err := sshx.Run(ctx, c, cmd, nil)
 		return strings.TrimSpace(string(out)), err
@@ -298,7 +297,8 @@ func (m *Manager) RunTask(ctx context.Context, id string) (err error) {
 	}
 	sum := task.Summarize(t.Spec.Agent, f)
 	f.Close()
-	if err := os.WriteFile(st.Path(id, "result.md"), []byte(sum.Result), 0o600); err != nil {
+	// task show, the PR body and notifications show it on the host.
+	if err := os.WriteFile(st.Path(id, "result.md"), []byte(m.guestText(t.VM, sum.Result, "in the task's result")), 0o600); err != nil {
 		return err
 	}
 	set(func(t *task.Task) { t.Usage = sum.Usage })
@@ -409,10 +409,7 @@ func (m *Manager) exportTask(ctx context.Context, c *ssh.Client, t *task.Task, c
 		if _, err := hostGitCmd(ctx, dir, "update-ref", "refs/tags/base", base); err != nil {
 			return "", err
 		}
-		if err := m.scanCommits(ctx, t.VM, dir, incoming); err != nil {
-			return "", err
-		}
-		path := st.Path(t.ID, t.ID+".mbox")
+		path := st.Path(t.ID, t.ID+".mbox") // formatPatch scans the commits
 		if err := m.formatPatch(ctx, t.VM, dir, incoming, []string{base}, path, "in the task's patches"); err != nil {
 			return "", err
 		}

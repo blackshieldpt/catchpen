@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 const (
 	upstreamIdle = 2 * time.Minute // an upstream fetch making no progress is dropped
 	roomEvery    = 8 << 20         // how often a download checks the store still has room
+	maxTokens    = 256             // registry tokens kept
 )
 
 var clientStall = 30 * time.Second // a guest not reading stops being served (the fetch goes on)
@@ -171,7 +173,7 @@ func (s *Server) serveHit(w http.ResponseWriter, r *http.Request, rt *route, pat
 	if rt.kind == "docker" {
 		w.Header().Set("Docker-Content-Digest", "sha256:"+rt.digest)
 	}
-	http.ServeContent(w, r, "", time.Time{}, f)
+	http.ServeContent(stallResponse{w, stallWriter{w, http.NewResponseController(w)}}, r, "", time.Time{}, f)
 	return true
 }
 
@@ -200,7 +202,9 @@ func (s *Server) serveStored(w http.ResponseWriter, r *http.Request, rt *route) 
 		return
 	}
 	var tmp, rd *os.File
-	if resp.StatusCode == http.StatusOK && resp.ContentLength >= 0 && s.Store.room(resp.ContentLength) {
+	enc := strings.TrimSpace(strings.Join(resp.Header.Values("Content-Encoding"), ","))
+	if resp.StatusCode == http.StatusOK && resp.ContentLength >= 0 && (enc == "" || strings.EqualFold(enc, "identity")) &&
+		s.Store.room(resp.ContentLength) {
 		if tmp, err = os.CreateTemp(filepath.Dir(path), tmpPfx+"*"); err == nil {
 			if rd, err = os.Open(tmp.Name()); err != nil {
 				tmp.Close()
@@ -209,7 +213,7 @@ func (s *Server) serveStored(w http.ResponseWriter, r *http.Request, rt *route) 
 			}
 		}
 	}
-	if tmp == nil { // not storable: an error, no length, no room
+	if tmp == nil { // not storable: an error, no length, encoded (the store keeps no Content-Encoding), no room
 		release()
 		defer resp.Body.Close()
 		relay(w, resp, "", "")
@@ -219,9 +223,9 @@ func (s *Server) serveStored(w http.ResponseWriter, r *http.Request, rt *route) 
 	d := &download{}
 	d.cond.L = &d.mu
 	s.downloads.Go(func() {
-		defer release()
 		defer resp.Body.Close()
 		d.run(s.Store, resp, tmp, rt, path)
+		release() // before trimming: others waiting on the object needn't wait for the walk
 		s.Store.trimSometimes(s.Max)
 	})
 	copyHeaders(w.Header(), resp.Header)
@@ -347,15 +351,36 @@ func copyHeaders(dst, src http.Header) {
 // relay copies resp to the guest, replacing from with to as it streams.
 func relay(w http.ResponseWriter, resp *http.Response, from, to string) {
 	copyHeaders(w.Header(), resp.Header)
+	sw := stallWriter{w, http.NewResponseController(w)}
 	if from == "" {
 		w.WriteHeader(resp.StatusCode)
-		_, _ = io.Copy(w, resp.Body)
+		_, _ = io.Copy(sw, resp.Body)
 		return
 	}
 	w.Header().Del("Content-Length") // the body changes length
 	w.WriteHeader(resp.StatusCode)
-	_ = replace(w, resp.Body, []byte(from), []byte(to))
+	_ = replace(sw, resp.Body, []byte(from), []byte(to))
 }
+
+// stallWriter gives each write to the guest clientStall to complete.
+type stallWriter struct {
+	w  io.Writer
+	rc *http.ResponseController
+}
+
+func (s stallWriter) Write(p []byte) (int, error) {
+	_ = s.rc.SetWriteDeadline(time.Now().Add(clientStall))
+	return s.w.Write(p)
+}
+
+// stallResponse writes through a stallWriter; it hides the ResponseWriter's
+// ReadFrom, so a copy is made in small writes, each with its deadline.
+type stallResponse struct {
+	http.ResponseWriter
+	sw stallWriter
+}
+
+func (s stallResponse) Write(p []byte) (int, error) { return s.sw.Write(p) }
 
 // replace copies src to dst with every from replaced by to, holding back
 // only what may be the start of a from split across reads.
@@ -445,6 +470,9 @@ func (s *Server) fetch(ctx context.Context, r *http.Request, rt *route, hdrs []s
 		}
 		if s.tokens == nil {
 			s.tokens = map[string]string{}
+		}
+		if len(s.tokens) >= maxTokens { // repositories are the guest's to name
+			clear(s.tokens)
 		}
 		s.tokens[repo] = tok
 	}

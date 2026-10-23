@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,6 +27,9 @@ func gitRun(t *testing.T, dir string, args ...string) {
 }
 
 func TestCanariesPlantedAndScanned(t *testing.T) {
+	// Not the developer's git config (signing, hooks) until the test sets one.
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	m := poolManager(t)
 	writeFile(t, filepath.Join(m.P.Templates(), "ag.yaml"), "extends: minimal\nruntimes: { node: \"24\" }\nagents:\n  claude: {}\nidle_stop: 2h\ncanaries: [git, env]\n")
 	s, err := m.Create(context.Background(), "c1", CreateOpts{Template: "ag"})
@@ -168,6 +172,12 @@ func TestCanariesPlantedAndScanned(t *testing.T) {
 	if err := m.scanCommits(context.Background(), "c1", repo, "refs/curral-incoming/c1/delta"); !errors.Is(err, ErrCanary) {
 		t.Errorf("delta commit: %v", err)
 	}
+	// formatPatch scans the commits it exports itself, whatever else the
+	// host repository has.
+	halves, _ := exec.Command("git", "-C", repo, "rev-parse", "refs/curral/c1/halves").Output()
+	if err := m.formatPatch(context.Background(), "c1", repo, "refs/curral-incoming/c1/delta", strings.Fields(string(halves)), patch, "in patches"); !errors.Is(err, ErrCanary) || fileExists(patch) {
+		t.Errorf("delta patch: %v, written %v", err, fileExists(patch))
+	}
 	mainID, _ := exec.Command("git", "-C", repo, "rev-parse", "main").Output()
 	if err := m.formatPatch(context.Background(), "c1", repo, "refs/curral/c1/clean", strings.Fields(string(mainID)), patch, "in patches"); err != nil {
 		t.Errorf("clean patch: %v", err)
@@ -270,5 +280,38 @@ func TestGuestText(t *testing.T) {
 	writeFile(t, m.file("g1", canary.File), "{")
 	if got := m.guestText("g1", "fine", "x"); !strings.Contains(got, "couldn't be read") {
 		t.Errorf("unreadable canaries: %q", got)
+	}
+}
+
+// canary_action stop stops the VM; a pause that can't reach QMP stops it
+// rather than leave it running.
+func TestCanaryHitStops(t *testing.T) {
+	for _, action := range []string{config.CanaryStop, config.CanaryPause} {
+		m := testManager(t)
+		m.Cfg.CanaryAction = action
+		fakeQEMU(t, m, "h1", 512) // with no QMP socket
+		m.CanaryHit("h1", &canary.Canary{Kind: "git"}, "in a test")
+		if _, ok := m.Running("h1"); ok || m.Paused("h1") || !fileExists(m.file("h1", hitFile)) {
+			t.Errorf("%s: running %v, paused %v, hit recorded %v", action, ok, m.Paused("h1"), fileExists(m.file("h1", hitFile)))
+		}
+		if b, _ := os.ReadFile(m.P.Audit()); !strings.Contains(string(b), `"action":"`+action+`"`) || !strings.Contains(string(b), `"vm.stop"`) {
+			t.Errorf("%s: audit log:\n%s", action, b)
+		}
+	}
+}
+
+// Incoming refs of dead pulls and older versions go; a live pull's stays.
+func TestPruneIncoming(t *testing.T) {
+	repo := t.TempDir()
+	gitRun(t, repo, "init", "-q")
+	gitRun(t, repo, "commit", "-q", "--allow-empty", "-m", "x")
+	live := fmt.Sprintf("refs/curral-incoming/%d-1/vm/main", os.Getpid())
+	for _, ref := range []string{live, "refs/curral-incoming/999999999-1/vm/main", "refs/curral-incoming/vm/main"} {
+		gitRun(t, repo, "update-ref", ref, "HEAD")
+	}
+	pruneIncoming(context.Background(), repo)
+	out, _ := exec.Command("git", "-C", repo, "for-each-ref", "--format=%(refname)", "refs/curral-incoming/").Output()
+	if strings.TrimSpace(string(out)) != live {
+		t.Errorf("left: %q", out)
 	}
 }

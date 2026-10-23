@@ -26,16 +26,18 @@ The host keeps each VM's values in `vms/<name>/canaries.json`.
 
 - a connection to a canary host through the egress proxy, allowlisted or not;
 - a canary value in a plain-HTTP request's line or headers (not its body), or in a
-  package cache request;
+  package cache request, including percent-encoded in the URL, in URL user info and in
+  `Basic` credentials;
 - a canary value or host (hosts in any letter case) in what leaves the VM through
   curral:
   - the commits that `pull`, `pr` and tasks bring out, including headers, author and
     committer, messages (as stored and as re-encoded to UTF-8), root commits, merges
     and binary files;
   - branch names;
-  - patches, which are made on the host from the scanned commits;
+  - patches, which are made on the host from the commits they export, scanned first;
   - a PR's title and body;
-  - a task's result and an agent's notification text.
+  - a task's whole result (`curral task show`, its PR body and notifications) and an
+    agent's notification text.
 
 ## What happens on a hit
 
@@ -52,6 +54,8 @@ The host keeps each VM's values in `vms/<name>/canaries.json`.
    - `pause` freezes the VM as it was, for inspection. `curral ls` shows it `paused`,
      and `ssh`, `run`, `attach` and the like refuse it until you run
      `curral resume <name>`, which also sets the guest clock.
+   If the VM can't be paused (QEMU's control socket is busy, as during
+     `curral snapshot`), it is stopped instead.
    - `stop` powers it off at once.
    - `log` only records the hit.
 
@@ -61,7 +65,8 @@ Tasks and the pool react on top of that:
 - A task VM with any canary hit is kept for inspection, whatever `canary_action` did.
   While it runs (paused included), it counts against the task budget
   (`tasks.max_vms`, `tasks.max_memory`).
-- A pool VM with a hit is never handed out.
+- A pool VM with a hit is never handed out, nor counted in the pool: it's kept for
+  inspection, shown in `curral pool ls` as `canary hit`, until you destroy it.
 
 If a VM's `canaries.json` can't be read, its proxy, cache and exports refuse everything,
 and its notifications and task results are withheld.
@@ -77,7 +82,8 @@ and its notifications and task results are withheld.
 
 ## What goes unseen
 
-- Values sent encoded, or over HTTPS to an allowed host.
+- Values sent encoded in other ways (base64 in a body, say), or over HTTPS to an
+  allowed host.
 - Clients that don't use the proxy (database drivers for the `DATABASE_URL`, Node's
   `fetch`). Their connections just fail.
 - Network use in VMs with `egress: open` or `egress: none`. Their exports,

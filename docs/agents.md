@@ -115,7 +115,9 @@ update checks, analytics, feedback and metrics off, credentials in `auth.json` r
 than a keyring, the notification hook (replacing a `notify` of your own, with a
 warning), and the template's MCP servers. Comments in the file aren't kept. curral parses
 the file on the host, so one that isn't valid TOML, is over 256 KiB or nests more than 64
-levels is saved as `config.toml.curral-bak` and replaced.
+levels is saved as `config.toml.curral-bak` and replaced, with a warning saying which.
+curral doesn't read back any agent config file over 4 MiB: the push fails until you move
+it aside in the VM.
 
 ## Environment
 

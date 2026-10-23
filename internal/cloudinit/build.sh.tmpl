@@ -117,6 +117,21 @@ chmod 0755 /usr/local/bin/tea
 rm -f /tmp/tea.xz /tmp/tea.sha256
 tea --version
 {{- end}}
+
+# with-env FILE CMD...: CMD with FILE's NAME=value lines in its environment.
+install -d -m 0755 /usr/local/lib/curral
+cat > {{.WithEnv}} <<'CURRAL_SCRIPT'
+#!/bin/sh
+f=$1
+shift
+if [ -r "$f" ]; then
+  while IFS= read -r l; do
+    case $l in ''|'#'*) ;; *=*) export "$l" ;; esac
+  done < "$f"
+fi
+exec "$@"
+CURRAL_SCRIPT
+chmod 0755 {{.WithEnv}}
 {{- if .AgentPkgs}}
 
 log "installing agents"
@@ -125,21 +140,14 @@ npm install -g --no-fund --no-audit --loglevel=error {{join .AgentPkgs " "}}
 {{.}} --version
 {{- end}}
 {{- if .Claude}}
-# curral pushes Claude Code's token or key to ~/.config/curral/claude.env, and
-# only claude loads it: other agents and sessions don't get it in their
-# environment.
+# curral pushes Claude Code's token or key to ~/{{.ClaudeEnvFile}}, and only
+# claude loads it: other agents and sessions don't get it in their environment.
 bin=$(command -v claude)
-install -d -m 0755 /usr/local/lib/curral
-ln -sfn "$(readlink -f "$bin")" /usr/local/lib/curral/claude
+ln -sfn "$(readlink -f "$bin")" {{.ClaudeReal}}
 rm -f "$bin"
 cat > "$bin" <<'CURRAL_SCRIPT'
 #!/bin/sh
-if [ -r "$HOME/.config/curral/claude.env" ]; then
-  while IFS= read -r l; do
-    case $l in ''|'#'*) ;; *=*) export "$l" ;; esac
-  done < "$HOME/.config/curral/claude.env"
-fi
-exec /usr/local/lib/curral/claude "$@"
+exec {{.WithEnv}} "$HOME/{{.ClaudeEnvFile}}" {{.ClaudeReal}} "$@"
 CURRAL_SCRIPT
 chmod 0755 "$bin"
 claude --version
@@ -184,12 +192,7 @@ bash "/var/lib/curral/build/scripts/{{.}}"
 # still gives them the environment pushed at the latest start.
 cat > /usr/local/bin/curral-env <<'CURRAL_SCRIPT'
 #!/bin/sh
-if [ -r "$HOME/.ssh/environment" ]; then
-  while IFS= read -r l; do
-    case $l in ''|'#'*) ;; *=*) export "$l" ;; esac
-  done < "$HOME/.ssh/environment"
-fi
-exec "$@"
+exec {{.WithEnv}} "$HOME/.ssh/environment" "$@"
 CURRAL_SCRIPT
 chmod 755 /usr/local/bin/curral-env
 # Prefix C-a so the guest's tmux doesn't clash with a host tmux on C-b.

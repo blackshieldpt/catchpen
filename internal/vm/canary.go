@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -37,7 +36,17 @@ func (m *Manager) CanaryHit(name string, c *canary.Canary, where string) {
 	var err error
 	switch action {
 	case config.CanaryPause:
-		err = m.pause(name, c, where)
+		if err = m.pause(name, c, where); err != nil {
+			// A VM that can't be paused (its QMP socket busy, as during a
+			// snapshot) is stopped instead of left running.
+			if _, running := m.Running(name); !running {
+				then, err = "found it not running", nil
+			} else if serr := m.Stop(name, true); serr != nil {
+				err = errors.Join(err, serr)
+			} else {
+				then, err = "couldn't pause it ("+err.Error()+"), so stopped it", nil
+			}
+		}
 	case config.CanaryStop:
 		err = m.Stop(name, true)
 	}
@@ -56,15 +65,34 @@ func (m *Manager) CanaryHit(name string, c *canary.Canary, where string) {
 }
 
 func (m *Manager) pause(name string, c *canary.Canary, where string) error {
-	q, err := qemu.DialQMP(m.file(name, qmpSock), 5*time.Second)
+	// QMP takes one client at a time, and each guest connection is its own
+	// process: another hit may hold it for a moment.
+	sock := m.file(name, qmpSock)
+	var q *qemu.QMP
+	var err error
+	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(250 * time.Millisecond) {
+		q, err = qemu.DialQMP(sock, 5*time.Second)
+		if _, serr := os.Stat(sock); err == nil || serr != nil || time.Now().After(deadline) {
+			break
+		}
+	}
 	if err != nil {
 		return err
 	}
 	defer q.Close()
+	if m.Paused(name) {
+		return nil // by an earlier hit
+	}
 	if _, err := q.Execute("stop", nil); err != nil {
 		return err
 	}
-	return writeJSON(m.file(name, pausedFile), map[string]any{"kind": c.Kind, "where": where, "time": time.Now().UTC()})
+	// Marked while QMP is still held, so resume can't come in between; a VM
+	// that can't be marked couldn't be resumed, so it runs on.
+	if err := writeJSON(m.file(name, pausedFile), map[string]any{"kind": c.Kind, "where": where, "time": time.Now().UTC()}); err != nil {
+		_, _ = q.Execute("cont", nil)
+		return err
+	}
+	return nil
 }
 
 // Paused reports whether a canary hit paused the VM.
@@ -151,6 +179,11 @@ func (m *Manager) scanWith(name, what string, scan func([]canary.Canary) (*canar
 // scanCommits scans the commits ref brings into the host repository dir
 // (headers, messages and diffs) for name's canaries.
 func (m *Manager) scanCommits(ctx context.Context, name, dir, ref string) error {
+	return m.scanRevs(ctx, name, dir, []string{ref, "--not", "--exclude=refs/curral*", "--all"})
+}
+
+// scanRevs scans the commits revs (git log arguments) name in dir.
+func (m *Manager) scanRevs(ctx context.Context, name, dir string, revs []string) error {
 	if cs, err := canary.Load(m.dir(name)); err != nil || len(cs) == 0 {
 		return err
 	}
@@ -159,13 +192,12 @@ func (m *Manager) scanCommits(ctx context.Context, name, dir, ref string) error 
 	// included; nothing from the user's config that runs programs on guest
 	// data or changes the output. Then the messages and names as re-encoded
 	// to UTF-8, as format-patch and forges show them.
-	not := []string{ref, "--not", "--exclude=refs/curral*", "--all"}
 	for _, args := range [][]string{
 		{"-c", "log.showRoot=true", "log", "-p", "--diff-merges=separate", "--text", "--no-ext-diff", "--no-textconv",
 			"--no-color", "--encoding=none", "--pretty=raw"},
 		{"log", "--no-color", "--encoding=UTF-8", "--format=%an%n%ae%n%cn%n%ce%n%B"},
 	} {
-		if err := m.scanGit(ctx, name, dir, append(args, not...)); err != nil {
+		if err := m.scanGit(ctx, name, dir, append(args, revs...)); err != nil {
 			return err
 		}
 	}
@@ -175,7 +207,7 @@ func (m *Manager) scanCommits(ctx context.Context, name, dir, ref string) error 
 func (m *Manager) scanGit(ctx context.Context, name, dir string, args []string) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir, "-c", "core.fsmonitor=false", "-c", "log.showSignature=false"}, args...)...)
+	cmd := hostGitExec(ctx, dir, append([]string{"-c", "log.showSignature=false"}, args...)...)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
@@ -192,6 +224,15 @@ func (m *Manager) scanGit(ctx context.Context, name, dir string, args []string) 
 		return fmt.Errorf("scanning the pulled commits: %w", err)
 	}
 	return nil
+}
+
+// closeOnPause closes c when ctx ends or a canary hit pauses name: closing a
+// session doesn't end a command a paused guest never answers; closing the
+// connection does. The returned func stops watching.
+func (m *Manager) closeOnPause(ctx context.Context, name string, c *ssh.Client) func() {
+	ctx, cancel := m.cancelOnPause(ctx, name)
+	stop := context.AfterFunc(ctx, func() { c.Close() })
+	return func() { stop(); cancel() }
 }
 
 // cancelOnPause cancels ctx once a canary hit pauses name: nothing in the

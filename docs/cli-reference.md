@@ -261,7 +261,7 @@ See [snapshots.md](snapshots.md); `reset`, `rebase` and `gc` are under VM lifecy
 | `curral daemon install` | Install and start the systemd user service (`journalctl --user -u curral`). |
 | `curral daemon uninstall` | Stop and remove the service. |
 | `curral daemon status` | Show whether the daemon runs. |
-| `curral pool ls` | List pool VMs (`filling` or `ready`). |
+| `curral pool ls` | List pool VMs (`filling`, `ready`, or `canary hit`: kept for inspection). |
 | `curral pool fill` | Replace stale pool VMs and create missing ones. |
 | `curral pool drain` | Destroy all pool VMs. |
 

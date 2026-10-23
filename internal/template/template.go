@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -414,17 +415,13 @@ func ParseSize(s string) (int64, error) {
 	if m == nil {
 		return 0, fmt.Errorf("invalid size %q (use e.g. 512M, 8G)", s)
 	}
-	n, _ := strconv.ParseInt(m[1], 10, 64)
-	switch m[2] {
-	case "G":
-		n <<= 10
-	case "T":
-		n <<= 20
-	}
-	if n <= 0 {
+	n, err := strconv.ParseInt(m[1], 10, 64)
+	shift := map[string]uint{"G": 10, "T": 20}[m[2]]
+	// Callers turn MiB into bytes: that must fit too.
+	if err != nil || n <= 0 || n > math.MaxInt64>>(20+shift) {
 		return 0, fmt.Errorf("invalid size %q", s)
 	}
-	return n, nil
+	return n << shift, nil
 }
 
 // YAML renders the resolved template (for `template show`).

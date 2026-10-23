@@ -51,6 +51,8 @@ the agent user has passwordless sudo inside it.
   tunnels (10 min), and accepts only standard HTTP methods. Each guest connection,
   rejected ones included, starts one short-lived `curral egress-stdio` process (about
   3 ms and 11 MiB RSS each, so at most about 1.4 GiB per VM at the connection cap).
+  The package caches have their own cap of 128 connections and `curral cache-stdio`
+  processes per VM, so about twice that with both in use.
 - A connection that is allowed but whose log entry can't be written is refused.
   `egress.log` rotates at 32 MiB, keeping one old file, so a guest making many denied
   requests can push older entries out.

@@ -12,8 +12,9 @@ yet; everything below is on `master`, newest first.
   it in with `OPENAI_API_KEY` at each start; `auth: chatgpt` leaves the sign-in to
   `codex login --device-auth` inside each VM; `auth: none` installs it with no
   credentials. The `default` template installs it with `none`, so its base is rebuilt.
-  `curral run <vm> codex`, `curral task run --agent codex`, notifications, transcripts
-  and MCP servers (not SSE ones) work as for the other agents.
+  `curral run <vm> codex`, `curral task run --agent codex` (with `auth: api-key`),
+  notifications, transcripts and MCP servers (not SSE ones) work as for the other
+  agents.
 
 ### Security
 
@@ -37,12 +38,36 @@ yet; everything below is on `master`, newest first.
   everything, and its notifications and task results are withheld.
 - Notifications and task results carrying a decoy are withheld.
 - The package caches store only paths in canonical form.
+- A task's whole result is scanned for canaries, not only its first line, and
+  `curral task show` prints it withheld when it carries a decoy.
+- Patch exports scan exactly the commits they export: `pull --patches` included commits
+  the host already had, which the pull's scan skipped.
+- Canary matching also decodes percent-encoded URLs, URL user info and `Basic`
+  credentials.
+- A canary hit on a VM that can't be paused (its QEMU control socket busy, as during a
+  snapshot) stops it instead of leaving it running. Hits arriving together wait for
+  each other rather than racing for the control socket.
+- The package caches drop a guest that stops reading on every path, cap the Docker
+  tokens they keep per connection, and don't store encoded responses.
+- `curral egress log` strips control characters and newlines from hosts and reasons,
+  and guest text shown on the host drops bidi controls.
+- go-toml is updated to v2.4.3.
 
 ### Fixed
 
 - A task whose VM a canary hit paused now fails at once instead of hanging on SSH to
   the frozen guest.
 - Other findings from a review of the canary, cache, task and omp work.
+- Host operations on a guest (exports, credential pushes, transcripts, clock syncs) no
+  longer hang when a canary hit pauses the VM mid-way.
+- A pool VM with a canary hit no longer fills a pool slot forever.
+- Concurrent pulls of the same branch can't swap in each other's unscanned commits,
+  and refs left by a pull that died are removed by the next one.
+- Copying transcripts no longer reports a failure after copying everything (tar's
+  end-of-archive padding hit a closed pipe).
+- A `cache_max` (or any size) too large to count in bytes is refused, not wrapped
+  negative, which made `curral gc` empty the cache.
+- An agent config file over 4 MiB in the VM fails the push with a message saying so.
 
 ## 2026-10-21: Phase 6, canaries and oh-my-pi
 

@@ -9,7 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/blackshieldpt/curral/internal/audit"
@@ -60,10 +62,15 @@ func (s *State) repo(ref string) (RepoState, error) {
 	return RepoState{}, fmt.Errorf("%s has no repo %q", s.Name, ref)
 }
 
-func hostGitCmd(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	// No hooks, no fsmonitor; reject malformed objects from the guest.
+// hostGitExec is a git command in the host repository dir: no hooks, no
+// fsmonitor; malformed objects from the guest rejected.
+func hostGitExec(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	base := []string{"-C", dir, "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "transfer.fsckObjects=true"}
-	cmd := exec.CommandContext(ctx, "git", append(base, args...)...)
+	return exec.CommandContext(ctx, "git", append(base, args...)...)
+}
+
+func hostGitCmd(ctx context.Context, dir string, args ...string) ([]byte, error) {
+	cmd := hostGitExec(ctx, dir, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return out, fmt.Errorf("git %s: %w: %s", args[0], err, sshx.Printable(strings.TrimSpace(string(out))))
@@ -102,6 +109,7 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 		return nil, err
 	}
 	defer c.Close()
+	defer m.closeOnPause(ctx, name, c)()
 	dir := shQuote(forge.GuestRepo{Repo: rs.Repo}.Dir())
 	branch := o.Branch
 	if branch == "" {
@@ -118,8 +126,11 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 	if err := m.scanExport(name, strings.NewReader(branch), "in the branch name"); err != nil {
 		return nil, err
 	}
-	// Fetched aside and scanned for canaries before it replaces ref.
-	ref, incoming := "refs/curral/"+name+"/"+branch, "refs/curral-incoming/"+name+"/"+branch
+	// Fetched aside and scanned for canaries before it replaces ref; aside
+	// for this pull only, so a concurrent one can't swap in unscanned commits.
+	ref := "refs/curral/" + name + "/" + branch
+	incoming := fmt.Sprintf("refs/curral-incoming/%d-%d/%s/%s", os.Getpid(), time.Now().UnixNano(), name, branch)
+	pruneIncoming(ctx, into)
 	if err := m.fetchBranch(ctx, c, name, "git -C "+dir, branch, into, incoming); err != nil {
 		return nil, err
 	}
@@ -149,6 +160,27 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 	return &Pulled{Repo: rs, Branch: branch, Ref: ref, Into: into}, nil
 }
 
+// pruneIncoming removes the incoming refs of pulls that died before cleaning
+// up (their process is gone) and of older versions (no process in the name):
+// they hold unscanned guest commits.
+func pruneIncoming(ctx context.Context, dir string) {
+	out, err := hostGitCmd(ctx, dir, "for-each-ref", "--format=%(refname)", "refs/curral-incoming/")
+	if err != nil {
+		return
+	}
+	for _, ref := range strings.Fields(string(out)) {
+		id, _, _ := strings.Cut(strings.TrimPrefix(ref, "refs/curral-incoming/"), "/")
+		if pid, _, ok := strings.Cut(id, "-"); ok {
+			if n, err := strconv.Atoi(pid); err == nil && n > 0 {
+				if err := syscall.Kill(n, 0); err == nil || errors.Is(err, syscall.EPERM) {
+					continue
+				}
+			}
+		}
+		_, _ = hostGitCmd(ctx, dir, "update-ref", "-d", ref)
+	}
+}
+
 // fetchBranch copies branch out of the VM as a git bundle (git: the guest's
 // git command for the repo) and fetches it into ref of the host repository
 // into.
@@ -176,27 +208,31 @@ func (m *Manager) fetchBranch(ctx context.Context, c *ssh.Client, name, git, bra
 var commitID = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 
 // formatPatch writes to path the patches for the commits of ref that aren't
-// in bases (none: all of them), from the host repository dir, and scans them. They're made on
-// the host from commits already scanned: a binary delta in a patch the guest
-// wrote could build a decoy out of bytes no scan of the patch sees.
+// in bases (none: all of them), from the host repository dir. It scans
+// exactly those commits first, then the patches: a binary delta in a patch
+// can build a decoy out of bytes no scan of the patch sees.
 func (m *Manager) formatPatch(ctx context.Context, name, dir, ref string, bases []string, path, what string) error {
-	args := []string{"-C", dir, "-c", "core.fsmonitor=false", "-c", "i18n.logOutputEncoding=UTF-8", "format-patch", "--stdout",
-		"--binary", "--no-base", "--no-color", "--no-ext-diff", "--no-textconv", ref}
-	if len(bases) == 0 {
-		args = append(args, "--root")
-	}
+	revs := []string{ref}
 	for _, b := range bases {
 		if !commitID.MatchString(b) {
 			return fmt.Errorf("%s: bad base commit %q", what, sshx.Printable(b))
 		}
-		args = append(args, "^"+b)
+		revs = append(revs, "^"+b)
+	}
+	if err := m.scanRevs(ctx, name, dir, revs); err != nil {
+		return err
+	}
+	args := append([]string{"-c", "i18n.logOutputEncoding=UTF-8", "format-patch", "--stdout",
+		"--binary", "--no-base", "--no-color", "--no-ext-diff", "--no-textconv"}, revs...)
+	if len(bases) == 0 {
+		args = append(args, "--root")
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := hostGitExec(ctx, dir, args...)
 	cmd.Stdout, cmd.Stderr = f, &stderr
 	err = cmd.Run()
 	if cerr := f.Close(); err == nil {

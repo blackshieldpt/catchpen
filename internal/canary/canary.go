@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"compress/zlib"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -161,12 +162,58 @@ func In(cs []Canary, s string) *Canary {
 }
 
 // InRequest returns the canary in r's request line or headers (Host
-// included; the body isn't read).
+// included; the body isn't read). The request URI is also matched
+// percent-decoded and with its userinfo, and Basic credentials decoded.
 func InRequest(cs []Canary, r *http.Request) *Canary {
 	var b strings.Builder
 	b.WriteString(r.Host + "\n" + r.RequestURI + "\n")
+	// Decoded leniently (a bad escape elsewhere doesn't stop it), a few times
+	// over for values encoded more than once; user info included.
+	for _, s := range []string{r.RequestURI, strings.ReplaceAll(r.RequestURI, "+", " ")} {
+		for range 3 {
+			d := unescape(s)
+			if d == s {
+				break
+			}
+			s = d
+			b.WriteString(s + "\n")
+		}
+	}
+	for _, k := range []string{"Authorization", "Proxy-Authorization"} {
+		for _, v := range r.Header.Values(k) {
+			scheme, cred, _ := strings.Cut(strings.TrimSpace(v), " ")
+			if !strings.EqualFold(scheme, "Basic") {
+				continue
+			}
+			cred = strings.TrimRight(strings.TrimSpace(cred), "=")
+			if d, err := base64.RawStdEncoding.DecodeString(cred); err == nil {
+				b.WriteString(string(d) + "\n")
+			} else if d, err := base64.RawURLEncoding.DecodeString(cred); err == nil {
+				b.WriteString(string(d) + "\n")
+			}
+		}
+	}
 	_ = r.Header.Write(&b)
 	return In(cs, b.String())
+}
+
+// unescape decodes s's valid %XX escapes and leaves the rest as they are.
+func unescape(s string) string {
+	if !strings.Contains(s, "%") {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '%' && i+2 < len(s) {
+			if v, err := strconv.ParseUint(s[i+1:i+3], 16, 8); err == nil {
+				b.WriteByte(byte(v))
+				i += 2
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 // ScanPatch scans a patch file like Scan, and the contents of its binary
@@ -181,7 +228,7 @@ func ScanPatch(f io.ReadSeeker, cs []Canary) (*Canary, error) {
 		return nil, err
 	}
 	h := &hunk{br: bufio.NewReader(f)}
-	budget := int64(maxInflate)
+	budget := maxInflate
 	for {
 		l, err := h.line()
 		if err == io.EOF {
@@ -219,7 +266,7 @@ func ScanPatch(f io.ReadSeeker, cs []Canary) (*Canary, error) {
 }
 
 // maxInflate caps what a patch's binary hunks inflate to, in all.
-const maxInflate = 4 << 30
+var maxInflate int64 = 4 << 30
 
 // spend reads r, taking what it reads from budget; past it, r ends.
 type spend struct {

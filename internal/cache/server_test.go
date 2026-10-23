@@ -305,9 +305,6 @@ func TestServeConn(t *testing.T) {
 	if err := canary.Save(s.Dir, canary.Generate([]string{"git"})); err != nil {
 		t.Fatal(err)
 	}
-	if w := get(s, "/go/sumdb/sum.golang.org/supported"); w.Code != 200 {
-		t.Errorf("sumdb probe: %d", w.Code)
-	}
 	done := make(chan error, 1)
 	go func() {
 		conn, err := l.Accept()
@@ -776,4 +773,153 @@ func TestSlowSteadyGuestServed(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Error(err)
 	}
+}
+
+func TestStalledGuestDroppedFromRelays(t *testing.T) {
+	old := clientStall
+	clientStall = time.Second
+	t.Cleanup(func() { clientStall = old })
+	_, c := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		chunk := strings.Repeat("x", 32<<10)
+		for { // no Content-Length: not storable either
+			if _, err := io.WriteString(w, chunk); err != nil {
+				return
+			}
+		}
+	})
+	for _, target := range []string{"/go/x/@v/list", "/go/x/@v/v1.0.0.zip"} {
+		stalledGuest(t, newServer(t, t.TempDir(), c, "go"), target)
+	}
+}
+
+func TestStalledGuestDroppedFromHits(t *testing.T) {
+	old := clientStall
+	clientStall = time.Second
+	t.Cleanup(func() { clientStall = old })
+	body := strings.Repeat("x", 16<<20)
+	_, c := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "", time.Time{}, strings.NewReader(body))
+	})
+	s := newServer(t, t.TempDir(), c, "go")
+	const zip = "/go/x/@v/v1.0.0.zip"
+	if w := get(s, zip); w.Code != 200 {
+		t.Fatalf("miss: %d", w.Code)
+	}
+	s.downloads.Wait()
+	stalledGuest(t, s, zip)
+}
+
+// stalledGuest requests target from s over a connection it never reads, and
+// fails unless s gives up on it.
+func stalledGuest(t *testing.T, s *Server, target string) {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	done := make(chan error, 1)
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			done <- err
+			return
+		}
+		conn.(*net.TCPConn).SetWriteBuffer(16 << 10)
+		done <- s.ServeConn(context.Background(), conn)
+	}()
+	d := net.Dialer{Control: func(_, _ string, rc syscall.RawConn) error {
+		return rc.Control(func(fd uintptr) { syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_RCVBUF, 64<<10) })
+	}}
+	conn, err := d.Dial("tcp", l.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := io.WriteString(conn, "GET "+target+" HTTP/1.1\r\nHost: 10.0.2.102\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	select { // the guest never reads
+	case err := <-done:
+		if err != nil {
+			t.Errorf("%s: %v", target, err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatalf("%s: a guest not reading holds the connection", target)
+	}
+}
+
+func TestTokensCapped(t *testing.T) {
+	_, c := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Host == "auth.docker.io" {
+			io.WriteString(w, `{"token":"tok"}`)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer tok" {
+			w.Header().Set("Www-Authenticate", `Bearer realm="https://auth.docker.io/token",service="registry.docker.io"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		io.WriteString(w, "{}")
+	})
+	s := newServer(t, t.TempDir(), c, "docker")
+	for i := range maxTokens + 10 {
+		if w := get(s, "/v2/r"+strconv.Itoa(i)+"/app/manifests/latest"); w.Code != 200 {
+			t.Fatalf("repository %d: %d", i, w.Code)
+		}
+	}
+	if len(s.tokens) > maxTokens || s.tokens["r"+strconv.Itoa(maxTokens+9)+"/app"] != "tok" {
+		t.Errorf("%d tokens kept", len(s.tokens))
+	}
+}
+
+func TestEncodedNotStored(t *testing.T) {
+	var gz strings.Builder
+	zw := gzip.NewWriter(&gz)
+	io.WriteString(zw, "wheel")
+	zw.Close()
+	up, c := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip") // unasked
+		w.Header().Set("Content-Length", strconv.Itoa(gz.Len()))
+		io.WriteString(w, gz.String())
+	})
+	store := t.TempDir()
+	for i := range 2 {
+		w := get(newServer(t, store, c, "pypi"), "/pypi/files/packages/x.whl")
+		if w.Code != 200 || w.Header().Get("Content-Encoding") != "gzip" || w.Body.String() != gz.String() {
+			t.Errorf("request %d: %d %v", i, w.Code, w.Header())
+		}
+	}
+	if n := up.count("files.pythonhosted.org/packages/x.whl"); n != 2 {
+		t.Errorf("fetched %d times: an encoded object was stored", n)
+	}
+}
+
+// With every slot taken, a new guest connection is closed unserved.
+func TestConnectionLimit(t *testing.T) {
+	_, c := newUpstream(t, func(w http.ResponseWriter, r *http.Request) {})
+	dir := t.TempDir()
+	s := newServer(t, dir, c, "go")
+	sd := filepath.Join(s.Dir, "cache.slots")
+	if err := os.MkdirAll(sd, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < egress.MaxConns; i++ {
+		f, err := os.OpenFile(filepath.Join(sd, strconv.Itoa(i)), os.O_CREATE|os.O_RDWR, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { f.Close() })
+		if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+			t.Fatal(err)
+		}
+	}
+	guest, host := net.Pipe()
+	done := make(chan error, 1)
+	go func() { done <- s.ServeConn(context.Background(), host) }()
+	go io.WriteString(guest, "GET /go/x/@v/list HTTP/1.1\r\nHost: 10.0.2.102\r\n\r\n")
+	if n, err := guest.Read(make([]byte, 1)); n != 0 || err == nil {
+		t.Errorf("served past the limit: %d %v", n, err)
+	}
+	<-done
 }

@@ -98,7 +98,10 @@ func poolCmd() *cobra.Command {
 			fmt.Fprintln(w, "NAME\tSTATE\tTEMPLATE\tDISTRO\tCPU\tMEM\tAGE")
 			for _, v := range vms {
 				state := "filling"
-				if v.Ready() {
+				switch {
+				case v.Hit:
+					state = "canary hit (curral destroy " + v.Name + ")"
+				case v.Ready():
 					state = "ready"
 				}
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%dM\t%s\n", v.Name, state, v.Template, v.Distro, v.CPUs, v.MemoryMB, age(v.Created))

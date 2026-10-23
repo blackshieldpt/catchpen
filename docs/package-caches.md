@@ -62,3 +62,7 @@ not stored.
 - The store is shared by all VMs, so a VM can tell from timing whether a package was
   already cached.
 - A canary value in a cache request counts as a hit; see [canaries.md](canaries.md).
+- Each VM has at most 128 cache connections. A guest that stops reading for 30 s is
+  dropped (a download it started finishes for the store).
+- A response with a `Content-Encoding` is passed through, not stored: the store keeps
+  only identity bodies.

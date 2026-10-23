@@ -366,6 +366,7 @@ func (m *Manager) withGuest(ctx context.Context, name string, fn func(c *ssh.Cli
 		return
 	}
 	defer c.Close()
+	defer m.closeOnPause(ctx, name, c)()
 	fn(c)
 }
 
@@ -384,6 +385,9 @@ func (m *Manager) afterResume(ctx context.Context, name string) error {
 	defer cancel()
 	alive := func() bool { _, ok := m.Running(name); return ok }
 	c, err := m.keys(name).WaitReady(wctx, port, s.User, alive)
+	if err == nil {
+		defer m.closeOnPause(ctx, name, c)()
+	}
 	if err != nil {
 		return err
 	}

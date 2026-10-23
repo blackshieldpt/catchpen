@@ -1,7 +1,9 @@
 package cloudinit
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -53,7 +55,9 @@ func TestBuildScriptSections(t *testing.T) {
 		t.Error("claude wrapper without agents.claude")
 	}
 	for _, want := range []string{"DISABLE_AUTOUPDATER=1\n", "OPENCODE_DISABLE_AUTOUPDATE=1\n", "PI_OFFLINE=1\n", "\nclaude --version\n", "\npi --version\n",
-		`ln -sfn "$(readlink -f "$bin")" /usr/local/lib/curral/claude`, "\ncodex --version\n", `done < "$HOME/.config/curral/claude.env"`, "exec /usr/local/lib/curral/claude \"$@\""} {
+		`ln -sfn "$(readlink -f "$bin")" /usr/local/lib/curral/claude`, "\ncodex --version\n",
+		"exec /usr/local/lib/curral/with-env \"$HOME/.config/curral/claude.env\" /usr/local/lib/curral/claude \"$@\"",
+		"exec /usr/local/lib/curral/with-env \"$HOME/.ssh/environment\" \"$@\""} {
 		if !strings.Contains(def, want) {
 			t.Errorf("default build script missing %q", want)
 		}
@@ -250,5 +254,30 @@ func TestBuildScriptOMP(t *testing.T) {
 		if out, err := exec.Command("bash", "-n", "-c", s).CombinedOutput(); err != nil {
 			t.Errorf("bash -n: %v %s", err, out)
 		}
+	}
+}
+
+// with-env, as the build script writes it, loads NAME=value lines (values
+// with spaces and = kept, comments and blanks skipped) and runs the command.
+func TestWithEnvScript(t *testing.T) {
+	s, err := BuildScript(load(t, "minimal"), "agent", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, body, ok := strings.Cut(s, "cat > "+withEnv+" <<'CURRAL_SCRIPT'\n")
+	body, _, ok2 := strings.Cut(body, "\nCURRAL_SCRIPT\n")
+	if !ok || !ok2 {
+		t.Fatal("no with-env script")
+	}
+	dir := t.TempDir()
+	script, env := filepath.Join(dir, "with-env"), filepath.Join(dir, "env")
+	os.WriteFile(script, []byte(body+"\n"), 0o700)
+	os.WriteFile(env, []byte("# comment\n\nTOKEN=a b=c\nnot a line\nOTHER=x\n"), 0o600)
+	out, err := exec.Command("sh", script, env, "sh", "-c", `printf '%s|%s|%s' "$TOKEN" "$OTHER" "$1"`, "_", "arg").CombinedOutput()
+	if err != nil || string(out) != "a b=c|x|arg" {
+		t.Errorf("with-env: %v %q", err, out)
+	}
+	if out, err := exec.Command("sh", script, filepath.Join(dir, "missing"), "echo", "ran").CombinedOutput(); err != nil || string(out) != "ran\n" {
+		t.Errorf("with-env without the file: %v %q", err, out)
 	}
 }

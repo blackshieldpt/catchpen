@@ -47,6 +47,7 @@ func (m *Manager) CopyTranscripts(ctx context.Context, name string) (string, err
 		return "", err
 	}
 	defer c.Close()
+	defer m.closeOnPause(ctx, name, c)()
 	dest := filepath.Join(m.P.Transcripts(), name, time.Now().UTC().Format("20060102-150405"))
 	if err := os.MkdirAll(dest, 0o700); err != nil {
 		return "", err
@@ -64,6 +65,9 @@ func (m *Manager) CopyTranscripts(ctx context.Context, name string) (string, err
 	done := make(chan result, 1)
 	go func() {
 		res, err := safetar.Extract(pr, dest, transcriptLimits)
+		if err == nil {
+			_, _ = io.Copy(io.Discard, pr) // tar's padding after the end of the archive
+		}
 		pr.CloseWithError(err) // stops the stream early on a limit
 		done <- result{res, err}
 	}()

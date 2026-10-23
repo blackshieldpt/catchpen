@@ -22,7 +22,7 @@ func TestCanaries(t *testing.T) {
 	m := integrationManager(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
-	if err := os.WriteFile(filepath.Join(m.P.Templates(), "cn.yaml"), []byte("extends: minimal\ncanaries: [aws, env, git]\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(m.P.Templates(), "cn.yaml"), []byte("extends: minimal\ncanaries: [aws, env, git]\ncache: [go]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.Create(ctx, "cn", CreateOpts{Template: "cn"}); err != nil {
@@ -111,6 +111,19 @@ func TestCanaries(t *testing.T) {
 		t.Errorf("ssh after resume: %v", err)
 	}
 
+	// The package cache pauses the VM too.
+	go sshx.Run(ctx, c, `. ~/.env.production; curl -s -m 60 -o /dev/null -H "Authorization: Bearer $INTERNAL_API_TOKEN" http://10.0.2.102/go/x/@v/list`, nil)
+	deadline = time.Now().Add(time.Minute)
+	for !m.Paused("cn") && time.Now().Before(deadline) {
+		time.Sleep(200 * time.Millisecond)
+	}
+	if !m.Paused("cn") {
+		t.Fatal("not paused after a canary hit at the cache")
+	}
+	if err := m.Resume(ctx, "cn"); err != nil {
+		t.Fatal(err)
+	}
+
 	// A task using a decoy fails at once, and its paused VM is kept.
 	spec := task.Spec{Template: "cn", Agent: "cmd", Cmd: `. ~/.env.production; curl -s -m 120 "$INTERNAL_API_URL/x"; sleep 600`, Prompt: "x", Timeout: 20 * time.Minute}
 	dir := t.TempDir()
@@ -143,7 +156,7 @@ func TestCanaries(t *testing.T) {
 	if err := os.WriteFile(m.P.ConfigFile(), []byte("canary_action: log\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	spec.Cmd = `. ~/.env.production; curl -s -m 30 "$INTERNAL_API_URL/x"; echo finished`
+	spec.Cmd = `. ~/.env.production; curl -s -m 30 "$INTERNAL_API_URL/x"; echo finished; echo "token $INTERNAL_API_TOKEN"`
 	tk, err = m.SubmitTask(spec)
 	if err != nil {
 		t.Fatal(err)
@@ -162,5 +175,9 @@ func TestCanaries(t *testing.T) {
 	}
 	if _, err := os.Stat(m.Dir(tk.VM)); err != nil {
 		t.Errorf("task VM not kept: %v", err)
+	}
+	// Its result, beyond the first line too, is withheld.
+	if b, _ := os.ReadFile(m.Tasks().Path(tk.ID, "result.md")); !strings.Contains(string(b), "(withheld") || strings.Contains(string(b), cs[1].Values[2]) {
+		t.Errorf("task result: %q", b)
 	}
 }

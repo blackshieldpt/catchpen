@@ -16,6 +16,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
+	"github.com/blackshieldpt/curral/internal/cloudinit"
 	"github.com/blackshieldpt/curral/internal/template"
 )
 
@@ -51,7 +52,7 @@ type Result struct {
 // Guest paths, relative to the user's home.
 const (
 	envFile         = ".ssh/environment"
-	claudeEnvFile   = ".config/curral/claude.env" // read only by the guest's claude wrapper
+	claudeEnvFile   = cloudinit.ClaudeEnvFile // read only by the guest's claude wrapper
 	claudeJSON      = ".claude.json"
 	opencodeAuth    = ".local/share/opencode/auth.json"
 	opencodeConfig  = ".config/opencode/opencode.json"
@@ -64,12 +65,12 @@ const (
 	anthropicKeyEnv = "ANTHROPIC_API_KEY"
 	openaiKeyEnv    = "OPENAI_API_KEY"
 	claudeKeySuffix = 20      // Claude Code records approved API keys by their last 20 characters
-	maxGuestJSON    = 4 << 20 // largest guest config file we read back
+	maxGuestDoc     = 4 << 20 // largest guest config file read back at all (config.toml: maxCodexConfig)
 )
 
 // claudeReal is the real claude in bases that wrap it to load claudeEnvFile;
 // older bases lack it.
-var claudeReal = "/usr/local/lib/curral/claude"
+var claudeReal = cloudinit.ClaudeReal
 
 type pusher struct {
 	ctx    context.Context
@@ -458,16 +459,21 @@ const (
 	maxTOMLDepth   = 64
 )
 
+// limitError rejects a guest file curral won't parse; it says why.
+type limitError string
+
+func (e limitError) Error() string { return string(e) }
+
 func tomlUnmarshal(b []byte, v any) error {
 	if len(b) > maxCodexConfig {
-		return errors.New("too large")
+		return limitError("is over 256 KiB")
 	}
 	depth := 0
 	for _, c := range b {
 		switch c {
 		case '[', '{':
 			if depth++; depth > maxTOMLDepth {
-				return errors.New("nested too deeply")
+				return limitError("nests more than 64 levels")
 			}
 		case ']', '}':
 			depth = max(depth-1, 0)
@@ -477,7 +483,7 @@ func tomlUnmarshal(b []byte, v any) error {
 		return err
 	}
 	if m, ok := v.(*map[string]any); ok && tooDeep(*m, maxTOMLDepth) {
-		return errors.New("nested too deeply") // dotted keys, which the bracket count misses
+		return limitError("nests more than 64 levels") // dotted keys, which the bracket count misses
 	}
 	return nil
 }
@@ -525,8 +531,7 @@ func (p *pusher) codex(a *template.Agent, servers []template.MCP) error {
 		cfg["sandbox_mode"] = "danger-full-access"
 	}
 	// Codex adds the event as a last argument, which sh -c leaves in $1.
-	notify := []any{"sh", "-c", "curl -s -m 5 --noproxy '*' -X POST -H 'Content-Type: application/json' " +
-		`--data-binary '{"agent":"codex","hook_event_name":"agent-turn-complete"}' '` + notifyURL + "' >/dev/null 2>&1 || true", "curral-notify"}
+	notify := []any{"sh", "-c", curlPost(`'{"agent":"codex","hook_event_name":"agent-turn-complete"}'`, ""), "curral-notify"}
 	if old, ok := cfg["notify"]; ok && fmt.Sprint(old) != fmt.Sprint(notify) {
 		p.warn("codex: replaced notify in ~/%s with curral's notification hook", codexConfig)
 	}
@@ -587,9 +592,15 @@ func (p *pusher) getJSON(rel string) (map[string]any, error) {
 	return p.getDoc(rel, "JSON", json.Unmarshal)
 }
 
+// tooLarge is the guest command's exit status for a file over maxGuestDoc.
+const tooLarge = 3
+
 func (p *pusher) getDoc(rel, format string, unmarshal func([]byte, any) error) (map[string]any, error) {
 	// The file is guest-controlled: only regular files, size-capped on the guest side.
-	out, err := p.r.Run(p.ctx, fmt.Sprintf(`f="$HOME/%s"; [ -f "$f" ] && [ ! -L "$f" ] || exit 0; [ "$(stat -c %%s "$f")" -le %d ] || { echo too large >&2; exit 3; }; cat "$f"`, rel, maxGuestJSON), nil)
+	out, err := p.r.Run(p.ctx, fmt.Sprintf(`f="$HOME/%s"; [ -f "$f" ] && [ ! -L "$f" ] || exit 0; [ "$(stat -c %%s "$f")" -le %d ] || exit %d; cat "$f"`, rel, maxGuestDoc, tooLarge), nil)
+	if ec := (interface{ ExitCode() int })(nil); errors.As(err, &ec) && ec.ExitCode() == tooLarge {
+		return nil, fmt.Errorf("~/%s is over %d MiB, so curral won't read it back: move it aside in the VM and push again", rel, maxGuestDoc>>20)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("read ~/%s: %w", rel, err)
 	}
@@ -598,7 +609,12 @@ func (p *pusher) getDoc(rel, format string, unmarshal func([]byte, any) error) (
 		return doc, nil
 	}
 	if err := unmarshal(out, &doc); err != nil {
-		p.warn("~/%s was not valid %s; saved as ~/%s.curral-bak and replaced", rel, format, rel)
+		why := "was not valid " + format
+		var le limitError
+		if errors.As(err, &le) {
+			why = le.Error()
+		}
+		p.warn("~/%s %s; saved as ~/%s.curral-bak and replaced", rel, why, rel)
 		if _, err := p.r.Run(p.ctx, fmt.Sprintf(`cp -f "$HOME/%s" "$HOME/%s.curral-bak"`, rel, rel), nil); err != nil {
 			return nil, err
 		}

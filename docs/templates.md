@@ -68,7 +68,7 @@ idle_stop: 2h
 | `ports` | `"guest"` or `"host:guest"`, bound to `127.0.0.1`. Host port 0 or omitted picks a free port at start. |
 | `network` | `egress` (`allowlist`, `open`, `none`), `presets`, `allow`, `on_deny` (`log`, `prompt`), `prompt_timeout` (default `30s`), `allow_private`. See [egress.md](egress.md). |
 | `agents` | `claude`, `opencode`, `pi`, `omp`, `codex`. See [agents.md](agents.md). |
-| `env` | Environment for every ssh session: literal values or `secret:NAME`. Names are upper case; `HOME`, `USER`, `PATH`, `SHELL` and `LOGNAME` are refused, and so is `ANTHROPIC_API_KEY` unless Claude's `auth` is `api-key`. |
+| `env` | Environment for every ssh session: literal values or `secret:NAME`. Names are upper case; `HOME`, `USER`, `PATH`, `SHELL` and `LOGNAME` are refused, and so is `ANTHROPIC_API_KEY` in a template with Claude whose `auth` isn't `api-key`. |
 | `mcp` | MCP servers for all agents. See [agents.md](agents.md#mcp-servers). |
 | `sync` | `git_identity` (default `true`), `claude_config` (default `false`). |
 | `ssh` | `agent` (`off`, `restricted`, `host`), `agent_keys`, `confirm` (default `true`). See [forges.md](forges.md#ssh-agent). |

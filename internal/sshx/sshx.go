@@ -177,7 +177,8 @@ func (e guestError) Error() string { return e.msg }
 // before it reaches the host terminal.
 func Printable(s string) string {
 	return strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\t' || (r >= 0x20 && r != 0x7f && !(r >= 0x80 && r < 0xa0)) {
+		// Not bidi controls either: they reorder what follows on screen.
+		if r == '\n' || r == '\t' || (r >= 0x20 && r != 0x7f && !(r >= 0x80 && r < 0xa0) && !(r >= 0x202a && r <= 0x202e) && !(r >= 0x2066 && r <= 0x2069) && r != 0x200e && r != 0x200f && r != 0x061c) {
 			return r
 		}
 		return -1
@@ -221,6 +222,9 @@ type ExitError struct {
 }
 
 func (e *ExitError) Error() string { return fmt.Sprintf("%s: exited with status %d", e.Cmd, e.Status) }
+
+// ExitCode is the command's exit status, as for exec.ExitError.
+func (e *ExitError) ExitCode() int { return e.Status }
 
 // Stream runs cmd and copies its stdout to w, failing once more than max bytes
 // arrive. Stderr (capped) is returned for diagnostics.

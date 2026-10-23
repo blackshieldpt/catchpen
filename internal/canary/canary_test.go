@@ -3,7 +3,10 @@ package canary
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/base64"
+	"fmt"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -101,6 +104,34 @@ func TestFind(t *testing.T) {
 	if c := InRequest(cs, r); c == nil || c.Kind != "git" {
 		t.Errorf("request header: %+v", c)
 	}
+	enc := func(s string) string {
+		var b strings.Builder
+		for i := range len(s) {
+			fmt.Fprintf(&b, "%%%02X", s[i])
+		}
+		return b.String()
+	}
+	for _, h := range []string{"Authorization", "Proxy-Authorization"} {
+		for _, e := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
+			r = httptest.NewRequest("GET", "http://example.com/x", nil)
+			r.Header.Set(h, "Basic "+e.EncodeToString([]byte("u:"+cs[2].Values[0]+"x")))
+			if c := InRequest(cs, r); c == nil || c.Kind != "git" {
+				t.Errorf("%s Basic: %+v", h, c)
+			}
+		}
+	}
+	for _, u := range []string{
+		"/x?t=" + enc(cs[2].Values[0]),
+		"/x?a=%zz&t=" + enc(cs[2].Values[0]),
+		"/x%zz/" + enc(cs[2].Values[0]) + "?a=%zz",
+		"/x?t=" + strings.ReplaceAll(enc(cs[2].Values[0]), "%", "%25"),
+		"http://deploy:" + enc(cs[2].Values[0]) + "@example.com/x",
+	} {
+		// By hand: Go's parser refuses some of these, other servers may not.
+		if c := InRequest(cs, &http.Request{Method: "GET", Host: "example.com", RequestURI: u, Header: http.Header{}}); c == nil || c.Kind != "git" {
+			t.Errorf("%s: %+v", u, c)
+		}
+	}
 	if c := InRequest(cs, httptest.NewRequest("GET", "http://example.com/x", nil)); c != nil {
 		t.Errorf("clean request: %+v", c)
 	}
@@ -176,6 +207,11 @@ func TestScanPatchBinary(t *testing.T) {
 		if plain, c := scan(re.ReplaceAll(patch, []byte(hdr))); plain != nil || c == nil {
 			t.Errorf("header %q: plain %+v, ScanPatch %+v", hdr, plain, c)
 		}
+	}
+	defer func(n int64) { maxInflate = n }(maxInflate)
+	maxInflate = 1000
+	if c, err := ScanPatch(bytes.NewReader(literal), cs); err == nil || !strings.Contains(err.Error(), "inflate") {
+		t.Errorf("past the inflate budget: %+v %v", c, err)
 	}
 	if _, ok := decode85("zzzzz"); ok {
 		t.Error("a short line decoded")

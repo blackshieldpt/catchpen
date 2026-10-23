@@ -87,8 +87,9 @@ func (m *Manager) PoolVMs() ([]Info, error) {
 	return out, nil
 }
 
-// Ready reports whether a pool VM can be claimed.
-func (i Info) Ready() bool { return i.Pool && i.Resume == poolSnap && !i.Running }
+// Ready reports whether a pool VM can be claimed: never one whose canaries
+// were used while it warmed.
+func (i Info) Ready() bool { return i.Pool && i.Resume == poolSnap && !i.Running && !i.Hit }
 
 // claimPool moves a ready pool VM matching key into name's directory, which
 // the caller created empty, and returns its state; nil if none matches.
@@ -269,6 +270,9 @@ func (m *Manager) recyclePool(wants []poolWant, complete bool) error {
 	var errs []error
 	for _, v := range vms {
 		k := keyOf(&v.State)
+		if v.Hit {
+			continue // kept for inspection, and not counted (curral pool ls)
+		}
 		if v.Ready() && (left[k] > 0 || !complete) {
 			left[k]--
 			continue
@@ -337,5 +341,12 @@ func (m *Manager) DrainPool() (int, error) {
 	if err := m.recyclePool(nil, true); err != nil {
 		return 0, err
 	}
-	return len(vms), nil
+	var errs []error
+	for _, v := range vms {
+		if v.Hit { // recycling keeps these for inspection; draining doesn't
+			m.logf("removing pool VM %s (its canaries were used)", v.Name)
+			errs = append(errs, m.destroy(v.Name, false))
+		}
+	}
+	return len(vms), errors.Join(errs...)
 }
