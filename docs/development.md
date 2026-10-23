@@ -4,7 +4,7 @@
 go build -o ~/.local/bin/curral ./cmd/curral
 go vet ./...
 go test -race ./...                                           # unit tests
-go test -tags integration -timeout 30m ./internal/vm/ ./internal/runner/   # boots real VMs (KVM and network)
+go test -p 1 -tags integration -timeout 60m ./internal/vm/ ./internal/runner/   # boots real VMs (KVM and network)
 go test -tags integration -timeout 30m -run '^TestCanaries$' ./internal/vm/   # one integration test
 ```
 

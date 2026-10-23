@@ -274,8 +274,6 @@ mcp:
 	}
 }
 
-// A codex task needs an API key: a new VM has no ChatGPT sign-in.
-
 // Codex reaches the API with a key, or ChatGPT's backend and its sign-in host.
 func TestCodexHosts(t *testing.T) {
 	for auth, want := range map[string][]string{

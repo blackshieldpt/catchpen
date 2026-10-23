@@ -17,7 +17,7 @@ import (
 //
 // Locks, in the order they may be taken (never an earlier one while holding a
 // later one):
-//  1. the pool lock (vms/.pool.lock), then the pool fill lock;
+//  1. the pool fill lock, then the pool lock (vms/.pool.lock);
 //  2. a VM's lock (vms/<name>/.lock), held while its disk, state or QEMU
 //     process change.
 //

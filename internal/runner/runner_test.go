@@ -124,6 +124,7 @@ func TestClaimSlotCountsRunningTaskVMOnce(t *testing.T) {
 	}
 }
 
+// A codex task needs an API key: a new VM has no ChatGPT sign-in.
 func TestCodexTaskNeedsAPIKey(t *testing.T) {
 	r := testRunner(t)
 	m := r.M

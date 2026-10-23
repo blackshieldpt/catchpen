@@ -97,10 +97,10 @@ func (m *Manager) qmp(name string, fn func(q *qemu.QMP) error) error {
 	return fn(q)
 }
 
-// busyTask refuses changes under a VM's running headless task.
 // Tasks is the task store (internal/runner runs them).
 func (m *Manager) Tasks() task.Store { return task.Store{Dir: m.P.Tasks()} }
 
+// busyTask refuses changes under a VM's running headless task.
 func (m *Manager) busyTask(s *State) error {
 	if s.Task == "" {
 		return nil

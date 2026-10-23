@@ -362,7 +362,7 @@ func TestCanaryTasks(t *testing.T) {
 		t.Fatalf("task %+v, paused %v\n%s", tk, m.Paused(tk.VM), b)
 	}
 	if _, err := os.Stat(m.Dir(tk.VM)); err != nil {
-		t.Errorf("task VM not kept: %v", err)
+		t.Fatalf("task VM not kept: %v", err)
 	}
 	// Its result, beyond the first line too, is withheld.
 	cs, _ := canary.Load(m.Dir(tk.VM))
