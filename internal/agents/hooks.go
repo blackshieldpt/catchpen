@@ -108,10 +108,13 @@ func (p *pusher) claudeHooks(s Spec) error {
 		}
 		hooks[ev] = append(keep, map[string]any{"hooks": []any{map[string]any{"type": "command", "command": cmd}}})
 	}
-	if s.Sync.ClaudeAISync() {
+	switch {
+	case s.Sync.ClaudeAISync() && s.Sync.Claude():
+		// The synced host settings.json says what the user wants.
+	case s.Sync.ClaudeAISync():
 		delete(doc, "syncClaudeAiSkills") // Claude's own default applies
 		delete(doc, "syncClaudeAiPlugins")
-	} else {
+	default:
 		doc["syncClaudeAiSkills"], doc["syncClaudeAiPlugins"] = false, false
 	}
 	doc["hooks"] = hooks
