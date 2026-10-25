@@ -96,14 +96,11 @@ func TestSkillsAndPlugins(t *testing.T) {
 		}
 	}
 
-	// Codex sees its plugin, if it can list plugins without a model call.
-	help := guest("codex --help 2>&1 || true")
-	if strings.Contains(help, "\n  plugin ") {
-		if out := guest("timeout 60 codex plugin list 2>&1 || true"); !strings.Contains(out, "superpowers") {
-			t.Errorf("codex plugin list doesn't show superpowers:\n%s", out)
-		}
-	} else {
-		t.Logf("codex has no plugin listing; codex --help:\n%s", help)
+	// Codex loads its plugin's skills: debug prompt-input prints the prompt a
+	// session would send, without a model call. (plugin list shows only
+	// marketplace catalogs, not plugins enabled from the cache.)
+	if out := guest("timeout 60 codex debug prompt-input hi 2>&1 | grep -c 'superpowers:brainstorming' || true"); out == "" || out == "0" {
+		t.Errorf("codex debug prompt-input doesn't list superpowers' skills: %q", out)
 	}
 
 	// A restart replaces curral's folder and keeps the user's.
