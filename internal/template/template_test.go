@@ -102,6 +102,36 @@ func TestDefaults(t *testing.T) {
 			t.Errorf("%q: %v", spec, err)
 		}
 	}
+	claudeSkills := []string{"claude/skill-creator", "claude/mcp-builder", "claude/frontend-design"}
+	for spec, want := range map[string][]string{"": claudeSkills, "minimal": nil, "minimal,claude": claudeSkills} {
+		tp2, err := load(t, t.TempDir(), spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, s := range tp2.Skills {
+			got = append(got, s.Agent+"/"+s.DirName())
+		}
+		if !slices.Equal(got, want) || len(tp2.Plugins) != 0 {
+			t.Errorf("%q: skills %v, want %v; plugins %+v", spec, got, want, tp2.Plugins)
+		}
+	}
+}
+
+// Every built-in section can be picked by its bare name.
+func TestBuiltinNamesAreUnique(t *testing.T) {
+	lib, err := Loader{}.Library()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range Categories {
+		secs, _ := lib.Sections(c.Name)
+		for _, s := range secs {
+			if _, err := lib.Load(s.Name); err != nil && strings.Contains(err.Error(), "several categories") {
+				t.Errorf("%s: %v", s.Name, err)
+			}
+		}
+	}
 }
 
 func TestPicksAddReplaceAndRemove(t *testing.T) {

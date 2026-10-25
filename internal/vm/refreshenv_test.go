@@ -2,6 +2,7 @@ package vm
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"os"
 	"slices"
@@ -114,11 +115,15 @@ func TestRefreshTakesTheTemplatesSkills(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []template.Skill{{Git: "https://example.com/s.git", Ref: "0123456789abcdef0123456789abcdef01234567", Path: "skills/a"}}
+	def, err := template.Loader{}.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := append(def.Skills, template.Skill{Git: "https://example.com/s.git", Ref: "0123456789abcdef0123456789abcdef01234567", Path: "skills/a"})
 	if !slices.Equal(s.Skills, want) {
 		t.Fatalf("skills %v, want %v", s.Skills, want)
 	}
-	if !strings.Contains(out.String(), "1 skills, 0 plugins") {
+	if !strings.Contains(out.String(), fmt.Sprintf("%d skills, 0 plugins", len(want))) {
 		t.Fatalf("output %q", out.String())
 	}
 }

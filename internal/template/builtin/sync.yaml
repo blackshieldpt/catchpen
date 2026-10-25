@@ -1,2 +1,4 @@
 claude-config: { description: "Copy host ~/.claude settings, CLAUDE.md, agents, skills and commands", sync: { claude_config: true } }
 no-git-identity: { description: Don't copy the host's git user.name and user.email, sync: { git_identity: false } }
+claude-ai-sync: { description: "Keep Claude's skill and plugin sync from your claude.ai account", sync: { claude_ai: true } }
+opencode-claude-skills: { description: "Let opencode also read Claude's ~/.claude/skills", sync: { opencode_claude_skills: true } }

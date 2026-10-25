@@ -1,0 +1,5 @@
+default: [claude-skill-creator, claude-mcp-builder, claude-frontend-design]
+claude-skill-creator: { description: "Anthropic's skill-creator, for Claude Code", skills: [{ agent: claude, git: "https://github.com/anthropics/skills", ref: "dbd4588f9e1033efb41dad4bef2f7947c8993d44", path: skills/skill-creator }] }
+claude-mcp-builder: { description: "Anthropic's mcp-builder, for Claude Code", skills: [{ agent: claude, git: "https://github.com/anthropics/skills", ref: "dbd4588f9e1033efb41dad4bef2f7947c8993d44", path: skills/mcp-builder }] }
+claude-frontend-design: { description: "Anthropic's frontend-design, for Claude Code", skills: [{ agent: claude, git: "https://github.com/anthropics/skills", ref: "dbd4588f9e1033efb41dad4bef2f7947c8993d44", path: skills/frontend-design }] }
+claude-webapp-testing: { description: "Anthropic's webapp-testing, for Claude Code (needs Playwright in the VM)", skills: [{ agent: claude, git: "https://github.com/anthropics/skills", ref: "dbd4588f9e1033efb41dad4bef2f7947c8993d44", path: skills/webapp-testing }] }
