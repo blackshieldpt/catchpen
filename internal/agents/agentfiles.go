@@ -44,6 +44,13 @@ const curralMark = ".curral"
 
 const piSettings = ".pi/agent/settings.json"
 
+// piBundled lists the paths curral added to pi's extensions, so it removes
+// only those, never the user's own entries under pi's package.
+const piBundled = ".local/share/curral/pi-bundled.json"
+
+// bundledRe is a path inside pi's package (vm.json isn't re-validated).
+var bundledRe = regexp.MustCompile(`^[A-Za-z0-9._][A-Za-z0-9._/-]*$`)
+
 var homeRe = regexp.MustCompile(`^/home/[a-z_][a-z0-9_-]{0,31}$`)
 
 // checkAgentFiles runs the checks agentFiles relies on, before Push uses any
@@ -76,6 +83,14 @@ func (p *pusher) validBundles(kind string, bs []Bundle, anyAgent bool) []Bundle 
 		}
 		if _, ok := template.AgentDefByName(b.Agent); !ok && (b.Agent != "" || !anyAgent) {
 			p.warn("%s %s: unknown agent %q; skipped", kind, b.Name, b.Agent)
+			continue
+		}
+		if b.Bundled != "" && (!bundledRe.MatchString(b.Bundled) || slices.Contains(strings.Split(b.Bundled, "/"), "..")) {
+			p.warn("%s %s: invalid bundled path %q; skipped", kind, b.Name, b.Bundled)
+			continue
+		}
+		if slices.ContainsFunc(b.Files, func(f gitsrc.File) bool { return f.Name == curralMark || strings.HasPrefix(f.Name, curralMark+"/") }) {
+			p.warn("%s %s: it holds a %s, which is curral's; skipped", kind, b.Name, curralMark)
 			continue
 		}
 		out = append(out, b)
@@ -141,7 +156,7 @@ func (p *pusher) agentSkills(s Spec, agent string) {
 			put = append(put, entry{name: b.Name, files: b.Files})
 		}
 	}
-	if err := p.copyIn(root, put); err != nil {
+	if _, err := p.copyIn(root, put); err != nil {
 		p.warn("skills: %v", err)
 	}
 	if err := p.cleanup(root, keep); err != nil {
@@ -179,7 +194,7 @@ func (p *pusher) agentPlugins(s Spec, agent string) {
 			path := piPackage + "/" + b.Bundled
 			out, err := p.r.Run(p.ctx, "test -e "+shQuote(path)+" && echo yes || true", nil)
 			if err != nil {
-				p.warn("skills: %v", err)
+				p.warn("plugin %s: %v", b.Name, err)
 				continue
 			}
 			if strings.TrimSpace(string(out.Raw())) != "yes" {
@@ -192,14 +207,17 @@ func (p *pusher) agentPlugins(s Spec, agent string) {
 		keep, wanted = append(keep, b.Name), append(wanted, b.Name)
 		put = append(put, e)
 	}
-	if err := p.copyIn(root, put); err != nil {
-		p.warn("skills: %v", err)
+	yours, err := p.copyIn(root, put)
+	if err != nil {
+		p.warn("plugins: %v", err)
 	}
+	// A folder of the user's with a plugin's name isn't curral's to turn on.
+	wanted = slices.DeleteFunc(wanted, func(n string) bool { return slices.Contains(yours, n) })
 	if err := p.cleanup(root, keep); err != nil {
-		p.warn("skills: %v", err)
+		p.warn("plugins: %v", err)
 	}
 	if err := p.enablePlugins(s, agent, wanted, failed, bundled); err != nil {
-		p.warn("skills: %v", err)
+		p.warn("plugins: %v", err)
 	}
 }
 
@@ -242,36 +260,65 @@ func (p *pusher) enablePlugins(s Spec, agent string, wanted, failed, bundled []s
 		if err != nil {
 			return err
 		}
-		setList(cfg, "plugin", prefix, failed, paths(wanted))
+		if _, err := setList(cfg, "plugin", isCurrals(prefix, failed), paths(wanted)); err != nil {
+			return err
+		}
 		return p.putJSON(opencodeConfig, cfg)
 	case "pi":
 		doc, err := p.getJSON(piSettings)
 		if err != nil {
 			return err
 		}
+		rec, err := p.getJSON(piBundled)
+		if err != nil {
+			return err
+		}
+		before := stringList(rec["paths"]) // what curral added last time
 		var add []any
 		for _, b := range bundled {
 			add = append(add, b)
 		}
-		c1 := setList(doc, "packages", prefix, failed, paths(wanted))
-		c2 := setList(doc, "extensions", piPackage+"/", nil, add)
-		if !c1 && !c2 {
-			return nil
+		c1, err := setList(doc, "packages", isCurrals(prefix, failed), paths(wanted))
+		if err != nil {
+			return err
 		}
-		return p.putJSON(piSettings, doc)
+		c2, err := setList(doc, "extensions", func(v string) bool { return slices.Contains(before, v) }, add)
+		if err != nil {
+			return err
+		}
+		if c1 || c2 {
+			if err := p.putJSON(piSettings, doc); err != nil {
+				return err
+			}
+		}
+		if !slices.Equal(before, bundled) {
+			return p.putJSON(piBundled, map[string]any{"paths": add})
+		}
 	}
 	return nil
 }
 
-// setList sets doc[key] to its items, except strings under prefix that aren't
-// prefix+<one of failed>, followed by add. Other items (objects, arrays) are
-// kept as they are. It reports whether doc changed.
-func setList(doc map[string]any, key, prefix string, failed []string, add []any) bool {
+// isCurrals matches the entries curral added under prefix, except failed
+// ones, which stay until their fetch works again.
+func isCurrals(prefix string, failed []string) func(string) bool {
+	return func(v string) bool {
+		n, ok := strings.CutPrefix(v, prefix)
+		return ok && !slices.Contains(failed, n)
+	}
+}
+
+// setList sets doc[key] to its items, except the strings drop matches,
+// followed by add. Other items (objects, arrays) are kept as they are. It
+// reports whether doc changed, and leaves a value that isn't a list alone.
+func setList(doc map[string]any, key string, drop func(string) bool, add []any) (bool, error) {
 	old, had := doc[key]
-	list, _ := old.([]any)
+	list, isList := old.([]any)
+	if had && !isList {
+		return false, fmt.Errorf("%s isn't a list; left alone", key)
+	}
 	var out []any
 	for _, x := range list {
-		if v, ok := x.(string); ok && strings.HasPrefix(v, prefix) && !slices.Contains(failed, strings.TrimPrefix(v, prefix)) {
+		if v, ok := x.(string); ok && drop(v) {
 			continue
 		}
 		out = append(out, x)
@@ -282,13 +329,13 @@ func setList(doc map[string]any, key, prefix string, failed []string, add []any)
 		}
 	}
 	if !had && len(out) == 0 {
-		return false
+		return false, nil
 	}
 	if out == nil {
 		out = []any{}
 	}
 	doc[key] = out
-	return fmt.Sprint(old) != fmt.Sprint(out)
+	return fmt.Sprint(old) != fmt.Sprint(out), nil
 }
 
 func checkRoot(root string) error {
@@ -298,35 +345,25 @@ func checkRoot(root string) error {
 	return nil
 }
 
-// copyIn copies entries into ~/root in one tar, replacing only folders that
-// carry curral's mark; folders without it are the user's and are left alone.
-func (p *pusher) copyIn(root string, entries []entry) error {
+// markOf prints the mark of folder "$r/$n": a regular file's first bytes,
+// never a FIFO or device a guest could plant to block the push.
+const markOf = `"$( [ -f "$r/$n/` + curralMark + `" ] && head -c 64 "$r/$n/` + curralMark + `" 2>/dev/null)"`
+
+// copyIn copies entries into ~/root, replacing only folders that carry
+// curral's mark; folders without it are the user's, left alone and returned.
+// It is one guest command: the files are unpacked next to the root, marked,
+// then each folder is moved into place, so an interrupted copy never leaves
+// an unmarked folder of curral's behind.
+func (p *pusher) copyIn(root string, entries []entry) (yours []string, err error) {
 	if err := checkRoot(root); err != nil {
-		return err
+		return nil, err
 	}
 	if len(entries) == 0 {
-		return nil
+		return nil, nil
 	}
 	var names []string
 	for _, e := range entries {
 		names = append(names, e.name)
-	}
-	out, err := p.r.Run(p.ctx, fmt.Sprintf(`r="$HOME/%s"; for n in %s; do
-  [ -e "$r/$n" ] && [ "$(cat "$r/$n/%s" 2>/dev/null)" != "$n" ] && echo "$n"
-done; true`, root, strings.Join(names, " "), curralMark), nil)
-	if err != nil {
-		return fmt.Errorf("~/%s: %w", root, err)
-	}
-	// The output is guest-controlled: only exact names we sent count.
-	for _, l := range strings.Split(string(out.Raw()), "\n") {
-		if i := slices.Index(names, l); i >= 0 {
-			p.warn("%s: ~/%s/%s is yours (no curral mark); not replaced", l, root, l)
-			names = slices.Delete(names, i, i+1)
-			entries = slices.DeleteFunc(entries, func(e entry) bool { return e.name == l })
-		}
-	}
-	if len(entries) == 0 {
-		return nil
 	}
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
@@ -337,7 +374,7 @@ done; true`, root, strings.Join(names, " "), curralMark), nil)
 		}
 		b, err := gitsrc.Tar(dir, e.files)
 		if err != nil {
-			return fmt.Errorf("%s: %w", e.name, err)
+			return nil, fmt.Errorf("%s: %w", e.name, err)
 		}
 		tr := tar.NewReader(bytes.NewReader(b))
 		for {
@@ -346,28 +383,48 @@ done; true`, root, strings.Join(names, " "), curralMark), nil)
 				break
 			}
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if err := tw.WriteHeader(h); err != nil {
-				return err
+				return nil, err
 			}
 			if _, err := io.Copy(tw, tr); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
 	if err := tw.Close(); err != nil {
-		return err
+		return nil, err
 	}
-	list := strings.Join(names, " ")
-	cmd := fmt.Sprintf(`set -e; r="$HOME/%s"; (umask 077; mkdir -p "$r")
-for n in %s; do rm -rf -- "$r/$n"; done
-tar -xf - --no-same-owner -C "$r"
-for n in %s; do printf %%s "$n" > "$r/$n/%s"; done`, root, list, list, curralMark)
-	if _, err := p.r.Run(p.ctx, cmd, buf.Bytes()); err != nil {
-		return fmt.Errorf("~/%s: %w", root, err)
+	// .curral-new can't clash: names start with a letter or digit.
+	cmd := fmt.Sprintf(`r="$HOME/%s"; t="$r/.curral-new"
+(umask 077; mkdir -p "$r") && rm -rf -- "$t" && mkdir "$t" || exit 1
+tar -xf - --no-same-owner -C "$t" || { rm -rf -- "$t"; exit 1; }
+for n in %s; do
+  if { [ -e "$r/$n" ] || [ -L "$r/$n" ]; } && [ %s != "$n" ]; then echo "yours $n"; continue; fi
+  printf %%s "$n" > "$t/$n/%s" && rm -rf -- "$r/$n" && mv -- "$t/$n" "$r/$n" || echo "failed $n"
+done
+rm -rf -- "$t"`, root, strings.Join(names, " "), markOf, curralMark)
+	out, err := p.r.Run(p.ctx, cmd, buf.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("copying into ~/%s failed (%s)", root, runErr(err, cmd))
 	}
-	return nil
+	// The output is guest-controlled: only exact names we sent count.
+	for _, l := range strings.Split(string(out.Raw()), "\n") {
+		if n, ok := strings.CutPrefix(l, "yours "); ok && slices.Contains(names, n) && !slices.Contains(yours, n) {
+			p.warn("%s: ~/%s/%s is yours (no curral mark); not replaced", n, root, n)
+			yours = append(yours, n)
+		}
+		if n, ok := strings.CutPrefix(l, "failed "); ok && slices.Contains(names, n) {
+			p.warn("%s: copying it into ~/%s failed", n, root)
+		}
+	}
+	return yours, nil
+}
+
+// runErr is a guest command's error without the command, a whole script here.
+func runErr(err error, cmd string) string {
+	return strings.TrimPrefix(err.Error(), cmd+": ")
 }
 
 // cleanup removes the folders in ~/root that carry curral's mark and aren't
@@ -376,12 +433,12 @@ func (p *pusher) cleanup(root string, keep []string) error {
 	if err := checkRoot(root); err != nil {
 		return err
 	}
-	cmd := fmt.Sprintf(`cd "$HOME/%s" 2>/dev/null || exit 0
-for d in */; do d=${d%%/}; [ "$(cat "$d/%s" 2>/dev/null)" = "$d" ] || continue
-  case " %s " in *" $d "*) ;; *) rm -rf -- "$d";; esac
-done`, root, curralMark, strings.Join(keep, " "))
+	cmd := fmt.Sprintf(`r="$HOME/%s"; cd "$r" 2>/dev/null || exit 0
+for n in */; do n=${n%%/}; [ %s = "$n" ] || continue
+  case " %s " in *" $n "*) ;; *) rm -rf -- "$n";; esac
+done`, root, markOf, strings.Join(keep, " "))
 	if _, err := p.r.Run(p.ctx, cmd, nil); err != nil {
-		return fmt.Errorf("~/%s: %w", root, err)
+		return fmt.Errorf("cleaning up ~/%s failed (%s)", root, runErr(err, cmd))
 	}
 	return nil
 }

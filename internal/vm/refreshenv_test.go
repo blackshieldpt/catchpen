@@ -127,3 +127,28 @@ func TestRefreshTakesTheTemplatesSkills(t *testing.T) {
 		t.Fatalf("output %q", out.String())
 	}
 }
+
+// A failed fetch marks its bundle Failed (the guest keeps its copy), and
+// entries for agents the VM doesn't have aren't fetched.
+func TestAgentBundles(t *testing.T) {
+	m := testManager(t)
+	ref := strings.Repeat("a", 40)
+	s := &State{
+		Agents: template.Agents{Claude: &template.Agent{}},
+		Skills: []template.Skill{
+			{Git: "https://127.0.0.1:1/x", Ref: ref, Path: "s"},
+			{Agent: "codex", Git: "https://127.0.0.1:1/y", Ref: ref, Path: "c"},
+		},
+		Plugins: []template.Plugin{{Agent: "codex", Git: "https://127.0.0.1:1/y", Ref: ref, Path: "p"}},
+	}
+	skills, plugins := m.agentBundles(context.Background(), s)
+	if len(skills) != 1 || skills[0].Name != "s" || !skills[0].Failed {
+		t.Errorf("skills = %+v", skills)
+	}
+	if len(plugins) != 1 || !plugins[0].Failed || plugins[0].Agent != "codex" {
+		t.Errorf("plugins = %+v", plugins)
+	}
+	if ents, _ := os.ReadDir(m.P.Sources()); len(ents) > 2 { // one repo and its lock
+		t.Errorf("fetched for an agent the VM doesn't have: %v", ents)
+	}
+}

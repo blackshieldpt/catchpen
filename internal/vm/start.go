@@ -340,17 +340,26 @@ func (m *Manager) agentBundles(ctx context.Context, s *State) (skills, plugins [
 			memo[k] = r
 		}
 		if r.err != nil {
-			m.logf("warning: %s %s from %s: %v; the VM keeps its current copy", kind, name, git, r.err)
+			if !ok { // once per source
+				m.logf("warning: %s %s from %s: %v; the VM keeps its current copy", kind, name, git, r.err)
+			}
 			return agents.Bundle{Name: name, Failed: true}
 		}
 		return agents.Bundle{Name: name, Files: r.files}
 	}
 	for _, e := range s.Skills {
+		if e.Agent != "" && s.Agents.Get(e.Agent) == nil {
+			continue
+		}
 		b := fetch("skill", e.DirName(), e.Git, e.Ref, e.Path)
 		b.Agent = e.Agent
 		skills = append(skills, b)
 	}
 	for _, e := range s.Plugins {
+		if s.Agents.Get(e.Agent) == nil { // not fetched; the push warns about it
+			plugins = append(plugins, agents.Bundle{Agent: e.Agent, Name: e.DirName(), Failed: true})
+			continue
+		}
 		if e.Bundled != "" {
 			plugins = append(plugins, agents.Bundle{Agent: "pi", Name: e.DirName(), Bundled: e.Bundled})
 			continue

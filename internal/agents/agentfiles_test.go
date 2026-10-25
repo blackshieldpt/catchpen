@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 
@@ -358,5 +360,143 @@ func TestPushTurnsOffBackgroundFetches(t *testing.T) {
 	}
 	if env := readFile(t, filepath.Join(home, envFile)); strings.Contains(env, "OPENCODE_DISABLE_CLAUDE_CODE_SKILLS") {
 		t.Errorf("env:\n%s", env)
+	}
+}
+
+// A fetched folder holding curral's mark is refused, and the others still
+// get theirs, so none is mistaken for the user's later.
+func TestAgentFilesMarksEveryCopy(t *testing.T) {
+	home := t.TempDir()
+	s := filesSpec(template.Agents{Claude: &template.Agent{}})
+	s.Skills = []Bundle{
+		{Name: "a", Files: append(skillFiles("A"), gitsrc.File{Name: ".curral/x", Data: []byte("x")})},
+		{Name: "b", Files: skillFiles("B")},
+	}
+	res := pushFiles(t, home, s)
+	if !warned(res, "skill a: it holds a .curral, which is curral's; skipped") || exists(filepath.Join(home, ".claude/skills/a")) {
+		t.Errorf("a: %v", res.Warnings)
+	}
+	if got := readFile(t, filepath.Join(home, ".claude/skills/b", curralMark)); got != "b" {
+		t.Errorf("b's mark = %q", got)
+	}
+	if exists(filepath.Join(home, ".claude/skills/.curral-new")) {
+		t.Error("the unpacking folder was left behind")
+	}
+}
+
+// Plugins whose fetch failed keep their folder and config entry.
+func TestAgentFilesFailedPluginsKeep(t *testing.T) {
+	home := t.TempDir()
+	s := filesSpec(template.Agents{Codex: &template.Agent{Auth: template.CodexNone}, OpenCode: &template.Agent{}, Pi: &template.Agent{}})
+	pkg := []gitsrc.File{{Name: "package.json", Data: []byte("{}")}}
+	s.Plugins = []Bundle{{Agent: "codex", Name: "p", Files: pkg}, {Agent: "opencode", Name: "q", Files: pkg}, {Agent: "pi", Name: "r", Files: pkg}}
+	pushFiles(t, home, s)
+	for i := range s.Plugins {
+		s.Plugins[i].Files, s.Plugins[i].Failed = nil, true
+	}
+	pushFiles(t, home, s)
+	for _, p := range []string{pluginDirs["codex"] + "/p/local/package.json", pluginDirs["opencode"] + "/q/package.json", pluginDirs["pi"] + "/r/package.json"} {
+		if !exists(filepath.Join(home, p)) {
+			t.Errorf("%s was removed", p)
+		}
+	}
+	var cfg map[string]any
+	if err := toml.Unmarshal([]byte(readFile(t, filepath.Join(home, codexConfig))), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if get(cfg, "plugins", "p@curral", "enabled") != true {
+		t.Errorf("codex config: %v", cfg)
+	}
+	if oc := readJSON(t, filepath.Join(home, opencodeConfig)); !reflect.DeepEqual(oc["plugin"], []any{"/home/agent/" + pluginDirs["opencode"] + "/q"}) {
+		t.Errorf("opencode plugin = %v", oc["plugin"])
+	}
+	if pi := readJSON(t, filepath.Join(home, piSettings)); !reflect.DeepEqual(pi["packages"], []any{"/home/agent/" + pluginDirs["pi"] + "/r"}) {
+		t.Errorf("pi packages = %v", pi["packages"])
+	}
+}
+
+// curral removes only the pi extensions it added; the user's stay.
+func TestAgentFilesPiKeepsTheUsersExtensions(t *testing.T) {
+	old := piPackage
+	t.Cleanup(func() { piPackage = old })
+	piPackage = t.TempDir()
+	write(t, filepath.Join(piPackage, "examples/extensions/plan-mode.ts"), "x")
+	home := t.TempDir()
+	mine := piPackage + "/examples/extensions/mine.ts"
+	write(t, filepath.Join(home, piSettings), `{"extensions": ["`+mine+`"]}`)
+	s := filesSpec(template.Agents{Pi: &template.Agent{}})
+	s.Plugins = []Bundle{{Agent: "pi", Name: "plan-mode", Bundled: "examples/extensions/plan-mode.ts"}}
+	pushFiles(t, home, s)
+	s.Plugins = nil
+	pushFiles(t, home, s)
+	if doc := readJSON(t, filepath.Join(home, piSettings)); !reflect.DeepEqual(doc["extensions"], []any{mine}) {
+		t.Errorf("extensions = %v", doc["extensions"])
+	}
+}
+
+// What the guest put there is the user's: a dangling symlink, a FIFO for a
+// mark (which must not block the push), a folder curral's plugin would use.
+func TestAgentFilesLeavesOddFoldersAlone(t *testing.T) {
+	home := t.TempDir()
+	skills := filepath.Join(home, ".claude/skills")
+	if err := os.MkdirAll(filepath.Join(skills, "f"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/nonexistent", filepath.Join(skills, "a")); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(filepath.Join(skills, "f", curralMark), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(home, pluginDirs["codex"], "p/local/x"), "mine")
+	s := filesSpec(template.Agents{Claude: &template.Agent{}, Codex: &template.Agent{Auth: template.CodexNone}})
+	s.Skills = []Bundle{{Name: "a", Files: skillFiles("A")}, {Name: "f", Files: skillFiles("F")}}
+	s.Plugins = []Bundle{{Agent: "codex", Name: "p", Files: []gitsrc.File{{Name: "x", Data: []byte("curral")}}}}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	res, err := Push(ctx, localRemote{home}, s, fakeSecrets{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l, err := os.Readlink(filepath.Join(skills, "a")); err != nil || l != "/nonexistent" {
+		t.Errorf("the user's symlink: %q %v", l, err)
+	}
+	if !warned(res, "f: ~/.claude/skills/f is yours") {
+		t.Errorf("warnings %v", res.Warnings)
+	}
+	if readFile(t, filepath.Join(home, pluginDirs["codex"], "p/local/x")) != "mine" {
+		t.Error("the user's codex folder was replaced")
+	}
+	if cfg := readFile(t, filepath.Join(home, codexConfig)); strings.Contains(cfg, "p@curral") {
+		t.Errorf("the user's folder was turned on as curral's plugin:\n%s", cfg)
+	}
+}
+
+// A setting that isn't a list is the user's: left alone, with a warning.
+func TestAgentFilesLeavesNonListsAlone(t *testing.T) {
+	home := t.TempDir()
+	write(t, filepath.Join(home, opencodeConfig), `{"plugin": "x"}`)
+	s := filesSpec(template.Agents{OpenCode: &template.Agent{}})
+	s.Plugins = []Bundle{{Agent: "opencode", Name: "q", Files: []gitsrc.File{{Name: "package.json", Data: []byte("{}")}}}}
+	res := pushFiles(t, home, s)
+	if oc := readJSON(t, filepath.Join(home, opencodeConfig)); oc["plugin"] != "x" || !warned(res, "plugin isn't a list") {
+		t.Errorf("plugin = %v, warnings %v", oc["plugin"], res.Warnings)
+	}
+}
+
+// With claude.ai sync on and host settings synced, the host's settings.json
+// decides the claude.ai sync keys.
+func TestClaudeAISyncKeepsSyncedSettings(t *testing.T) {
+	home, host := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(host, "settings.json"), `{"syncClaudeAiSkills": false}`)
+	s := fullSpec()
+	tru := true
+	s.Sync = template.Sync{ClaudeAI: &tru, ClaudeConfig: &tru}
+	s.ClaudeDir = host
+	if _, err := Push(context.Background(), localRemote{home}, s, fakeSecrets{}); err != nil {
+		t.Fatal(err)
+	}
+	if st := readJSON(t, filepath.Join(home, claudeSettings)); st["syncClaudeAiSkills"] != false {
+		t.Errorf("settings.json: %v", st)
 	}
 }
