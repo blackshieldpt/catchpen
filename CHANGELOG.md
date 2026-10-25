@@ -10,7 +10,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 - Templates are now [category files](docs/templates.md) of named sections: `distros`,
   `resources`, `tools`, `agents`, `runtimes`, `network`, `caches`, `canaries`, `env`,
-  `mcp`, `ssh`, `sync`, `repos`, `ports`, `idle` and `profiles`, each with a `default`.
+  `mcp`, `skills`, `plugins`, `ssh`, `sync`, `repos`, `ports`, `idle` and `profiles`,
+  each with a `default`.
   `-t` is a comma-separated list of picks, like `-t go-1.27,python-3.14` or
   `-t ubuntu-26.04,large,-docker`: categories not named keep their default, picks add to
   it (in `distros`, `resources`, `ssh` and `idle` they replace it), and `-name` drops a
@@ -39,11 +40,22 @@ before 0.1.0 describe work on `master` before the first tagged release.
   `runtimes: { python: "3.14" }` installs that Python with uv, as `python3.14` and
   `python`.
 - `small`, `medium`, `large` and `xlarge` resource sections.
+- [Skills and plugins](docs/agents.md#skills-and-plugins) for every agent, fetched on the
+  host from pinned git commits and copied in at each start. By default, Claude Code gets
+  three of Anthropic's skills (`skill-creator`, `mcp-builder`, `frontend-design`);
+  built-in plugin sections for Claude Code, Codex and pi are opt-in.
 
 ### Changed
 
 - `curral creds push` takes the VM's `env:` from its template as the template is now, so
-  variables added to the template after the VM was created reach it.
+  variables added to the template after the VM was created reach it. It also refreshes
+  the VM's skills and plugins from the template.
+- opencode no longer reads `~/.claude/skills` in VMs, unless
+  `sync: { opencode_claude_skills: true }` (`-t opencode-claude-skills`).
+- Claude Code's skill and plugin sync from claude.ai is off in VMs, unless
+  `sync: { claude_ai: true }` (`-t claude-ai-sync`), and so is its clone of the official
+  plugin marketplace.
+- Codex's remote plugins are off.
 - A `--repo` whose host has no forge says that repos clone only from added forges, lists
   the configured ones, and prints a complete `curral forge add` command for the host.
 

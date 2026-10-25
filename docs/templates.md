@@ -46,8 +46,10 @@ profile). A name must be unique across categories; when it isn't
 
 Sections are merged in category order, below. Within a category, lists add up
 (`packages`, `presets`, `cache`, ...), settings like `go:` or `egress:` take the last
-section's value, agents merge field by field, `env` by name and `mcp` by server name. A
-runtime picked with `-t` overrides the Node version the agents ask for (`-t node-22`).
+section's value, agents merge field by field, `env` by name and `mcp` by server name.
+`skills` and `plugins` add up too, and entries for agents the VM doesn't have are
+dropped. A runtime picked with `-t` overrides the Node version the agents ask for
+(`-t node-22`).
 
 A VM records its `-t` (`curral ls` shows it as TEMPLATE), and uses it again for
 `curral reset --latest`, `rebase`, `template rebuild --all` and `creds push`. So editing a
@@ -67,8 +69,10 @@ section changes what those give for every VM that picked it.
 | `canaries.yaml` | `canaries` | all three | `aws-canary`, `env-canary`, `git-canary` |
 | `env.yaml` | `env` | none | none |
 | `mcp.yaml` | `mcp` | none | none |
+| `skills.yaml` | `skills` | `claude-skill-creator`, `claude-mcp-builder`, `claude-frontend-design` | those and `claude-webapp-testing` |
+| `plugins.yaml` | `plugins` | none | `commit-commands`, `code-review`, `pr-review-toolkit`, `feature-dev`, `code-simplifier`, `claude-md-management` (Claude Code); `codex-superpowers` (Codex); `pi-plan-mode`, `pi-permission-gate`, `pi-protected-paths`, `pi-git-checkpoint`, `pi-confirm-destructive`, `pi-dirty-repo-guard` (pi) |
 | `ssh.yaml` | `ssh` | `ssh-off` | `ssh-off`, `ssh-host` |
-| `sync.yaml` | `sync` | none (git identity is copied) | `claude-config`, `no-git-identity` |
+| `sync.yaml` | `sync` | none (git identity is copied) | `claude-config`, `no-git-identity`, `claude-ai-sync`, `opencode-claude-skills` |
 | `repos.yaml` | `repos` | none | none |
 | `ports.yaml` | `ports` | none | none |
 | `idle.yaml` | `idle_stop` | none (`config.yaml` `idle_stop`) | `idle-30m`, `idle-1h`, `idle-2h`, `idle-off` |
@@ -165,7 +169,9 @@ default: [claude, omp]             # no opencode, pi or codex by default
 | `agents` | `claude`, `opencode`, `pi`, `omp`, `codex`. See [agents.md](agents.md). |
 | `env` | Environment for every ssh session: literal values or `secret:NAME`. Names are upper case; `HOME`, `USER`, `PATH`, `SHELL` and `LOGNAME` are refused, and so is `ANTHROPIC_API_KEY` with Claude whose `auth` isn't `api-key`. |
 | `mcp` | MCP servers for all agents. See [agents.md](agents.md#mcp-servers). |
-| `sync` | `git_identity` (default `true`), `claude_config` (default `false`). |
+| `skills` | `{agent, git, ref, path, name}`: a folder with a `SKILL.md` from an `https` git repo at a full 40-character commit `ref`; `path` is the folder (`.` for the repo's root), `name` its name in the guest (default: the last element of `path`, or the repo's name for `.`). Without `agent`, every agent the VM has gets it. See [agents.md](agents.md#skills-and-plugins). |
+| `plugins` | `{agent, git, ref, path, name}` as for `skills`, but `agent` is required; for pi also `{agent: pi, bundled, name}`, a path in pi's installed package. See [agents.md](agents.md#skills-and-plugins). |
+| `sync` | `git_identity` (default `true`), `claude_config` (default `false`), `claude_ai` (default `false`), `opencode_claude_skills` (default `false`). |
 | `ssh` | `agent` (`off`, `restricted`, `host`), `agent_keys`, `confirm` (default `true`). See [forges.md](forges.md#ssh-agent). |
 | `repos` | Repos cloned into `/workspace/<repo>` at start. See [forges.md](forges.md). |
 | `idle_stop` | `off`, `daily`, `weekly` or a duration of at least `1m`; overrides `config.yaml`. |

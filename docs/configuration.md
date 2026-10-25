@@ -32,6 +32,7 @@ files, not here.
   audit.jsonl                host audit log
   daemon.lock, rebuild.stamp curral daemon state
 ~/.cache/curral/pkg/         package caches (apt, go, npm, pypi, docker)
+~/.cache/curral/sources/     pinned git repos of skills and plugins
 ```
 
 curral creates these directories with mode 0700.

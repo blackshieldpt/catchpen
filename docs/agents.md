@@ -186,6 +186,8 @@ The `sync:` settings, with their defaults:
 sync:
   git_identity: true       # host git user.name and user.email (default)
   claude_config: false     # host ~/.claude settings, CLAUDE.md, agents, skills, commands
+  claude_ai: false         # Claude's skill and plugin sync from claude.ai
+  opencode_claude_skills: false  # opencode also reads ~/.claude/skills
 ```
 
 `sync.yaml` has no default section. Its built-in sections change one setting each:
@@ -193,10 +195,76 @@ sync:
 ```
 curral up dev -t claude-config            # claude_config: true
 curral up dev -t no-git-identity          # git_identity: false
+curral up dev -t claude-ai-sync           # claude_ai: true
+curral up dev -t opencode-claude-skills   # opencode_claude_skills: true
 ```
 
 With `claude_config`, the guest's `~/.claude/settings.json` is replaced on every push,
 minus `env`, hooks, credential helpers, the status line and plugins.
+
+## Skills and plugins
+
+curral copies skills and plugins into the agents at every start. By default, Claude Code
+gets three of Anthropic's skills: `claude-skill-creator`, `claude-mcp-builder` and
+`claude-frontend-design` (`skills.yaml`). Plugins are opt-in sections of `plugins.yaml`;
+[templates.md](templates.md#categories) lists them. Codex, opencode, pi and omp get no
+skills by default.
+
+```
+curral up dev -t commit-commands          # add Anthropic's commit-commands plugin
+curral up dev -t -claude-mcp-builder      # drop a default skill
+curral up dev -t team-review              # a section of your own, below
+```
+
+```yaml
+# ~/.config/curral/templates/skills.yaml
+team-review:
+  description: "Our review checklist"
+  skills:
+    - { git: "https://github.com/acme/agent-skills", ref: "0123456789abcdef0123456789abcdef01234567", path: review }
+```
+
+A skill without `agent` goes to every agent the VM has; a plugin names its agent.
+`claude-webapp-testing` needs Playwright in the VM.
+
+**Where they come from.** curral fetches each one on the host from an `https` git repo at
+a full 40-character commit, keeps the repos in `~/.cache/curral/sources/`, and copies the
+files in at every start. When a fetch fails, the start warns and the VM keeps the copy it
+has. A VM keeps the list it was created with: `curral creds push` takes it from the
+template as it is now, which is also how an existing VM gets a newer pin. pi's `bundled`
+plugins are files of the pi package installed in the VM; one that isn't there is skipped
+with a warning.
+
+**Trust.** A pinned commit fixes the bytes, not who wrote them. On GitHub, a commit from a
+fork can be fetched through the parent repo's URL, so pin commits you have read.
+
+**Where each agent reads them**, under the guest's home:
+
+| Agent | Skills folder | Plugin folder | How it is turned on |
+|---|---|---|---|
+| claude | `.claude/skills/<name>/` | `.local/share/curral/plugins/claude/<name>/` | `CLAUDE_CODE_PLUGIN_DIRS` in Claude Code's environment, as `--plugin-dir` does |
+| codex | `.codex/skills/<name>/` | `.codex/plugins/cache/curral/<name>/local/` | `[plugins."<name>@curral"]` with `enabled = true` in `.codex/config.toml` |
+| opencode | `.config/opencode/skills/<name>/` | `.local/share/curral/plugins/opencode/<name>/` (needs a `package.json`) | its path in `plugin` in `.config/opencode/opencode.json` |
+| pi | `.pi/agent/skills/<name>/` | `.local/share/curral/plugins/pi/<name>/` | its path in `packages` in `.pi/agent/settings.json`; a `bundled` one in `extensions` |
+| omp | `.omp/agent/skills/<name>/` | `.omp/agent/extensions/<name>/` (needs an `index.ts`, `index.js` or `package.json`) | none: omp loads the folder |
+
+**Your own folders.** curral marks the folders it copies with a `.curral` file holding the
+folder's name, and only replaces or removes marked folders. A folder of the same name
+without the mark is yours: curral leaves it and warns. A skill of the same name in
+your host `~/.claude/skills`, synced with `claude_config` (`-t claude-config`), is used
+instead of curral's.
+
+**Isolation.** Each agent gets its own skills. opencode is told not to read
+`~/.claude/skills` (`OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`, set at each start) unless
+`sync: { opencode_claude_skills: true }` (section `opencode-claude-skills`).
+
+**Off in VMs**: Claude's skill and plugin sync from claude.ai (keep it with
+`sync: { claude_ai: true }`, section `claude-ai-sync`), Claude's clone of its official
+plugin marketplace, and Codex's remote plugins.
+
+**Installing your own.** Skills and plugins you install inside the VM stay: curral only
+replaces folders and config entries it marked as its own. Installs that download need the
+host in the egress allowlist (`-t github` for GitHub).
 
 ## Transcripts
 

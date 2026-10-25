@@ -74,7 +74,10 @@ Check the release locally with `goreleaser release --snapshot --clean --skip=pub
 4. Add its task command and event-stream parsing to `internal/task/agent.go`, and the
    API hosts it needs to `agentHosts` in `internal/vm/create.go` if it doesn't take
    provider keys.
-5. Document it in `docs/agents.md`.
+5. Add its skills and plugin folders to `skillDirs` and `pluginDirs` in
+   `internal/agents/agentfiles.go`; `TestAgentFilesEveryAgentHasFolders` fails until you
+   do.
+6. Document it in `docs/agents.md`.
 
 Tests fail while the registry, `Agents`, `pushers`, the hook or the task command are
 out of step.

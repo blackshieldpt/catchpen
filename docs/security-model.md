@@ -113,6 +113,13 @@ the agent user has passwordless sudo inside it.
   against the VM's denylist. Guests can't put anything in the store; Docker objects and
   apt by-hash files are checked against their digest, the rest by the clients (apt
   signatures, the Go checksum database, lockfile hashes).
+- Skills and plugins are fetched on the host by `git`, over `https` only, at a pinned
+  full commit, with a scrubbed environment and config (no hooks, no credential helpers,
+  `fsckObjects` on). Symlinks, submodules, `.git` and other odd names are refused. The
+  fetched files go only into the guest; nothing from them runs on the host. A pin fixes
+  the bytes, not who wrote them: on GitHub, a commit from a fork can be fetched through
+  the parent repo's URL, so pin commits you have read. See
+  [agents.md](agents.md#skills-and-plugins).
 
 ## Known limits
 
