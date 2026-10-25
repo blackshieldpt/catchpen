@@ -226,7 +226,7 @@ func lsCmd() *cobra.Command {
 				if _, ok := current[v.Template]; !ok && v.Picks {
 					current[v.Template], _ = m.CurrentBase(v.Template)
 				}
-				if cur := current[v.Template]; cur != "" && cur != v.Base {
+				if cur := current[v.Template]; v.Picks && cur != "" && cur != v.Base {
 					state += ",stale-base"
 				}
 				if v.Running {
@@ -363,6 +363,9 @@ func templateCmd() *cobra.Command {
 					desc := s.Description
 					if s.Group != nil {
 						desc = "[" + strings.Join(s.Group, ", ") + "]"
+						if len(desc) > 60 {
+							desc = desc[:56] + " ...]"
+						}
 					}
 					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", cat.Name, s.Name, d, desc, s.Source)
 				}
@@ -382,7 +385,11 @@ func templateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			r, err := m.Resolve(specArg(cmd, args))
+			spec, err := specArg(cmd, args)
+			if err != nil {
+				return err
+			}
+			r, err := m.Resolve(spec)
 			if err != nil {
 				return err
 			}
@@ -395,7 +402,7 @@ func templateCmd() *cobra.Command {
 				if p.Default {
 					d = " (default)"
 				}
-				fmt.Printf("# %-9s %s%s\n", p.Category+":", strings.Join(p.Sections, ", "), d)
+				fmt.Printf("# %-10s %s%s\n", p.Category+":", strings.Join(p.Sections, ", "), d)
 			}
 			fmt.Printf("# base: %s\n%s", r.BasePath(m.P), b)
 			return nil
@@ -411,7 +418,11 @@ func templateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			r, err := m.Resolve(specArg(cmd, args))
+			spec, err := specArg(cmd, args)
+			if err != nil {
+				return err
+			}
+			r, err := m.Resolve(spec)
 			if err != nil {
 				return err
 			}
@@ -461,12 +472,15 @@ curral reset --latest moves one to the new base, curral gc removes unused old ba
 }
 
 // specArg is the -t flag, or the positional spec.
-func specArg(cmd *cobra.Command, args []string) string {
+func specArg(cmd *cobra.Command, args []string) (string, error) {
 	t, _ := cmd.Flags().GetString("template")
 	if len(args) > 0 {
+		if cmd.Flags().Changed("template") {
+			return "", fmt.Errorf("give the picks with -t or as an argument, not both")
+		}
 		t = args[0]
 	}
-	return t
+	return t, nil
 }
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }

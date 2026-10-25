@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blackshieldpt/curral/internal/fsutil"
 	"github.com/blackshieldpt/curral/internal/image"
 	"github.com/blackshieldpt/curral/internal/task"
 )
@@ -417,5 +418,93 @@ func TestSnapshotMetaAndDiskOnlyRestore(t *testing.T) {
 	}
 	if st, _ := os.Stat(m.vm("v1").path(diskFile)); st.Mode().Perm() != 0o600 {
 		t.Errorf("reset disk mode %v", st.Mode().Perm())
+	}
+}
+
+// reset --latest refuses to move a VM to another distro when the distros
+// default changes.
+func TestResetLatestKeepsTheDistro(t *testing.T) {
+	m := testManager(t)
+	s, _ := offlineVM(t, m, "v1")
+	writeFile(t, filepath.Join(m.P.Templates(), "distros.yaml"), "default: debian-13\n")
+	err := m.Reset(context.Background(), "v1", true)
+	if err == nil || !strings.Contains(err.Error(), "can't change distro") {
+		t.Errorf("reset --latest: %v", err)
+	}
+	if ns, _ := m.Load("v1"); ns.Base != s.Base {
+		t.Errorf("the VM moved to %s", ns.Base)
+	}
+}
+
+// gc removes interrupted writes of a base's list once they're old.
+func TestGCRemovesOldSpecsTemps(t *testing.T) {
+	m := testManager(t)
+	tmp := filepath.Join(m.P.Bases(), ".ubuntu-24.04-0123456789abcdef.specs.123")
+	writeFile(t, tmp, "x")
+	if err := os.Chtimes(tmp, time.Now().Add(-2*gcTempAge), time.Now().Add(-2*gcTempAge)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.GC(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(tmp); err == nil {
+		t.Error("an old .specs temp file survived gc")
+	}
+}
+
+// gc keeps a base's list while its first build runs, so the base stays current.
+func TestGCDuringAFirstBuild(t *testing.T) {
+	m := testManager(t)
+	r, err := m.Resolve("minimal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := fsutil.Lock(strings.TrimSuffix(r.basePath(m.P, 1), ".qcow2") + ".build.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.recordSpec(m.P); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.GC(false); err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	writeFile(t, r.basePath(m.P, 1), "base") // the build lands
+	if _, err := m.GC(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(r.basePath(m.P, 1)); err != nil {
+		t.Error("gc removed the base a build had just made")
+	}
+}
+
+// A file that parses but doesn't load keeps the bases, like one that doesn't
+// parse; a spec naming a section that's gone frees its base.
+func TestGCKeepsBasesWhileTemplatesAreBroken(t *testing.T) {
+	m := testManager(t)
+	r, err := m.Resolve("minimal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.recordSpec(m.P); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, r.basePath(m.P, 1), "base")
+	tpl := filepath.Join(m.P.Templates(), "distros.yaml")
+	writeFile(t, tpl, "default: [ubuntu-24.04, debian-13]\n")
+	if _, err := m.GC(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(r.specsPath(m.P)); err != nil {
+		t.Fatal("gc removed a base's list while distros.yaml was broken")
+	}
+	os.Remove(tpl)
+	writeFile(t, r.specsPath(m.P), "gone-section\n")
+	if _, err := m.GC(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(r.basePath(m.P, 1)); err == nil {
+		t.Error("gc kept a base only a spec naming a missing section used")
 	}
 }

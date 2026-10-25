@@ -100,7 +100,7 @@ func BuildScript(t *tpl.Template, user string, caches []string) (string, error) 
 		"ClaudeEnvFile": ClaudeEnvFile,
 		"WithEnv":       withEnv,
 		"User":          user,
-		"Packages":      t.Packages,
+		"Packages":      slices.Sorted(slices.Values(t.Packages)), // in any order: the same packages share a base
 		"Docker":        t.HasDocker(),
 		"Node":          t.Runtimes.Node,
 		"Go":            t.Runtimes.Go,

@@ -50,15 +50,21 @@ func (r *Resolved) specsPath(p paths.Paths) string {
 	return filepath.Join(p.Bases(), r.stem()+"-"+r.Hash+".specs")
 }
 
-func readSpecs(path string) []string {
-	b, _ := os.ReadFile(path)
-	return strings.Fields(string(b))
+func readSpecs(path string) ([]string, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	return strings.Fields(string(b)), err
 }
 
 // recordSpec adds the template's spec to its base's list. Callers hold the
 // build lock.
 func (r *Resolved) recordSpec(p paths.Paths) error {
-	specs := readSpecs(r.specsPath(p))
+	specs, err := readSpecs(r.specsPath(p))
+	if err != nil {
+		return err
+	}
 	if slices.Contains(specs, r.T.Name) {
 		return nil
 	}

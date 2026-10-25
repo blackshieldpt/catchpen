@@ -84,7 +84,7 @@ curral destroy dev
 ```
 
 `curral herdr` puts every running VM's agent in [herdr](herdr.md), which shows whether
-each is working, blocked or idle. `curral up -t go-1.27,large` adds Go to the default
+each is working, blocked or idle. `curral up dev -t go-1.27,large` adds Go to the default
 template and picks a larger size, and `--cpus`, `--mem` and `--disk` size
 the VM. `curral up --ephemeral dev` gives you a VM that is destroyed when you
 leave it. See [Sessions](sessions.md) for recordings and the audit log.

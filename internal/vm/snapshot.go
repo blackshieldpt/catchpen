@@ -414,6 +414,9 @@ func (m *Manager) baseFor(ctx context.Context, s *State) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if r.Distro.Name != s.Distro {
+		return "", fmt.Errorf("%s runs %s, and -t %s now gives %s; a disk can't change distro, so create a new VM (curral reset without --latest keeps its current base)", s.Name, s.Distro, s.Template, r.Distro.Name)
+	}
 	if r.baseGen(m.P) == 0 {
 		m.logf("template %s changed since its base was built: building the new base first (this can take a while)", s.Template)
 	}

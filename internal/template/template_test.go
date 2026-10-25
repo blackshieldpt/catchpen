@@ -174,7 +174,7 @@ mine:
 		t.Fatal(err)
 	}
 	secs, def := lib.Sections("tools")
-	if def == nil || !slices.Equal(def.Group, []string{"base", "build", "gh"}) || len(secs) != 5 {
+	if def == nil || !slices.Equal(def.Group, []string{"core", "build", "gh"}) || len(secs) != 5 {
 		t.Errorf("tools sections %d, default %+v", len(secs), def)
 	}
 }
@@ -190,7 +190,7 @@ func TestCompositionErrors(t *testing.T) {
 		"-large":                     "resources takes one section",
 		"-omp":                       "not in agents's default",
 		"loop1":                      "nested too deep",
-		"badrm":                      "is a list",
+		"badrm":                      "is a profile",
 		"nope:large":                 "no category \"nope\"",
 		"resources:nope":             "no section \"nope\" in resources.yaml",
 		strings.Repeat("large,", 40): "longer than",
@@ -279,6 +279,96 @@ func TestPickOrderAndOverrides(t *testing.T) {
 	write(t, d, "resources.yaml", "default: { resources: { cpus: 2 } }\n")
 	if _, err := load(t, d, ""); err == nil || !strings.Contains(err.Error(), "resources need cpus, memory and disk") {
 		t.Errorf("incomplete default size: %v", err)
+	}
+}
+
+// Picks in -t win over lists, re-picks move last, and a one-choice file's
+// own lists count as named in -t.
+func TestPickPrecedence(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "resources.yaml", "big: large\ncombo: [small, large]\n")
+	write(t, dir, "profiles.yaml", "dk: [runtimes:docker]\nwide: [open]\nnolarge: [-resources:large]\nnomedium: [-resources:medium]\nagents: [omp]\nteam: [agents]\n")
+	write(t, dir, "network.yaml", "tools: [docker-apt, docker-hub]\n")
+	write(t, dir, "runtimes.yaml", "wr: [node-24, -docker]\n")
+	for spec, check := range map[string]func(*Template) bool{
+		"docker,minimal":          func(tp *Template) bool { return tp.HasDocker() },
+		"claude,minimal":          func(tp *Template) bool { return tp.Agents.Claude != nil },
+		"gh,minimal":              func(tp *Template) bool { return slices.Contains(tp.Tools, "gh") },
+		"-docker,dk":              func(tp *Template) bool { return !tp.HasDocker() },
+		"open,allowlist":          func(tp *Template) bool { return tp.Network.Egress == "allowlist" },
+		"wide,allowlist":          func(tp *Template) bool { return tp.Network.Egress == "allowlist" },
+		"node-22,node-24,node-22": func(tp *Template) bool { return tp.Runtimes.Node == "22" },
+		"nolarge":                 func(tp *Template) bool { return tp.Resources.CPUs == 4 },
+		"-tools:default":          func(tp *Template) bool { return len(tp.Packages) == 0 && len(tp.Tools) == 0 },
+		"-env:default":            func(tp *Template) bool { return true },
+		"big":                     func(tp *Template) bool { return tp.Resources.CPUs == 8 },
+		"build": func(tp *Template) bool { // moved last: no longer the default's order
+			return slices.ContainsFunc(tp.Parts, func(p Part) bool {
+				return p.Category == "tools" && !p.Default && slices.Equal(p.Sections, []string{"core", "gh", "build"})
+			})
+		},
+		"network:tools": func(tp *Template) bool { return slices.Contains(tp.Network.Presets, "docker-hub") },
+		"team":          func(tp *Template) bool { return tp.Agents.OMP != nil },
+	} {
+		tp, err := load(t, dir, spec)
+		if err != nil || !check(tp) {
+			t.Errorf("%q: %+v %v", spec, tp, err)
+		}
+	}
+	for spec, want := range map[string]string{
+		"big,small":               "resources takes one section, got large and small",
+		"small,big":               "resources takes one section, got small and large",
+		"combo":                   "resources takes one section, got small, large",
+		"resources:default,large": "resources takes one section, got medium and large",
+		":go-1.27":                "name the category",
+		"base":                    "base was a built-in template",
+		"-base":                   "the tools section base is now core",
+		"nomedium":                "a list removed medium; pick another",
+		"-wr":                     "wr holds a removal",
+	} {
+		if _, err := load(t, dir, spec); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: err = %v, want %q", spec, err, want)
+		}
+	}
+}
+
+// Category files that would silently mean something else are refused.
+func TestFileErrors(t *testing.T) {
+	for file, c := range map[string]struct{ body, want string }{
+		"agents.yaml":   {"claude:\n", "claude: empty (uncomment the lines under it too"},
+		"distros.yaml":  {"extends: default\ndistro: debian-13\n", "looks like an old-style template"},
+		"tools.yaml":    {"a: { tools: [gh] }\n---\nb: { tools: [tea] }\n", "one YAML document only"},
+		"caches.yaml":   {"x: ~\n", "x: empty"},
+		"sync.yaml":     {"sync: [claude-config]\n", "looks like an old-style template"},
+		"runtimes.yaml": {strings.Repeat("x", 49) + ": { docker: true }\n", "at most 48 characters"},
+	} {
+		d := t.TempDir()
+		write(t, d, file, c.body)
+		if _, err := (Loader{UserDir: d}).Library(); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s %q: %v, want %q", file, c.body, err, c.want)
+		}
+	}
+}
+
+// Scripts resolve inside the templates folder, once each.
+func TestScriptPaths(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "s.sh", "echo s")
+	write(t, dir, "..setup.sh", "echo setup")
+	outside := filepath.Join(t.TempDir(), "secret")
+	write(t, filepath.Dir(outside), "secret", "OUTSIDE")
+	if err := os.Symlink(outside, filepath.Join(dir, "link.sh")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, dir, "tools.yaml", "twice: { scripts: [s.sh, ./s.sh] }\ndots: { scripts: [..setup.sh] }\nlink: { scripts: [link.sh] }\n")
+	if tp, err := load(t, dir, "twice"); err != nil || !slices.Equal(tp.Scripts, []string{"s.sh"}) {
+		t.Errorf("twice: %v %v", tp, err)
+	}
+	if _, err := load(t, dir, "dots"); err != nil {
+		t.Errorf("..setup.sh: %v", err)
+	}
+	if tp, err := load(t, dir, "link"); err != nil || string(tp.assets["link.sh"]) != "OUTSIDE" {
+		t.Errorf("a symlinked script (dotfile managers use them): %v", err)
 	}
 }
 

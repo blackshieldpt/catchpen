@@ -100,9 +100,10 @@ func Load(path string) (Config, error) {
 	dec.KnownFields(true)
 	var f Config
 	if err := dec.Decode(&f); err != nil && !errors.Is(err, io.EOF) {
-		for _, k := range []string{"distro", "template", "resources"} {
-			if strings.Contains(err.Error(), "field "+k+" not found") {
-				return c, fmt.Errorf("%s: %w (defaults.distro, defaults.template, defaults.resources and pool distro are gone: set the defaults in templates/distros.yaml and resources.yaml, and give a pool entry's distro in its template, e.g. \"debian-13,go-1.27\")", path, err)
+		for _, k := range []string{"field distro not found in type config.Defaults", "field template not found in type config.Defaults",
+			"field resources not found in type config.Defaults", "field distro not found in type config.PoolEntry"} {
+			if strings.Contains(err.Error(), k) {
+				return c, fmt.Errorf("%s: %w (defaults.distro, defaults.template, defaults.resources and pool distro are gone: a VM's defaults are the default: of each file in templates/, such as distros.yaml and resources.yaml, and a pool entry gives its distro in its template, e.g. \"debian-13,go-1.27\")", path, err)
 			}
 		}
 		return c, fmt.Errorf("%s: %w", path, err)

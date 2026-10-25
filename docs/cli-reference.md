@@ -147,6 +147,7 @@ Add (or remove) an `Include` of curral's `ssh_config` in `~/.ssh/config`, so
 | `curral template rebuild -t picks... \| --all` | Build a new base generation from a fresh cloud image. `-t` is repeatable (`-t default` for the defaults); `--all` covers every template with a base or a VM, and can't be combined with `-t`. |
 
 `show`, `build` and `rebuild` also take the picks as an argument: `curral template show go-1.27`.
+`show` and `build` take them one way or the other, not both.
 
 ## Credentials
 

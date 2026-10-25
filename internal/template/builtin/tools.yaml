@@ -1,5 +1,5 @@
-default: [base, build, gh]
-base:
+default: [core, build, gh]
+core:
   description: Tools every VM gets (remove at your own risk)
   packages: [ca-certificates, curl, git, jq, tmux, ripgrep, unzip, less, file, htop, netcat-openbsd]
 build:

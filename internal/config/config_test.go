@@ -115,5 +115,14 @@ func TestOldKeysExplained(t *testing.T) {
 		if _, err := Load(p); err == nil || !strings.Contains(err.Error(), "are gone") {
 			t.Errorf("%q: %v", body, err)
 		}
+	} // Unknown keys elsewhere get the plain error.
+	for _, body := range []string{"tasks: { template: x }\n", "notify: { template: x }\n", "distro: x\n"} {
+		p := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(p); err == nil || strings.Contains(err.Error(), "are gone") {
+			t.Errorf("%q: %v", body, err)
+		}
 	}
 }

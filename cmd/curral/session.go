@@ -264,7 +264,7 @@ func herdrCmd() *cobra.Command {
 				if agent != "" {
 					if s.Agents.Get(agent) == nil {
 						if contains(args, n) {
-							return fmt.Errorf("%s is not installed in %s (add agents.%s to its template)", agent, n, agent)
+							return fmt.Errorf("%s is not installed in %s (create a VM whose -t has it, e.g. -t %s)", agent, n, agent)
 						}
 					} else {
 						agentOf[n] = agent

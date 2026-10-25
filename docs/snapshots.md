@@ -41,6 +41,10 @@ To move a VM to new software:
   files, without new packages, and stops it using the old base, which `gc` can then
   remove. It deletes the VM's snapshots.
 
+Both use the VM's `-t` as the category files are now. When that gives another distro
+(say `distros.yaml` changed its default), they refuse: a disk can't change distro. Create
+a new VM, or `reset` without `--latest` to stay on the current base.
+
 The daemon can rebuild bases on a schedule (`rebuild:` in config.yaml); see
 [deployment.md](deployment.md#scheduled-rebuilds).
 

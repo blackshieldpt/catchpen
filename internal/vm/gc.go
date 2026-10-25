@@ -63,7 +63,7 @@ func (m *Manager) GC(dryRun bool) ([]GCItem, error) {
 		key, gen := mt[1]+"-"+mt[2], baseFileGen(mt[3])
 		newest[key] = max(newest[key], gen)
 		if _, seen := current[key]; !seen {
-			current[key] = libErr != nil || len(m.currentSpecs(mt[1], mt[2])) > 0
+			current[key] = libErr != nil || m.baseWanted(mt[1], mt[2])
 		}
 	}
 	kept := map[string]bool{} // distro-hash with a base left
@@ -93,6 +93,12 @@ func (m *Manager) GC(dryRun bool) ([]GCItem, error) {
 			specs = append(specs, stem)
 			continue
 		}
+		if strings.HasPrefix(e.Name(), ".") && strings.Contains(e.Name(), ".specs.") {
+			if old(p) {
+				add(p, "interrupted write of a base's list")
+			}
+			continue
+		}
 		for _, sfx := range []string{".building", ".seed.iso", ".egress", ".build.log", ".console.log", ".egress.log"} {
 			stem, ok := strings.CutSuffix(e.Name(), sfx)
 			if !ok {
@@ -112,7 +118,7 @@ func (m *Manager) GC(dryRun bool) ([]GCItem, error) {
 
 	for _, key := range specs {
 		if !kept[key] && libErr == nil {
-			add(filepath.Join(m.P.Bases(), key+".specs"), "list of a removed base")
+			m.removeSpecs(key, dryRun, add)
 		}
 	}
 
@@ -172,6 +178,27 @@ func (m *Manager) removeBase(base string, dryRun bool) bool {
 	}
 	_ = os.Remove(base + ".lock")
 	return true
+}
+
+// removeSpecs removes the list of base key, which has no generation left.
+// A first build records its spec before its base exists, holding the build
+// lock, which it creates first.
+func (m *Manager) removeSpecs(key string, dryRun bool, add func(p, why string)) {
+	lock := filepath.Join(m.P.Bases(), key+".build.lock")
+	if _, err := os.Stat(lock); err == nil {
+		if dryRun {
+			return
+		}
+		unlock, ok, err := fsutil.TryLock(lock)
+		if err != nil || !ok {
+			return
+		}
+		defer unlock()
+		if built, _ := filepath.Glob(filepath.Join(m.P.Bases(), key+"*.qcow2")); len(built) > 0 {
+			return // finished since gc listed the folder
+		}
+	}
+	add(filepath.Join(m.P.Bases(), key+".specs"), "list of a base that's gone")
 }
 
 func baseFileGen(s string) int {

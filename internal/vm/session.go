@@ -37,7 +37,7 @@ func RunCommand(s *State, agent string, args []string) (string, error) {
 	}
 	a, yolo := s.Agents.Get(agent), d.Yolo // yolo: the agent's skip-permission flag
 	if a == nil {
-		return "", fmt.Errorf("%s is not installed in %s (add agents.%s to its template)", agent, s.Name, agent)
+		return "", fmt.Errorf("%s is not installed in %s (create a VM whose -t has it, e.g. -t %s)", agent, s.Name, agent)
 	}
 	// curral-env loads the environment pushed at the last start, which a
 	// long-lived guest tmux server would otherwise not see.

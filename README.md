@@ -157,7 +157,7 @@ resources, tools, agents, runtimes, network and more). Each category has a defau
 ```sh
 curral up dev -t go-1.27,python-3.14                 # the defaults, plus Go and Python 3.14
 curral up dev -t ubuntu-26.04,large,go-1.27,-docker  # another distro and size, Go, no Docker
-curral up dev -t minimal                             # small, base tools, no agents or runtimes
+curral up dev -t minimal                             # small, core tools, no agents or runtimes
 curral template ls                                   # every section, with the defaults marked
 ```
 

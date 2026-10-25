@@ -71,13 +71,20 @@ func categoryFile(c template.Category, examples string) []byte {
 	} else {
 		b.WriteString("## Each section is a name with a list of picks from any category, used like one: -t <name>.\n")
 	}
-	if c.Exclusive {
+	switch {
+	case c.Fields == nil:
+		b.WriteString("## A section here replaces a built-in one of the same name.\n")
+	case c.Exclusive:
 		b.WriteString("## -t picks one section here, which replaces the default.\n")
-	} else {
+	default:
 		b.WriteString("## -t picks add to the default; -<name> drops a section from it. A section can also be\n## a list of other sections here.\n")
 	}
-	b.WriteString(`## A section here replaces a built-in one of the same name, and "default:" replaces the
-## built-in default. Uncomment a line to use it.
+	if c.Fields != nil {
+		b.WriteString(`## A section here replaces a built-in one of the same name, and "default:" replaces the
+## built-in default.
+`)
+	}
+	b.WriteString(`## To use one below, uncomment it with all the lines under it.
 ## Reference: https://blackshieldpt.github.io/curral/templates/
 `)
 	if bi := template.BuiltinFile(c.Name); bi != "" {
@@ -126,6 +133,9 @@ func writeInitFiles(p paths.Paths, out io.Writer) error {
 			return fmt.Errorf("%s: %w", f.dst, err)
 		}
 		fmt.Fprintf(out, "created  %s\n", f.dst)
+	}
+	if _, err := (template.Loader{UserDir: p.Templates()}).Library(); err != nil {
+		fmt.Fprintf(out, "warning: %v\n", err) // e.g. a template file from before category files
 	}
 	return nil
 }

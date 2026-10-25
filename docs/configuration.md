@@ -80,7 +80,7 @@ canary_action: pause            # pause, stop or log
 | `tasks.max_memory` | no limit | A size such as `24G`. |
 | `idle_stop` | off | A template can override it (`idle.yaml`). See [deployment.md](deployment.md#idle-stop). |
 | `rebuild` | off | Needs the daemon. |
-| `pool` | none | `template` is a `-t` spec (default: every category's default), `size` is 0 to 32. Each template may appear once. |
+| `pool` | none | `template` is a `-t` spec (default: every category's default), `size` is 0 to 32. Each template may appear once. A pool VM serves only the same spec, written the same way. |
 | `cache_max` | `20G` | Least recently used objects go first. |
 | `canary_action` | `pause` | See [canaries.md](canaries.md). |
 

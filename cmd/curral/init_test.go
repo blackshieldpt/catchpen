@@ -171,3 +171,24 @@ func TestInitKeepsExistingFiles(t *testing.T) {
 		t.Fatalf("second run created files: %s", out.String())
 	}
 }
+
+// profiles.yaml has no default, and an old template file gets a warning.
+func TestInitHeadersAndOldFiles(t *testing.T) {
+	if h := string(categoryFile(template.Category{Name: "profiles"}, "")); strings.Contains(h, "default:") || strings.Contains(h, "-<name>") {
+		t.Errorf("profiles.yaml header: %s", h)
+	}
+	p := testPaths(t)
+	if err := os.MkdirAll(p.Templates(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(p.Templates(), "example.yaml"), []byte("extends: default\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := writeInitFiles(p, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "warning: ") || !strings.Contains(out.String(), "example.yaml") {
+		t.Errorf("no warning about example.yaml: %s", out.String())
+	}
+}

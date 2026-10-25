@@ -67,7 +67,8 @@ Check the release locally with `goreleaser release --snapshot --clean --skip=pub
    validation, the install, `curral run`, tasks' agent list, transcripts and the CLI
    help follow from it.
 2. Add a section for it to `internal/template/builtin/agents.yaml` (with the `runtimes`
-   it needs), and to that file's `default:` if every VM should get it.
+   it needs), and to that file's `default:` if every VM should get it. A default agent
+   also needs a `-agents:<name>` in the `minimal` profile (`builtin/profiles.yaml`).
 3. Write its push in `internal/agents` (settings, MCP servers, credentials, the
    notification hook) and add it to `pushers`.
 4. Add its task command and event-stream parsing to `internal/task/agent.go`, and the

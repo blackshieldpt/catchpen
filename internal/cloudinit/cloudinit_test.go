@@ -297,3 +297,11 @@ func TestWithEnvScript(t *testing.T) {
 		t.Errorf("with-env without the file: %v %q", err, out)
 	}
 }
+
+// Picking a default section again reorders packages, not the base.
+func TestBuildUserDataIgnoresPackageOrder(t *testing.T) {
+	def := mustB(BuildUserData(load(t, ""), "agent", nil))
+	if again := mustB(BuildUserData(load(t, "core"), "agent", nil)); string(again) != string(def) {
+		t.Error("-t core gives another base than the defaults")
+	}
+}

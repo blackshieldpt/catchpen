@@ -56,9 +56,14 @@ quotes, `%` or line breaks.
 **`unknown section "X" (curral template ls lists them)`**: `-t` names a section no
 category file has. `curral template ls` lists them all.
 
-**`...: X.yaml: old-style templates, which curral no longer reads`**: every command
-refuses while `~/.config/curral/templates/` holds a file that isn't a category file.
-Move its settings into sections of the category files, then remove or rename it.
+**`...: X.yaml: old-style templates, which curral no longer reads`**: commands that read
+templates (`up`, `task run`, `template`, `reset --latest`, `rebase`, `pool fill`) refuse while
+`~/.config/curral/templates/` holds a `*.yaml` file whose name isn't a category's, such as
+the `example.yaml` an older `curral init` wrote. Move its settings into sections of the
+category files, then remove or rename it. A category file holding an old template gives
+**`... looks like an old-style template`** (for `extends:`, or a setting such as `distro:`
+or `packages:` at the top) or **`... doesn't belong in X.yaml`** (for one such as
+`resources:`).
 
 **`... created with the old-style template X`**: the VM predates category files.
 `reset --latest` and `rebase` refuse it and `creds push` keeps its env; create a new VM

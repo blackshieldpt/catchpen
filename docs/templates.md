@@ -31,9 +31,13 @@ Each category is a file of named sections, plus a `default`. For every category:
   names **replaces** the default, and naming two is an error. A size may set only some
   of `cpus`, `memory` and `disk`; the default size gives the rest.
 
-Picks apply left to right: `-t docker,-docker` has no Docker. A pick named in `-t` wins
-over one from a profile (`-t minimal,large` is minimal at the large size), and a
-profile's `-name` of a section that isn't chosen does nothing.
+Picks apply left to right: `-t docker,-docker` has no Docker, and picking a section again
+moves it last, so its settings win (`-t open,allowlist` is the allowlist). A pick named
+in `-t` wins over one from a profile (`-t minimal,large` is minimal at the large size,
+and `-t docker,minimal` has Docker), and a profile's `-name` of a section that isn't
+chosen does nothing (in a one-choice category, unless it leaves none). `-name` of a list
+in a category file removes each of its sections (`-t -tools:default` drops the default
+tools); a profile can't be removed.
 
 `-t` is a comma-separated list of at most 160 characters (put longer ones in a
 profile). A name must be unique across categories; when it isn't
@@ -54,16 +58,16 @@ section changes what those give for every VM that picked it.
 | File | Sections set | Built-in default | Built-in sections |
 |---|---|---|---|
 | `distros.yaml` | `distro` | `ubuntu-24.04` | `ubuntu-24.04`, `ubuntu-26.04`, `debian-13` |
-| `resources.yaml` | `resources` | `medium` (4 CPUs, 8G, 40G) | `small` (2, 4G, 20G), `large` (8, 16G, 80G), `xlarge` (16, 32G, 160G) |
-| `tools.yaml` | `packages`, `tools`, `scripts`, `files` | `base`, `build`, `gh` | `base` (git, curl, jq, tmux, ripgrep, ...), `build` (build-essential, make, python3, ...), `gh`, `tea` |
-| `agents.yaml` | `agents`, and the `runtimes` they need | `claude`, `opencode`, `pi`, `codex` | `claude-api-key`, `claude-yolo`, `omp`, `codex-api-key`, `codex-chatgpt` |
-| `runtimes.yaml` | `runtimes`, `docker` | `docker`, `uv` | `node-22`, `node-24`, `go-1.26`, `go-1.27`, `python-3.12`, `python-3.13`, `python-3.14` |
-| `network.yaml` | `network` | `allowlist` and the presets below | `anthropic`, `github`, `npm`, `pypi`, `go`, `apt-ubuntu`, `apt-debian`, `docker-apt`, `docker-hub`, `ghcr` (one per preset); `open`, `offline`, `prompt` |
+| `resources.yaml` | `resources` | `medium` | `small` (2 CPUs, 4G, 20G), `medium` (4, 8G, 40G), `large` (8, 16G, 80G), `xlarge` (16, 32G, 160G) |
+| `tools.yaml` | `packages`, `tools`, `scripts`, `files` | `core`, `build`, `gh` | `core` (git, curl, jq, tmux, ripgrep, ...), `build` (build-essential, make, python3, ...), `gh`, `tea` |
+| `agents.yaml` | `agents`, and the `runtimes` they need | `claude`, `opencode`, `pi`, `codex` | `claude`, `claude-api-key`, `claude-yolo`, `opencode`, `pi`, `omp`, `codex`, `codex-api-key`, `codex-chatgpt` |
+| `runtimes.yaml` | `runtimes`, `docker` | `docker`, `uv` | `docker`, `uv`, `node-22`, `node-24`, `go-1.26`, `go-1.27`, `python-3.12`, `python-3.13`, `python-3.14` |
+| `network.yaml` | `network` | `allowlist` and the presets below | `allowlist`, `open`, `offline`, `prompt`; `anthropic`, `github`, `npm`, `pypi`, `go`, `apt-ubuntu`, `apt-debian`, `docker-apt`, `docker-hub`, `ghcr` (one per preset) |
 | `caches.yaml` | `cache` | all five | `apt-cache`, `go-cache`, `npm-cache`, `pypi-cache`, `docker-cache` |
 | `canaries.yaml` | `canaries` | all three | `aws-canary`, `env-canary`, `git-canary` |
 | `env.yaml` | `env` | none | none |
 | `mcp.yaml` | `mcp` | none | none |
-| `ssh.yaml` | `ssh` | `ssh-off` | `ssh-host` |
+| `ssh.yaml` | `ssh` | `ssh-off` | `ssh-off`, `ssh-host` |
 | `sync.yaml` | `sync` | none (git identity is copied) | `claude-config`, `no-git-identity` |
 | `repos.yaml` | `repos` | none | none |
 | `ports.yaml` | `ports` | none | none |
@@ -76,7 +80,8 @@ category's settings, and a `description`.
 ## Your sections
 
 `curral init` writes every category file to `~/.config/curral/templates/`. Each one
-explains itself, shows curral's built-in sections commented out, and has examples:
+explains itself, shows curral's built-in sections commented out, and most have examples.
+To use one, uncomment it with all the lines under it:
 
 ```yaml
 # ~/.config/curral/templates/ssh.yaml
@@ -98,11 +103,12 @@ Your file is read on top of curral's: a section with a built-in name replaces it
 `default:` replaces the built-in default. Sections you don't redefine keep tracking
 curral's, so new built-in sections (a new Go version, say) reach you on upgrade.
 
-Section names are lower case letters, digits, `.`, `_` and `-`, each defined once per
-file. Any other `*.yaml` in that folder, such as an old-style template, is refused
-until you move or rename it. Relative paths in
-`scripts` and `files[].src` resolve inside `~/.config/curral/templates/`; absolute paths
-and `..` are rejected. Unknown settings are errors.
+Section names are lower case letters, digits, `.`, `_` and `-`, start with a letter or
+digit, are at most 48 characters, and are defined once per file. Any other `*.yaml` in
+that folder, such as an old-style template, is refused until you move or rename it.
+Relative paths in `scripts` and `files[].src` resolve inside
+`~/.config/curral/templates/` (symlinks there are followed); absolute paths and `..` are
+rejected. Unknown settings are errors.
 
 ### Profiles
 
@@ -123,8 +129,10 @@ Lists may include `-name` and other lists. In a category file other than
 `web: [node-24, python-3.14]`.
 
 The built-in `minimal` profile is the defaults minus everything optional: `small`, the
-`base` tools, the allowlist with only the `anthropic` preset, and no agents, runtimes,
-caches or canaries.
+`core` tools, the allowlist with only the `anthropic` preset, and no agents, runtimes,
+caches or canaries. It removes curral's built-in default sections by name, so sections
+you add to a default stay: with `default: [claude, omp]` in agents.yaml, `-t minimal`
+has omp.
 
 ### Defaults
 

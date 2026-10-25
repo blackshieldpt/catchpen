@@ -84,8 +84,9 @@ curral pool ls | fill | drain
 
 Pool VMs go through first boot with their own keys, but no repos, agents' credentials or
 allowlist, and are then saved with their memory and stopped. They use disk, not RAM.
-`curral up` and `curral task run` claim one when the `-t` spec, resources, base and the
-rest of the VM's settings (egress mode, user, Docker, caches, canaries) match
+`curral up` and `curral task run` claim one when the `-t` spec, written the same way
+(`go-1.27,large` doesn't serve `-t large,go-1.27`), resources, base and the rest of the
+VM's settings (egress mode, user, Docker, caches, canaries) match
 (not with `--rebuild`): it is renamed, gets its allowlist, forges and
 credentials, and resumes in seconds with its new hostname. Each saved memory is resumed
 once.

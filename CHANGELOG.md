@@ -17,10 +17,14 @@ before 0.1.0 describe work on `master` before the first tagged release.
   default section. Profiles are named lists of picks from any category. Template files
   with `extends:`, the built-in `base` and `default` templates (`minimal` is now a
   profile), `--distro` and config.yaml's `defaults.distro`, `defaults.template`,
-  `defaults.resources` and pool `distro:` are gone, with errors that say so. Commands
-  refuse while old template files are in `~/.config/curral/templates/`; VMs made before
-  keep running, but `reset --latest` and `rebase` refuse them and `creds push` leaves
-  their env alone.
+  `defaults.resources` and pool `distro:` are gone; all but `--distro` give errors that
+  say so. Commands that read templates refuse while old template files, such as the
+  `example.yaml` an older `curral init` wrote, are in `~/.config/curral/templates/`. A
+  pool entry's or task batch's `template:` is now a `-t` spec, so an old template name
+  that is now a section's (`go`, `gh`) means that section on top of the defaults: check
+  scripts and config with `curral template show -t <name>`. VMs made before keep
+  running, but `reset --latest` and `rebase` refuse them and `creds push` leaves their
+  env alone.
 - Bases are named after the distro and a hash of their content
   (`ubuntu-24.04-<hash>.qcow2`), so `-t` lists that give the same software share one.
 - `curral init` writes every category file, commented, with curral's built-in sections
