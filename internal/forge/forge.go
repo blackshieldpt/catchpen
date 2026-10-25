@@ -314,5 +314,23 @@ func (r Registry) Resolve(ref string) (Forge, Repo, error) {
 			return f, Repo{Forge: f.Name, Owner: owner, Name: name}, nil
 		}
 	}
-	return Forge{}, Repo{}, fmt.Errorf("repo %q: no forge configured for host %s (add one: curral forge add <name> --type github|gitea --host %s)", ref, host, host)
+	return Forge{}, Repo{}, r.noForge(ref, host)
+}
+
+// noForge explains that repos clone only from added forges, and how to add one.
+func (r Registry) noForge(ref, host string) error {
+	have := "no forges are configured"
+	if len(r.Forges) > 0 {
+		var hs []string
+		for _, f := range r.Forges {
+			hs = append(hs, f.Name+" ("+f.Host+")")
+		}
+		have = "configured forges: " + strings.Join(hs, ", ")
+	}
+	add := "curral forge add <name> --type github|gitea --host " + host + " --mode deploy-key|token|agent|none"
+	if strings.EqualFold(host, "github.com") {
+		add = "curral forge add github --type github --host github.com --mode deploy-key|token|agent|none"
+	}
+	return fmt.Errorf("repo %q: no forge for host %s (%s). curral clones only from forges added with "+
+		"curral forge add; add one, then retry:\n  %s\nModes: https://blackshieldpt.github.io/curral/forges/#modes", ref, host, have, add)
 }

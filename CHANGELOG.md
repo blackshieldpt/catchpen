@@ -6,6 +6,11 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ## [Unreleased]
 
+### Changed
+
+- A `--repo` whose host has no forge says that repos clone only from added forges, lists
+  the configured ones, and prints a complete `curral forge add` command for the host.
+
 ## [0.1.1] - 2026-10-25
 
 ### Added

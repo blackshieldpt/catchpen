@@ -45,6 +45,7 @@ func TestResolve(t *testing.T) {
 		"https://github.com/o/r":                "github:o/r",
 		"https://github.com/o/r.git/":           "github:o/r",
 		"git@github.com:o/r.git":                "github:o/r",
+		"github.com:o/r.git":                    "github:o/r",
 		"ssh://git@git.acme.test:2222/team/app": "acme:team/app",
 		"https://code.example.test/x/y":         "web:x/y",
 		"git@ssh.example.test:x/y":              "web:x/y",
@@ -64,6 +65,21 @@ func TestResolve(t *testing.T) {
 	} {
 		if _, _, err := reg.Resolve(ref); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("Resolve(%q) err = %v, want %q", ref, err, want)
+		}
+	}
+}
+
+func TestResolveWithoutForgeSaysHowToAddOne(t *testing.T) {
+	_, _, err := Registry{}.Resolve("github.com:zipreport/miya.git")
+	for _, want := range []string{"no forges are configured", "curral forge add github --type github --host github.com --mode "} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want %q", err, want)
+		}
+	}
+	_, _, err = registry(t).Resolve("https://unknown.test/o/r")
+	for _, want := range []string{"configured forges: ", "github (github.com)", "--host unknown.test --mode "} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want %q", err, want)
 		}
 	}
 }

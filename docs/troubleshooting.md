@@ -165,7 +165,7 @@ denylisted for the VM.
 
 ## Forges and exports
 
-**`no forge configured for host X`**: `curral forge add <name> --type github|gitea --host X --mode <mode>`
+**`no forge for host X`**: `curral forge add <name> --type github|gitea --host X --mode <mode>`
 (see [forges.md](forges.md#modes)).
 
 **`SSH host key changed: <fp> is not pinned`**: if the forge really rotated its key,
