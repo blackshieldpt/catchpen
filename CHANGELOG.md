@@ -6,6 +6,12 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ## [Unreleased]
 
+### Added
+
+- `curral init` writes a commented `config.yaml` and `secrets.env` (mode 0600), listing
+  the settings and secret names, and `templates/example.yaml`, the `default` template's
+  settings with its other options commented out. It keeps files that exist.
+
 ### Fixed
 
 - `curral doctor`'s `ssh-askpass` warning says whether the display or the askpass program

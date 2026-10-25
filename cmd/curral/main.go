@@ -51,7 +51,7 @@ func main() {
 	}
 	root.PersistentFlags().BoolVar(&debug, "debug", false, "stream the whole base build log (not just progress); log the VM serial console and keep VMs that fail to boot running")
 	root.AddCommand(
-		doctorCmd(), templateCmd(), upCmd(), startCmd(), stopCmd(), resumeCmd(), destroyCmd(), lsCmd(),
+		doctorCmd(), initCmd(), templateCmd(), upCmd(), startCmd(), stopCmd(), resumeCmd(), destroyCmd(), lsCmd(),
 		sshCmd(), sshProxyCmd(), consoleCmd(), egressCmd(), egressStdioCmd(), setupSSHCmd(), credsCmd(),
 		forgeCmd(), pullCmd(), prCmd(), forwardCmd(),
 		runCmd(), attachCmd(), recordingsCmd(), auditCmd(), tmuxCmd(), herdrCmd(), cpCmd(), notifyStdioCmd(),

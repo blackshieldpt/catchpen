@@ -77,12 +77,13 @@ KVM.
    claude setup-token
    ```
 
-7. Store it where curral finds it:
+7. Store it where curral finds it. `curral init` writes a commented `config.yaml`,
+   `secrets.env` and an example template, and keeps files that exist; uncomment
+   `CLAUDE_CODE_OAUTH_TOKEN=` in `secrets.env` and paste the token after it:
 
    ```sh
-   mkdir -p ~/.config/curral
-   touch ~/.config/curral/secrets.env && chmod 600 ~/.config/curral/secrets.env
-   echo 'CLAUDE_CODE_OAUTH_TOKEN=<token>' >> ~/.config/curral/secrets.env
+   curral init
+   $EDITOR ~/.config/curral/secrets.env
    ```
 
 8. Create and start a VM. The first one takes a few minutes to download the image and

@@ -289,6 +289,7 @@ See [snapshots.md](snapshots.md); `reset`, `rebase` and `gc` are under VM lifecy
 | `curral recordings <name>` | List a VM's session recordings. |
 | `curral recordings <name> play <id> [--speed 2] [--idle 2s]` | Replay one, with title and clipboard sequences dropped; `--idle` caps pauses. |
 | `curral doctor` | Check host requirements. |
+| `curral init` | Write a commented `config.yaml`, `secrets.env` (mode 0600) and `templates/example.yaml` (the `default` template's settings) under `~/.config/curral`. Files that exist are kept. |
 | `curral version` | Print the version, commit, commit date and Go version. |
 | `curral completion bash\|zsh\|fish\|powershell` | Print a shell completion script. |
 

@@ -1,7 +1,10 @@
 # Configuration
 
 curral reads its settings from `~/.config/curral/config.yaml`. The file is optional: a
-missing or empty file means the defaults below. Unknown keys are errors.
+missing or empty file means the defaults below. Unknown keys are errors. `curral init`
+writes a commented `config.yaml` and `secrets.env` listing the settings and secret
+names, and `templates/example.yaml` with the `default` template's settings; it keeps
+files that exist.
 
 ## Directories
 

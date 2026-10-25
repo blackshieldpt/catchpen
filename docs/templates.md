@@ -14,9 +14,11 @@ curral template rebuild --all       # fresh cloud image and packages, as a new b
 ## Where templates live
 
 User templates are `~/.config/curral/templates/<name>.yaml` and shadow a built-in of
-the same name. Names match `^[a-z0-9][a-z0-9_-]{0,31}$`; an optional `name:` field must
-equal the file name. Relative paths in `scripts` and `files[].src` resolve inside the
-template's own directory; absolute paths and `..` are rejected. Unknown keys are errors.
+the same name. `curral init` writes `example.yaml` there: the `default` template's
+settings, with the options `default` doesn't set commented out. Names match
+`^[a-z0-9][a-z0-9_-]{0,31}$`; an optional `name:` field must equal the file name.
+Relative paths in `scripts` and `files[].src` resolve inside the template's own
+directory; absolute paths and `..` are rejected. Unknown keys are errors.
 
 Built-ins:
 

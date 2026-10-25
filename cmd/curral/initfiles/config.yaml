@@ -1,0 +1,45 @@
+## curral configuration. Every setting is optional; the values shown are the defaults
+## or examples. Uncomment a line to change it. Unknown keys are errors.
+## Reference: https://blackshieldpt.github.io/curral/configuration/
+
+# defaults:
+#   distro: ubuntu-24.04          # for templates that don't set one: ubuntu-24.04, ubuntu-26.04, debian-13 or a name from images:
+#   template: default             # for curral up without --template
+#   resources: { cpus: 4, memory: 8G, disk: 40G }
+#   user: agent                   # the guest user; not root
+
+## Custom apt-based cloud images, used as distros. url is HTTPS, with exactly one of
+## checksum_url, sha256 or sha512.
+# images:
+#   my-ubuntu:
+#     url: https://images.example.com/my-ubuntu.qcow2
+#     checksum_url: https://images.example.com/SHA256SUMS
+
+## Where secret:NAME values come from, before the environment and secrets.env. Each
+## takes exactly one of command (argv; its stdout) or env (another variable).
+# secrets:
+#   CLAUDE_CODE_OAUTH_TOKEN: { command: [pass, show, claude/token] }
+#   ANTHROPIC_API_KEY: { env: MY_ANTHROPIC_KEY }
+
+# record: true                    # host-side recordings of interactive sessions
+
+## Notification sinks: desktop, ntfy, webhook.
+# notify:
+#   sinks:
+#     - desktop
+#     - { ntfy: { url: https://ntfy.sh, topic: my-curral, token: secret:NTFY_TOKEN } }
+#     - { webhook: { url: https://hooks.example/curral, headers: { Authorization: secret:HOOK_AUTH } } }
+#   events: [task.done, task.failed, egress.prompt, agent.waiting, vm.idle_stop, canary.hit]
+
+## Budget for headless tasks: VMs running at once (all curral VMs count), total memory.
+# tasks: { max_vms: 2, max_memory: 24G }
+
+# idle_stop: off                  # stop idle VMs: off, daily, weekly or a duration >= 1m
+# rebuild: off                    # daemon rebuilds bases in use: off, daily, weekly or a duration >= 1m
+
+## Warm pool of booted, stopped VMs kept by the daemon (size 0-32).
+# pool:
+#   - { template: default, size: 2 }
+
+# cache_max: 20G                  # package cache size
+# canary_action: pause            # pause, stop or log
