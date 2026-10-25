@@ -136,6 +136,50 @@ func TestCreateClaimsMatchingPoolVM(t *testing.T) {
 	}
 }
 
+// Skills and plugins are per-user: recorded at create, not in pool VMs, and
+// a claimed pool VM takes the claimer's.
+func TestCreateRecordsSkillsAndPlugins(t *testing.T) {
+	needQemuImg(t)
+	m := testManager(t)
+	pin := `git: https://github.com/example/skills, ref: "0123456789abcdef0123456789abcdef01234567"`
+	vmtest.Template(t, m.P.Templates(), "sk", "", "runtimes: { node: \"24\" }\nagents:\n  claude: {}\n"+
+		"skills: [{ agent: claude, "+pin+", path: skills/x }]\nplugins: [{ agent: claude, "+pin+", path: plugins/p }]\n")
+	skill := template.Skill{Agent: "claude", Git: "https://github.com/example/skills", Ref: "0123456789abcdef0123456789abcdef01234567", Path: "skills/x"}
+	plugin := template.Plugin{Agent: "claude", Git: skill.Git, Ref: skill.Ref, Path: "plugins/p"}
+	has := func(s *State) bool { return slices.Contains(s.Skills, skill) && slices.Contains(s.Plugins, plugin) }
+	r, err := m.Resolve("sk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("qemu-img", "create", "-q", "-f", "qcow2", r.BasePath(m.P), "1G").CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if _, err := m.Create(context.Background(), "plain", CreateOpts{Template: "sk"}); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := m.Load("plain"); err != nil || !has(s) {
+		t.Errorf("created VM: %v %+v", err, s)
+	}
+	m.Cfg.Pool = []config.PoolEntry{{Template: "sk", Size: 1}}
+	s, err := m.Create(context.Background(), "pool-a", CreateOpts{Template: "sk", pool: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Skills != nil || s.Plugins != nil {
+		t.Errorf("pool VM: %+v %+v", s.Skills, s.Plugins)
+	}
+	s.Booted, s.Resume = true, poolSnap
+	if err := m.save(s); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Create(context.Background(), "work", CreateOpts{Template: "sk"}); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := m.Load("work"); err != nil || s.Resume != poolSnap || !has(s) {
+		t.Errorf("claimed VM: %v %+v", err, s)
+	}
+}
+
 func TestRecyclePool(t *testing.T) {
 	m := poolManager(t, "pool-a", "pool-b")
 	// pool-c's fill died: not ready.

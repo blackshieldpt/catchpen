@@ -62,12 +62,18 @@ type MCP struct {
 }
 
 type Sync struct {
-	ClaudeConfig *bool `yaml:"claude_config,omitempty" json:"claude_config,omitempty"` // default false
-	GitIdentity  *bool `yaml:"git_identity,omitempty" json:"git_identity,omitempty"`   // default true
+	ClaudeConfig         *bool `yaml:"claude_config,omitempty" json:"claude_config,omitempty"`                   // default false
+	GitIdentity          *bool `yaml:"git_identity,omitempty" json:"git_identity,omitempty"`                     // default true
+	ClaudeAI             *bool `yaml:"claude_ai,omitempty" json:"claude_ai,omitempty"`                           // default false: keep Claude's claude.ai skill and plugin sync
+	OpenCodeClaudeSkills *bool `yaml:"opencode_claude_skills,omitempty" json:"opencode_claude_skills,omitempty"` // default false: opencode also reads ~/.claude/skills
 }
 
-func (s Sync) Claude() bool { return s.ClaudeConfig != nil && *s.ClaudeConfig }
-func (s Sync) Git() bool    { return s.GitIdentity == nil || *s.GitIdentity }
+func (s Sync) Claude() bool       { return s.ClaudeConfig != nil && *s.ClaudeConfig }
+func (s Sync) Git() bool          { return s.GitIdentity == nil || *s.GitIdentity }
+func (s Sync) ClaudeAISync() bool { return s.ClaudeAI != nil && *s.ClaudeAI }
+func (s Sync) SharedClaudeSkills() bool {
+	return s.OpenCodeClaudeSkills != nil && *s.OpenCodeClaudeSkills
+}
 
 // Provider maps an API key secret (also the variable omp reads it from) to
 // the provider id opencode and pi use and the API host the VM must reach.
@@ -139,6 +145,12 @@ func (t *Template) mergeAgents(o *Template) {
 	}
 	if o.Sync.GitIdentity != nil {
 		t.Sync.GitIdentity = o.Sync.GitIdentity
+	}
+	if o.Sync.ClaudeAI != nil {
+		t.Sync.ClaudeAI = o.Sync.ClaudeAI
+	}
+	if o.Sync.OpenCodeClaudeSkills != nil {
+		t.Sync.OpenCodeClaudeSkills = o.Sync.OpenCodeClaudeSkills
 	}
 }
 

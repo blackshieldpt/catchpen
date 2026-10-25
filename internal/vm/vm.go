@@ -76,10 +76,12 @@ type State struct {
 	Booted   bool            `json:"booted"` // first boot (cloud-init) completed
 
 	// Pushed into the guest at every start (secrets resolved on the host then).
-	Agents template.Agents   `json:"agents"`
-	Env    map[string]string `json:"env,omitempty"`
-	MCP    []template.MCP    `json:"mcp,omitempty"`
-	Sync   template.Sync     `json:"sync"`
+	Agents  template.Agents   `json:"agents"`
+	Env     map[string]string `json:"env,omitempty"`
+	MCP     []template.MCP    `json:"mcp,omitempty"`
+	Skills  []template.Skill  `json:"skills,omitempty"`
+	Plugins []template.Plugin `json:"plugins,omitempty"`
+	Sync    template.Sync     `json:"sync"`
 
 	Repos      []RepoState            `json:"repos,omitempty"`
 	Forges     map[string]forge.Forge `json:"forges,omitempty"`      // snapshot of the forges Repos use

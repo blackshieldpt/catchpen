@@ -41,6 +41,8 @@ var Categories = []Category{
 	{"canaries", []string{"canaries"}, false, "decoy credentials"},
 	{"env", []string{"env"}, false, "environment for ssh sessions"},
 	{"mcp", []string{"mcp"}, false, "MCP servers for all agents"},
+	{"skills", []string{"skills"}, false, "agent skills, from pinned git commits, copied in at each start"},
+	{"plugins", []string{"plugins"}, false, "agent plugins, from pinned git commits, copied in and enabled at each start"},
 	{"ssh", []string{"ssh"}, true, "ssh-agent forwarding"},
 	{"sync", []string{"sync"}, false, "host settings copied in"},
 	{"repos", []string{"repos"}, false, "repos cloned into /workspace"},
@@ -376,6 +378,20 @@ func (lib *Library) Load(spec string) (*Template, error) {
 		if len(chosen) > 0 {
 			res.Parts = append(res.Parts, Part{Category: c.Name, Sections: sectionNames(chosen), Default: slices.Equal(chosen, def)})
 		}
+	}
+	if err := res.validateSkillEntries(); err != nil {
+		return nil, fmt.Errorf("-t %s: %w", name, err)
+	}
+	// Skills and plugins for agents the VM doesn't have are dropped, so defaults can list every agent's.
+	res.Skills = slices.DeleteFunc(res.Skills, func(s Skill) bool {
+		return (s.Agent == "" && !res.Agents.Any()) || (s.Agent != "" && res.Agents.Get(s.Agent) == nil)
+	})
+	res.Plugins = slices.DeleteFunc(res.Plugins, func(p Plugin) bool { return res.Agents.Get(p.Agent) == nil })
+	if len(res.Skills) == 0 {
+		res.Parts = slices.DeleteFunc(res.Parts, func(p Part) bool { return p.Category == "skills" })
+	}
+	if len(res.Plugins) == 0 {
+		res.Parts = slices.DeleteFunc(res.Parts, func(p Part) bool { return p.Category == "plugins" })
 	}
 	if r := res.Resources; r.CPUs == 0 || r.Memory == "" || r.Disk == "" {
 		return nil, fmt.Errorf("-t %s: resources need cpus, memory and disk (got %+v)", name, r)

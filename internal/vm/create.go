@@ -91,6 +91,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 	}
 	if o.pool {
 		r.T.Repos, r.T.Agents, r.T.Env, r.T.MCP, r.T.Sync, r.T.SSH = nil, template.Agents{}, nil, nil, template.Sync{}, template.SSH{}
+		r.T.Skills, r.T.Plugins = nil, nil
 	}
 	repos, forges, err := m.planRepos(append(append([]string(nil), r.T.Repos...), o.Repos...), o.ReadOnly)
 	if err != nil {
@@ -203,7 +204,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		Name: name, Template: r.T.Name, Picks: true, Distro: r.Distro.Name, User: r.User, Base: base,
 		CPUs: res.CPUs, MemoryMB: memMB, DiskMB: max(diskMB, baseMB), Ports: r.T.Ports,
 		Egress: egressMode, Docker: r.T.HasDocker(), Created: time.Now().UTC(),
-		Agents: r.T.Agents, Env: r.T.Env, MCP: r.T.MCP, Sync: r.T.Sync,
+		Agents: r.T.Agents, Env: r.T.Env, MCP: r.T.MCP, Skills: r.T.Skills, Plugins: r.T.Plugins, Sync: r.T.Sync,
 		Repos: s.Repos, Forges: s.Forges, ForgeUsers: s.ForgeUsers, SSH: r.T.SSH, Ephemeral: o.Ephemeral, Task: o.Task,
 		IdleStop: r.T.IdleStop, Instance: instance, Pool: o.pool, Cache: vmCaches(r.T), Canaries: canaryKinds(r.T),
 	}

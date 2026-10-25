@@ -99,6 +99,8 @@ type Template struct {
 	Agents      Agents            `yaml:"agents,omitempty" json:"agents"`
 	Env         map[string]string `yaml:"env,omitempty" json:"env,omitempty"` // pushed at each start; literal or secret:NAME
 	MCP         []MCP             `yaml:"mcp,omitempty" json:"mcp,omitempty"`
+	Skills      []Skill           `yaml:"skills,omitempty" json:"skills,omitempty"`   // copied into agents' skills directories at each start
+	Plugins     []Plugin          `yaml:"plugins,omitempty" json:"plugins,omitempty"` // copied in and enabled at each start
 	Sync        Sync              `yaml:"sync,omitempty" json:"sync"`
 	SSH         SSH               `yaml:"ssh,omitempty" json:"ssh"`
 	Tools       []string          `yaml:"tools,omitempty" json:"tools,omitempty"`         // gh, tea
@@ -140,6 +142,8 @@ func (t *Template) merge(o *Template) {
 	t.Scripts = appendUniq(t.Scripts, o.Scripts...)
 	t.Files = appendNew(t.Files, o.Files...)
 	t.Ports = appendNew(t.Ports, o.Ports...)
+	t.Skills = appendNew(t.Skills, o.Skills...)
+	t.Plugins = appendNew(t.Plugins, o.Plugins...)
 	if o.Network.Egress != "" {
 		t.Network.Egress = o.Network.Egress
 	}
@@ -283,7 +287,13 @@ func (t *Template) Validate() error {
 			return fmt.Errorf("repos: invalid reference %q", r)
 		}
 	}
-	return t.validateAgents()
+	if err := t.validateAgents(); err != nil {
+		return err
+	}
+	if err := t.validateSkillEntries(); err != nil {
+		return err
+	}
+	return t.validateSkillNames()
 }
 
 // ParseInterval parses an interval setting: "" or "off" (0), "daily",

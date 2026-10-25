@@ -602,3 +602,162 @@ func TestAgentRegistryMatchesAgents(t *testing.T) {
 		}
 	}
 }
+
+const (
+	pinGit = "https://github.com/example/skills"
+	pinRef = "0123456789abcdef0123456789abcdef01234567"
+)
+
+// pinned is a skill or plugin entry from the test pin, with more fields.
+func pinned(more string) string { return "{ git: " + pinGit + ", ref: " + pinRef + ", " + more + " }" }
+
+func skillNames(tp *Template) []string {
+	var out []string
+	for _, s := range tp.Skills {
+		out = append(out, s.DirName())
+	}
+	return out
+}
+
+// Skills merge in pick order (default first), identical entries once; those
+// for agents the template doesn't install are dropped. The same name with
+// another ref is no duplicate for appendNew: it is a clash, but only among
+// installed agents.
+func TestSkillsMergeAndFilter(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "skills.yaml", "default: []\n"+
+		"sk-a: { skills: ["+pinned("agent: claude, path: skills/x")+"] }\n"+
+		"sk-a2: { skills: ["+pinned("agent: claude, path: skills/x")+"] }\n"+
+		"sk-b: { skills: ["+pinned("agent: codex, path: skills/y")+"] }\n"+
+		"sk-any: { skills: ["+pinned("path: skills/z")+"] }\n"+
+		"sk-clash: { skills: ["+pinned("path: skills/w")+", { agent: codex, git: "+pinGit+", ref: 1123456789abcdef0123456789abcdef01234567, path: other/w }] }\n")
+	write(t, dir, "plugins.yaml", "default: []\npl-cx: { plugins: ["+pinned("agent: codex, path: plugins/p")+"] }\n")
+	for spec, want := range map[string][]string{
+		"sk-a,sk-b":               {"x", "y"},
+		"sk-a,sk-a2":              {"x"},
+		"minimal,sk-a":            nil,
+		"minimal,claude,sk-a":     {"x"},
+		"minimal,claude,sk-any":   {"z"},
+		"minimal,sk-any":          nil,
+		"minimal,claude,sk-clash": {"w"},
+	} {
+		tp, err := load(t, dir, spec)
+		if err != nil || !slices.Equal(skillNames(tp), want) {
+			t.Errorf("%s: %v %v, want %v", spec, err, tp, want)
+		}
+	}
+	if tp, err := load(t, dir, "minimal,claude,pl-cx"); err != nil || len(tp.Plugins) != 0 {
+		t.Errorf("codex plugin without codex: %v %+v", err, tp)
+	}
+	if tp, err := load(t, dir, "minimal,codex,pl-cx"); err != nil || len(tp.Plugins) != 1 {
+		t.Errorf("codex plugin with codex: %v %+v", err, tp)
+	}
+	hasPart := func(tp *Template) bool {
+		return slices.ContainsFunc(tp.Parts, func(p Part) bool { return p.Category == "skills" })
+	}
+	if tp, err := load(t, dir, "minimal,sk-a"); err != nil || hasPart(tp) {
+		t.Errorf("skills part with no skills left: %v %+v", err, tp)
+	}
+	if tp, err := load(t, dir, "minimal,claude,sk-a"); err != nil || !hasPart(tp) {
+		t.Errorf("no skills part: %v %+v", err, tp)
+	}
+}
+
+func TestSkillsValidation(t *testing.T) {
+	entry := func(git, ref, more string) string {
+		return "{ agent: claude, git: " + git + ", ref: " + ref + ", " + more + " }"
+	}
+	ref2 := "1123456789abcdef0123456789abcdef01234567"
+	for _, c := range []struct{ entries, spec, want string }{
+		{entry("http://github.com/example/skills", pinRef, "path: skills/x"), "", `git must be an https URL, got "http://`},
+		{entry("https:///skills", pinRef, "path: skills/x"), "", `git must be an https URL, got "https:///skills"`},
+		{entry("https://u:p@github.com/example/skills", pinRef, "path: skills/x"), "", "git must not hold a user or password"},
+		{entry(`"`+pinGit+`?a=b"`, pinRef, "path: skills/x"), "", "git must have no query or fragment"},
+		{entry(pinGit, "abc123", "path: skills/x"), "", `ref must be a full 40-character commit id, got "abc123"`},
+		{entry(pinGit, "0123456789ABCDEF0123456789abcdef01234567", "path: skills/x"), "", `got "0123456789ABCDEF`},
+		{entry(pinGit, pinRef, "path: ../x"), "", `path must not contain .., got "../x"`},
+		{entry(pinGit, pinRef, "path: /x"), "", `not starting with - or /, got "/x"`},
+		{entry(pinGit, pinRef, "path: a//b"), "", `path must be a clean path, got "a//b"`},
+		// minimal installs no agents, so the filter alone would drop it.
+		{"{ agent: claud, git: " + pinGit + ", ref: " + pinRef + ", path: skills/x }", "minimal,", `skills x: unknown agent "claud" (known: claude, opencode, pi, omp, codex)`},
+		{entry(pinGit, pinRef, "path: skills/x, name: Bad"), "", `skills skills/x: name "Bad" must be lower case`},
+		{entry(pinGit, pinRef, `path: skills/x, name: "a b"`), "", `name "a b" must be`},
+		{entry(pinGit, pinRef, "path: skills/x, name: a/b"), "", `name "a/b" must be`},
+		{entry(pinGit, pinRef, `path: skills/x, name: "$(x)"`), "", `name "$(x)" must be`},
+		{entry(pinGit, pinRef, "path: skills/x, name: "+strings.Repeat("a", 65)), "", `name "` + strings.Repeat("a", 65) + `" must be`},
+		{entry(pinGit, pinRef, "path: skills/x, name: curral-x"), "", `name "curral-x" is reserved`},
+		{entry(pinGit, pinRef, `path: ":(exclude)x"`), "", `got ":(exclude)x"`},
+		{entry(pinGit, pinRef, "path: -x"), "", `got "-x"`},
+		{entry(pinGit, pinRef, `path: "skills/*"`), "", `got "skills/*"`},
+		{entry(pinGit, pinRef, "path: skills/x") + ", " + entry(pinGit, ref2, "path: other/x"), "minimal,claude,", `skills: two skills named "x" for claude`},
+		{pinned("path: skills/z") + ", " + entry(pinGit, ref2, "path: other/z"), "minimal,claude,", `skills: two skills named "z" for claude`},
+	} {
+		dir := t.TempDir()
+		write(t, dir, "skills.yaml", "default: []\nbad: { skills: ["+c.entries+"] }\n")
+		if _, err := load(t, dir, c.spec+"bad"); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want %q", c.entries, err, c.want)
+		}
+	}
+}
+
+func TestSkillDirName(t *testing.T) {
+	for s, want := range map[Skill]string{
+		{Git: pinGit, Ref: pinRef, Path: "skills/x"}:                 "x",
+		{Git: pinGit, Ref: pinRef, Path: "skills/x", Name: "y"}:      "y",
+		{Git: "https://github.com/a/b.git", Ref: pinRef, Path: "."}:  "b",
+		{Git: "https://github.com/a/Skills", Ref: pinRef, Path: "."}: "Skills",
+	} {
+		if got := s.DirName(); got != want {
+			t.Errorf("%+v: %q, want %q", s, got, want)
+		}
+	}
+	if err := validDirName("Skills"); err == nil {
+		t.Error("upper case name accepted")
+	}
+	if got := (Plugin{Agent: "pi", Bundled: "examples/extensions/plan-mode.ts"}).DirName(); got != "plan-mode" {
+		t.Errorf("bundled plugin: %q", got)
+	}
+}
+
+func TestPluginsValidation(t *testing.T) {
+	ref2 := "1123456789abcdef0123456789abcdef01234567"
+	for _, c := range []struct{ entries, spec, want string }{
+		{pinned("path: p/x"), "minimal,pi,", "plugins x: agent is required"},
+		{pinned("agent: claud, path: p/x"), "minimal,pi,", `plugins x: unknown agent "claud"`},
+		{pinned("agent: pi, path: p/x, bundled: examples/a.ts"), "minimal,pi,", "plugins a: set git or bundled, not both"},
+		{"{ agent: pi, name: nb }", "minimal,pi,", "plugins nb: set git or bundled"},
+		{"{ agent: pi, git: " + pinGit + ", ref: abc, path: p/x }", "minimal,pi,", `plugins x: ref must be a full 40-character commit id, got "abc"`},
+		{"{ agent: claude, bundled: examples/extensions/plan-mode.ts }", "minimal,claude,", "plugins plan-mode: bundled is only for pi"},
+		{"{ agent: pi, bundled: ../x }", "minimal,pi,", `bundled must not contain .., got "../x"`},
+		{`{ agent: pi, bundled: ".", name: dot }`, "minimal,pi,", `plugins dot: bundled must name a file in the pi package, got "."`},
+		{pinned("agent: pi, path: p/x, name: Bad"), "minimal,pi,", `plugins p/x: name "Bad" must be`},
+		{pinned("agent: pi, path: p/x") + ", { agent: pi, git: " + pinGit + ", ref: " + ref2 + ", path: q/x }", "minimal,pi,", `plugins: two pi plugins named "x"`},
+	} {
+		dir := t.TempDir()
+		write(t, dir, "plugins.yaml", "default: []\nbad: { plugins: ["+c.entries+"] }\n")
+		if _, err := load(t, dir, c.spec+"bad"); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want %q", c.entries, err, c.want)
+		}
+	}
+	dir := t.TempDir()
+	write(t, dir, "plugins.yaml", "default: []\nplan: { plugins: [{ agent: pi, bundled: examples/extensions/plan-mode.ts }] }\n")
+	tp, err := load(t, dir, "minimal,pi,plan")
+	if err != nil || len(tp.Plugins) != 1 || tp.Plugins[0].DirName() != "plan-mode" {
+		t.Errorf("bundled pi plugin: %v %+v", err, tp)
+	}
+}
+
+func TestSyncSkillSources(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "sync.yaml", "src-on: { sync: { claude_ai: true, opencode_claude_skills: true } }\nsrc-off-ai: { sync: { claude_ai: false } }\n")
+	for spec, want := range map[string][2]bool{
+		"":                  {false, false},
+		"src-on":            {true, true},
+		"src-on,src-off-ai": {false, true},
+	} {
+		tp, err := load(t, dir, spec)
+		if err != nil || [2]bool{tp.Sync.ClaudeAISync(), tp.Sync.SharedClaudeSkills()} != want {
+			t.Errorf("%q: %v %+v, want %v", spec, err, tp, want)
+		}
+	}
+}
