@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/blackshieldpt/curral/internal/cache"
 	"github.com/blackshieldpt/curral/internal/cloudinit"
 	"github.com/blackshieldpt/curral/internal/egress"
@@ -250,11 +252,12 @@ func (m *Manager) runForeground(ctx context.Context, spec qemu.Spec, logf, conso
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	done := make(chan struct{})
-	go m.follow(logf, done)
+	done, followed := make(chan struct{}), make(chan struct{})
+	go func() { m.follow(logf, done); close(followed) }()
 	go capLogs(done, abort, logf, consolef)
 	err = cmd.Wait()
 	close(done)
+	<-followed
 	if c := context.Cause(ctx); errors.Is(c, errLogTooLarge) {
 		return c
 	}
@@ -289,11 +292,33 @@ func capLogs(done <-chan struct{}, abort context.CancelCauseFunc, files ...strin
 }
 
 // follow tails a serial log, printing curral-build lines (or everything in debug mode).
+// On a terminal, the current step shows with a spinner and its elapsed time, and each
+// step ends as a line with the time it took.
 func (m *Manager) follow(path string, done <-chan struct{}) {
+	o, ok := m.Out.(*os.File)
+	tty := ok && !m.Debug && term.IsTerminal(int(o.Fd()))
+	step, since, n := "starting the build VM", time.Now(), 0
+	spin := func() {
+		if tty {
+			show := step // a line that wraps can't be redrawn in place
+			if r := []rune(show); len(r) > 60 {
+				show = string(r[:60]) + "..."
+			}
+			fmt.Fprintf(m.Out, "\r\033[K  %c %s (%s)", `-\|/`[n%4], show, time.Since(since).Round(time.Second))
+			n++
+		}
+	}
+	endStep := func() {
+		if tty {
+			fmt.Fprintf(m.Out, "\r\033[K  %s (%s)\n", step, time.Since(since).Round(time.Second))
+		}
+	}
+	defer endStep()
 	var f *os.File
 	for f == nil {
 		var err error
 		if f, err = os.Open(path); err != nil {
+			spin()
 			select {
 			case <-done:
 				return
@@ -314,10 +339,17 @@ func (m *Manager) follow(path string, done <-chan struct{}) {
 				if i := strings.Index(l, "curral-build:"); i >= 0 && !m.Debug {
 					l = "  " + strings.TrimSpace(l[i+len("curral-build:"):])
 				}
+				if tty {
+					endStep()
+					step, since = strings.TrimSpace(sshx.Printable(l)), time.Now()
+					spin()
+					continue
+				}
 				m.logf("%s", sshx.Printable(l))
 			}
 			continue
 		}
+		spin()
 		select {
 		case <-done:
 			return

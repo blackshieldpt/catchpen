@@ -98,7 +98,8 @@ once.
 ## Bases and rebuilds
 
 The first `curral up` of a template downloads and verifies the cloud image and builds
-the base, which takes a few minutes. Later VMs of the template boot in seconds.
+the base, which takes a few minutes. Later VMs of the template boot in seconds. On a
+terminal, the build shows its current step with a spinner and how long it has run.
 
 Changing the software in a template (packages, runtimes, scripts, files, agents' versions
 and the like) means a new base, built on the next `up` of a new VM. Existing VMs keep

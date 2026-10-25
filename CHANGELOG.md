@@ -12,6 +12,11 @@ before 0.1.0 describe work on `master` before the first tagged release.
   the settings and secret names, and `templates/example.yaml`, the `default` template's
   settings with its other options commented out. It keeps files that exist.
 
+### Changed
+
+- On a terminal, a base build shows its current step with a spinner and the step's
+  elapsed time, and prints each finished step with the time it took.
+
 ### Fixed
 
 - `curral doctor`'s `ssh-askpass` warning says whether the display or the askpass program
