@@ -21,6 +21,10 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Fixed
 
+- The egress proxy and the package caches race a host's IPv4 and IPv6 addresses
+  (Happy Eyeballs) instead of trying them one at a time. On a host whose IPv6 resolves
+  but doesn't route, every connection hung until it timed out, and base builds failed
+  with apt's `Connection failed`.
 - `curral doctor`'s `ssh-askpass` warning says whether the display or the askpass program
   is missing; with no display it suggests `confirm: false` instead of installing
   `ssh-askpass`.

@@ -421,15 +421,7 @@ func (p *Proxy) connect(ctx context.Context, host string, port int) (net.Conn, e
 			}
 		}
 	}
-	var lastErr error
-	for _, ip := range ips {
-		c, err := p.dial(ctx, net.JoinHostPort(ip.String(), strconv.Itoa(port)))
-		if err == nil {
-			return c, nil
-		}
-		lastErr = err
-	}
-	return nil, lastErr
+	return DialIPs(ctx, func(ctx context.Context, _, addr string) (net.Conn, error) { return p.dial(ctx, addr) }, ips, strconv.Itoa(port))
 }
 
 func (p *Proxy) log(e LogEntry, action, reason string) error {

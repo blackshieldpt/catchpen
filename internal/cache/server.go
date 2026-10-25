@@ -609,14 +609,9 @@ func dialPublic(ctx context.Context, network, addr string) (net.Conn, error) {
 			return nil, fmt.Errorf("%s resolves to private address %s", host, ip)
 		}
 	}
-	d := net.Dialer{Timeout: 30 * time.Second}
-	var lastErr error
-	for _, ip := range ips {
-		c, err := d.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
-		if err == nil {
-			return c, nil
-		}
-		lastErr = err
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("%s: no addresses", host)
 	}
-	return nil, cmp.Or(lastErr, fmt.Errorf("%s: no addresses", host))
+	d := net.Dialer{Timeout: 30 * time.Second}
+	return egress.DialIPs(ctx, d.DialContext, ips, port)
 }
