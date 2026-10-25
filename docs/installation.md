@@ -33,7 +33,7 @@ sudo apt install libnotify-bin ssh-askpass tmux   # optional
 
 Then install a release binary (or [build from source](#building-from-source)). A release
 is a static linux/amd64 binary, also packaged as a `.tar.gz` with the license and
-changelog, on the [releases page](https://github.com/blackshieldpt/curral/releases).
+changelog and as a [Debian package](#debian-package), on the [releases page](https://github.com/blackshieldpt/curral/releases).
 Download the binary, its `.sigstore.json` and `SHA256SUMS`, then check it was built and
 signed by this repository's release workflow at that tag (needs
 [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) v3, and the `gh`
@@ -60,6 +60,29 @@ proxying.
 
 Releases are reproducible: building the tag with GoReleaser and the Go version
 `curral version` prints gives the same bytes.
+
+### Debian package
+
+Releases after 0.1.0 also ship an amd64 `.deb`, signed like the binary. It installs
+`/usr/bin/curral` and pulls in QEMU, `openssh-client` and `git` (the optional packages
+are recommends):
+
+```
+v=0.2.0   # the release to install
+f=curral_${v}_amd64.deb
+u=https://github.com/blackshieldpt/curral/releases/download/v$v
+curl -fL -O $u/$f -O $u/$f.sigstore.json -O $u/SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS
+cosign verify-blob --bundle $f.sigstore.json \
+  --certificate-identity "https://github.com/blackshieldpt/curral/.github/workflows/release.yml@refs/tags/v$v" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com $f
+sudo apt install ./$f
+sudo usermod -aG kvm $USER          # then log out and back in
+curral doctor
+```
+
+To upgrade, install the new release's `.deb` the same way; `sudo apt remove curral`
+removes it (your VMs and settings stay; see [Uninstalling](#uninstalling)).
 
 `curral doctor` checks QEMU, ssh, `/dev/kvm` and curral's own setup, and prints a remedy
 for each failure; it doesn't check `git`, `scp` or QEMU's seccomp support. See
@@ -120,7 +143,8 @@ one, then restart the daemon if it is installed:
 systemctl --user restart curral
 ```
 
-`curral version` prints what you run. To upgrade a source build, see
+`curral version` prints what you run. With the `.deb`, see
+[Debian package](#debian-package). To upgrade a source build, see
 [Building from source](#building-from-source).
 
 Run `curral daemon install` again instead if the binary moved. Check the
@@ -156,7 +180,7 @@ curral daemon uninstall              # if installed
 curral ls                            # then: curral destroy -y <name>... for each VM
 curral pool drain
 curral setup-ssh --remove
-rm ~/.local/bin/curral
+rm ~/.local/bin/curral               # or: sudo apt remove curral
 rm -rf ~/.config/curral ~/.local/share/curral ~/.cache/curral
 ```
 

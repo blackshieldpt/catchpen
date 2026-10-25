@@ -11,6 +11,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
 - `curral init` writes a commented `config.yaml` and `secrets.env` (mode 0600), listing
   the settings and secret names, and `templates/example.yaml`, the `default` template's
   settings with its other options commented out. It keeps files that exist.
+- Releases ship an amd64 `.deb` that installs `/usr/bin/curral` and depends on QEMU,
+  `openssh-client` and `git`; it is checksummed, signed and attested like the binary.
 
 ### Changed
 

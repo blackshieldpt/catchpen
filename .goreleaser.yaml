@@ -29,6 +29,32 @@ archives:
     formats: [binary]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
+nfpms:
+  - id: deb
+    package_name: curral
+    file_name_template: "{{ .ConventionalFileName }}" # curral_X.Y.Z_amd64.deb
+    formats: [deb]
+    bindir: /usr/bin
+    mtime: "{{ .CommitDate }}" # reproducible, like the archives
+    maintainer: JPinheiro <jpinheiro@blackshield.pt>
+    vendor: Blackshield
+    homepage: https://github.com/blackshieldpt/curral
+    description: Runs coding agents in QEMU/KVM sandbox VMs.
+    license: AGPL-3.0
+    section: utils
+    dependencies: [qemu-system-x86, qemu-utils, openssh-client, git]
+    recommends: [libnotify-bin, ssh-askpass, tmux]
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/curral/copyright
+        file_info: { mode: 0644, mtime: "{{ .CommitDate }}" }
+      - src: CHANGELOG.md
+        dst: /usr/share/doc/curral/CHANGELOG.md
+        file_info: { mode: 0644, mtime: "{{ .CommitDate }}" }
+      - src: README.md
+        dst: /usr/share/doc/curral/README.md
+        file_info: { mode: 0644, mtime: "{{ .CommitDate }}" }
+
 checksum:
   name_template: SHA256SUMS
   algorithm: sha256

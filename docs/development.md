@@ -52,9 +52,10 @@ To release:
 2. Commit, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
 
 `release.yml` reruns CI, then GoReleaser builds the binary (static, `-trimpath`,
-reproducible), uploads it and a `.tar.gz` with `SHA256SUMS` to a draft release, signs
-each with cosign keyless (a `.sigstore.json` bundle whose identity is the release
-workflow at that tag), attests build provenance, and only then publishes the release.
+reproducible), uploads it, a `.tar.gz` and an amd64 `.deb` with `SHA256SUMS` to a draft
+release, signs each with cosign keyless (a `.sigstore.json` bundle whose identity is the
+release workflow at that tag), attests build provenance, and only then publishes the
+release.
 A tag with a hyphen (`v0.2.0-rc.1`) makes a pre-release.
 Check the release locally with `goreleaser release --snapshot --clean --skip=publish,sign`.
 

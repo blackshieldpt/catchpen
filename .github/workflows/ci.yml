@@ -72,6 +72,7 @@ jobs:
           version: v2.18.2
           args: release --snapshot --clean --skip=publish,sign
       - run: ./dist/curral_linux_amd64*/curral version
+      - run: dpkg-deb --info dist/*.deb && dpkg-deb --contents dist/*.deb
 
   docs:
     runs-on: ubuntu-latest
