@@ -6,6 +6,12 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ## [Unreleased]
 
+### Fixed
+
+- `curral doctor`'s `ssh-askpass` warning says whether the display or the askpass program
+  is missing; with no display it suggests `confirm: false` instead of installing
+  `ssh-askpass`.
+
 ## [0.1.0] - 2026-10-24
 
 ### Added

@@ -117,8 +117,8 @@ func doctorCmd() *cobra.Command {
 			}
 			if _, err := exec.LookPath("ssh-add"); err != nil {
 				warn("ssh-agent", "ssh-agent/ssh-add not found; ssh.agent: restricted unavailable")
-			} else if askpassMissing() {
-				warn("ssh-askpass", "no askpass program or no display; restricted agents with confirm on can't ask (sudo apt install ssh-askpass, or set SSH_ASKPASS)")
+			} else if p := askpassProblem(); p != "" {
+				warn("ssh-askpass", p)
 			}
 			if failed {
 				return errors.New("some checks failed")
@@ -145,15 +145,19 @@ func inGroup(name string) bool {
 	return false
 }
 
-// askpassMissing reports whether ssh-agent has no way to ask for key-use confirmation.
-func askpassMissing() bool {
+// askpassProblem says why ssh-agent can't ask for key-use confirmation, or "" if it can.
+func askpassProblem() string {
 	if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
-		return true
+		return "no display; restricted agents with confirm on can't ask (on a headless host, set confirm: false)"
 	}
 	if p := os.Getenv("SSH_ASKPASS"); p != "" {
-		_, err := exec.LookPath(p)
-		return err != nil
+		if _, err := exec.LookPath(p); err != nil {
+			return "SSH_ASKPASS " + p + " not found; restricted agents with confirm on can't ask"
+		}
+		return ""
 	}
-	_, err := os.Stat("/usr/bin/ssh-askpass")
-	return err != nil
+	if _, err := os.Stat("/usr/bin/ssh-askpass"); err != nil {
+		return "no askpass program; restricted agents with confirm on can't ask (sudo apt install ssh-askpass, or set SSH_ASKPASS)"
+	}
+	return ""
 }

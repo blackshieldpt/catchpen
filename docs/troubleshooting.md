@@ -35,7 +35,7 @@ you can inspect it. Stop or destroy it afterwards.
 | `curral binary` (warning) | You're running from a temp directory (`go run`). Install the binary; QEMU and ssh call it back. |
 | `notify-send` (warning) | `sudo apt install libnotify-bin` for desktop notifications and prompts. |
 | `ssh-agent` (warning) | `ssh.agent: restricted` needs `ssh-agent` and `ssh-add`. |
-| `ssh-askpass` (warning) | Restricted agents with `confirm: true` need an askpass program and a display: `sudo apt install ssh-askpass`, or set `SSH_ASKPASS`. |
+| `ssh-askpass` (warning) | Restricted agents with `confirm: true` need an askpass program and a display. With no display (a headless host), set `confirm: false`; with no askpass program, `sudo apt install ssh-askpass` or set `SSH_ASKPASS`. |
 
 doctor doesn't check QEMU's version, `git`, `scp`, `tmux` or free disk space.
 
