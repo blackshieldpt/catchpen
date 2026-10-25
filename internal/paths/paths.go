@@ -49,7 +49,8 @@ func (p Paths) Audit() string         { return filepath.Join(p.Data, "audit.json
 func (p Paths) Recordings() string    { return filepath.Join(p.Data, "recordings") }
 func (p Paths) Transcripts() string   { return filepath.Join(p.Data, "transcripts") }
 func (p Paths) Tasks() string         { return filepath.Join(p.Data, "tasks") }
-func (p Paths) Pkg() string           { return filepath.Join(p.Cache, "pkg") } // package caches
+func (p Paths) Pkg() string           { return filepath.Join(p.Cache, "pkg") }     // package caches
+func (p Paths) Sources() string       { return filepath.Join(p.Cache, "sources") } // pinned git repos for skills and plugins
 
 // Ensure creates the data/config directories with private permissions.
 func (p Paths) Ensure() error {
