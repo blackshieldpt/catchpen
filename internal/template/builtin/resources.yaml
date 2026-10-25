@@ -1,0 +1,5 @@
+default: medium
+small: { description: "2 CPUs, 4G memory, 20G disk", resources: { cpus: 2, memory: 4G, disk: 20G } }
+medium: { description: "4 CPUs, 8G memory, 40G disk", resources: { cpus: 4, memory: 8G, disk: 40G } }
+large: { description: "8 CPUs, 16G memory, 80G disk", resources: { cpus: 8, memory: 16G, disk: 80G } }
+xlarge: { description: "16 CPUs, 32G memory, 160G disk", resources: { cpus: 16, memory: 32G, disk: 160G } }

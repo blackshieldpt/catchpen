@@ -117,7 +117,7 @@ func TestSnapshots(t *testing.T) {
 	// A rebuilt base (a copy stands in for one): ls marks the VM stale, rebase
 	// moves it keeping its files, gc then removes the old base.
 	s, _ := m.Load("sn1")
-	r, err := m.Resolve(s.Template, s.Distro)
+	r, err := m.Resolve(s.Template)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestSnapshots(t *testing.T) {
 	if out, err := exec.Command("cp", s.Base, gen2).CombinedOutput(); err != nil {
 		t.Fatalf("%v %s", err, out)
 	}
-	if cur, _ := m.CurrentBase(s.Template, s.Distro); cur != gen2 {
+	if cur, _ := m.CurrentBase(s.Template); cur != gen2 {
 		t.Fatalf("current base %s", cur)
 	}
 	if err := m.Rebase(ctx, "sn1"); err != nil {

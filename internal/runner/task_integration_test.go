@@ -86,7 +86,7 @@ func TestTasks(t *testing.T) {
 	if err := forge.Update(m.P.Forges(), func(r *forge.Registry) error { r.Forges = []forge.Forge{gd}; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(m.P.Templates(), "tk.yaml"), []byte("extends: minimal\nnetwork: { allow_private: true }\n"), 0o600)
+	vmtest.Template(t, m.P.Templates(), "tk", "", "network: { allow_private: true }\n")
 	host := t.TempDir()
 	authURL := strings.Replace(g.HTTP, "http://", "http://bot:"+vmtest.GiteaPassword+"@", 1)
 	if out, err := exec.Command("git", "clone", "-q", authURL+"/bot/app.git", host).CombinedOutput(); err != nil {
@@ -309,9 +309,7 @@ func integrationRunner(t *testing.T) *Runner {
 func TestCanaryTasks(t *testing.T) {
 	r := integrationRunner(t)
 	m := r.M
-	if err := os.WriteFile(filepath.Join(m.P.Templates(), "cn.yaml"), []byte("extends: minimal\ncanaries: [aws, env, git]\ncache: [go]\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	vmtest.Template(t, m.P.Templates(), "cn", "", "canaries: [aws, env, git]\ncache: [go]\n")
 	// A task using a decoy fails at once, and its paused VM is kept.
 	spec := task.Spec{Template: "cn", Agent: "cmd", Cmd: `. ~/.env.production; curl -s -m 120 "$INTERNAL_API_URL/x"; sleep 600`, Prompt: "x", Timeout: 20 * time.Minute}
 	dir := t.TempDir()

@@ -21,7 +21,7 @@ Docker).
 | `internal/vm/` | The VM manager: lifecycle, sessions, exports, snapshots, pool, idle stop, gc, canary handling. A VM's files, state and lock go through `vmDir` (`vmdir.go`, which also gives the lock order). |
 | `internal/runner/` | Headless tasks: submit, schedule on the VM budget, supervise, export. |
 | `internal/vmtest/` | What the tests of `vm` and `runner` share: fake QEMU and supervisor processes, a curral home, a throwaway Gitea. |
-| `internal/template/` | Template loading, `extends` merging and validation; built-in templates in `builtin/`. |
+| `internal/template/` | Templates: category files, `-t` composition (`compose.go`), merging and validation; built-in category files in `builtin/`. |
 | `internal/cloudinit/` | Cloud-init and base build script generation, and the seed ISO. |
 | `internal/qemu/` | QEMU command lines, QMP and `qemu-img`. |
 | `internal/egress/` | The allowlist proxy, presets, lists and prompts. |
@@ -66,12 +66,14 @@ Check the release locally with `goreleaser release --snapshot --clean --skip=pub
    its auth modes (or provider keys), its yolo flag and its transcript paths. Merging,
    validation, the install, `curral run`, tasks' agent list, transcripts and the CLI
    help follow from it.
-2. Write its push in `internal/agents` (settings, MCP servers, credentials, the
+2. Add a section for it to `internal/template/builtin/agents.yaml` (with the `runtimes`
+   it needs), and to that file's `default:` if every VM should get it.
+3. Write its push in `internal/agents` (settings, MCP servers, credentials, the
    notification hook) and add it to `pushers`.
-3. Add its task command and event-stream parsing to `internal/task/agent.go`, and the
+4. Add its task command and event-stream parsing to `internal/task/agent.go`, and the
    API hosts it needs to `agentHosts` in `internal/vm/create.go` if it doesn't take
    provider keys.
-4. Document it in `docs/agents.md`.
+5. Document it in `docs/agents.md`.
 
 Tests fail while the registry, `Agents`, `pushers`, the hook or the task command are
 out of step.

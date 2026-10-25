@@ -5,18 +5,20 @@ of one means something went looking for credentials and tried to send them out.
 
 ## Turning them on
 
-List the kinds in a template (the `default` template plants all three):
+Each kind is a section of `canaries.yaml`: `aws-canary`, `env-canary` and `git-canary`.
+The default plants all three; `-name` drops one:
 
-```yaml
-canaries: [aws, env, git]
+```
+curral up dev -t -aws-canary                         # env and git only
+curral up dev -t -aws-canary,-env-canary,-git-canary # none
 ```
 
-`canaries: []` turns them off for a template that inherits them. Each VM gets its own
-values, pointing at hosts that exist nowhere:
+The built-in `minimal` profile has none. Each VM gets its own values, pointing at hosts
+that exist nowhere:
 
 | Kind | Planted in the agent user's home |
 |---|---|
-| `aws` | `~/.aws/credentials`, and an `endpoint_url` in `~/.aws/config`. Left out when the template's `env:` sets any `AWS_*` variable. |
+| `aws` | `~/.aws/credentials`, and an `endpoint_url` in `~/.aws/config`. Left out when the VM's `env:` sets any `AWS_*` variable. |
 | `env` | `~/.env.production`, with a database URL, an API URL and token, and a Stripe-style key. |
 | `git` | `~/.git-credentials`. |
 

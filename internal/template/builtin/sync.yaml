@@ -1,0 +1,2 @@
+claude-config: { description: "Copy host ~/.claude settings, CLAUDE.md, agents, skills and commands", sync: { claude_config: true } }
+no-git-identity: { description: Don't copy the host's git user.name and user.email, sync: { git_identity: false } }

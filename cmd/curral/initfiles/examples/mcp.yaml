@@ -1,0 +1,6 @@
+docs-mcp:
+  mcp:
+    - { name: docs, type: http, url: "https://mcp.example.com/mcp", headers: { Authorization: "secret:DOCS_AUTH" } }
+fs-mcp:
+  mcp:
+    - { name: fs, type: stdio, command: [npx, -y, "@modelcontextprotocol/server-filesystem", /workspace] }

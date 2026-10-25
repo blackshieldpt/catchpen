@@ -90,6 +90,16 @@ tar -xzf /tmp/uv.tgz -C /usr/local/bin --strip-components=1 --no-same-owner
 rm -f /tmp/uv.tgz /tmp/uv.sha256
 uv --version
 {{- end}}
+{{- if .Python}}
+
+log "installing python {{.Python}}"
+export UV_PYTHON_INSTALL_DIR=/opt/uv-python
+uv --no-progress python install {{.Python}}
+py="$(cd / && uv python find --managed-python {{.Python}})"
+ln -sf "$py" /usr/local/bin/python{{.Python}}
+ln -sf "$py" /usr/local/bin/python
+python{{.Python}} --version
+{{- end}}
 {{- if .GH}}
 
 log "installing gh"

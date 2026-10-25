@@ -1,0 +1,1 @@
+opencode-keys: { description: opencode with provider keys, agents: { opencode: { keys: [ANTHROPIC_API_KEY, OPENROUTER_API_KEY] } }, runtimes: { node: "24" } }

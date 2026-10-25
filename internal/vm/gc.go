@@ -47,8 +47,14 @@ func (m *Manager) GC(dryRun bool) ([]GCItem, error) {
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
-	newest := map[string]int{}   // tpl-hash -> newest generation
-	current := map[string]bool{} // tpl-hash a template resolves to now
+	newest := map[string]int{}   // distro-hash -> newest generation
+	current := map[string]bool{} // distro-hash a recorded -t still resolves to
+	// With a broken template file nothing resolves; keep every base rather
+	// than take them all for unused.
+	_, libErr := m.Tpl.Library()
+	if libErr != nil {
+		m.logf("gc: keeping all bases until the templates load: %v", libErr)
+	}
 	for _, e := range ents {
 		mt := baseNameRe.FindStringSubmatch(e.Name())
 		if mt == nil {
@@ -57,17 +63,22 @@ func (m *Manager) GC(dryRun bool) ([]GCItem, error) {
 		key, gen := mt[1]+"-"+mt[2], baseFileGen(mt[3])
 		newest[key] = max(newest[key], gen)
 		if _, seen := current[key]; !seen {
-			_, current[key] = m.baseDistro(mt[1], mt[2])
+			current[key] = libErr != nil || len(m.currentSpecs(mt[1], mt[2])) > 0
 		}
 	}
+	kept := map[string]bool{} // distro-hash with a base left
+	var specs []string
 	for _, e := range ents {
 		p := filepath.Join(m.P.Bases(), e.Name())
 		if mt := baseNameRe.FindStringSubmatch(e.Name()); mt != nil {
 			key, gen := mt[1]+"-"+mt[2], baseFileGen(mt[3])
 			if current[key] && gen == newest[key] {
+				kept[key] = true
 				continue
 			}
-			if sz := usage(p); m.removeBase(p, dryRun) {
+			if sz := usage(p); !m.removeBase(p, dryRun) {
+				kept[key] = true
+			} else {
 				items = append(items, GCItem{Path: p, Bytes: sz, Why: "unused base"})
 				stem := strings.TrimSuffix(p, ".qcow2")
 				for _, sfx := range []string{".build.log", ".console.log", ".egress.log"} {
@@ -76,6 +87,10 @@ func (m *Manager) GC(dryRun bool) ([]GCItem, error) {
 					}
 				}
 			}
+			continue
+		}
+		if stem, ok := strings.CutSuffix(e.Name(), ".specs"); ok {
+			specs = append(specs, stem)
 			continue
 		}
 		for _, sfx := range []string{".building", ".seed.iso", ".egress", ".build.log", ".console.log", ".egress.log"} {
@@ -92,6 +107,12 @@ func (m *Manager) GC(dryRun bool) ([]GCItem, error) {
 				add(p, "interrupted build")
 			}
 			break
+		}
+	}
+
+	for _, key := range specs {
+		if !kept[key] && libErr == nil {
+			add(filepath.Join(m.P.Bases(), key+".specs"), "list of a removed base")
 		}
 	}
 

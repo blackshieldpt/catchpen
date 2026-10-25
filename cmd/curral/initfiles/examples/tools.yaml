@@ -1,0 +1,5 @@
+protobuf: { description: protoc, packages: [protobuf-compiler] }
+setup:
+  description: Run my script and copy my gitconfig at base build (paths relative to this folder)
+  scripts: [scripts/setup.sh]
+  files: [{ src: files/gitconfig, dst: ~/.gitconfig, mode: "0644" }]

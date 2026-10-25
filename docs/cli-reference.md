@@ -18,11 +18,10 @@ Create a VM if it doesn't exist, and start it.
 
 | Flag | Meaning |
 |---|---|
-| `-t, --template` | Template (default: `defaults.template` in config.yaml). |
-| `--distro` | Guest distro, overriding the template and config. |
+| `-t, --template` | Picks from the [template](templates.md) category files, comma separated: `go-1.27,large`, `-docker`, `debian-13`. Default: every category's default. |
 | `--cpus`, `--mem`, `--disk` | Resources, e.g. `--mem 16G --disk 60G`. |
 | `--rebuild` | Rebuild the template base first. |
-| `--allow-open` | Confirm a template with `network.egress: open`. |
+| `--allow-open` | Confirm a template with network egress `open` (the `open` section). |
 | `--repo` | Clone a repo into `/workspace` (`forge:owner/repo` or a URL; repeatable). |
 | `--ro` | Make deploy keys read-only. |
 | `--ssh-agent` | `off`, `restricted` or `host` (default: the template's). |
@@ -142,10 +141,12 @@ Add (or remove) an `Include` of curral's `ssh_config` in `~/.ssh/config`, so
 
 | Command | Meaning |
 |---|---|
-| `curral template ls` | List built-in and user templates. |
-| `curral template show <template>` | Print a template with `extends` resolved, its source and its base. |
-| `curral template build <template> [--distro D] [--rebuild]` | Build the template's base (`--rebuild`: even if it exists). |
-| `curral template rebuild <template>... [--distro D] \| --all` | Build a new base generation from a fresh cloud image. `--all` covers every template with a base or a VM, and can't be combined with names or `--distro`. |
+| `curral template ls [category]` | List every category's sections, marking the defaults, with their descriptions and the file each comes from. |
+| `curral template show [-t picks]` | Print the settings a `-t` gives, the sections each category contributed, and its base. |
+| `curral template build [-t picks] [--rebuild]` | Build the template's base (`--rebuild`: even if it exists). |
+| `curral template rebuild -t picks... \| --all` | Build a new base generation from a fresh cloud image. `-t` is repeatable (`-t default` for the defaults); `--all` covers every template with a base or a VM, and can't be combined with `-t`. |
+
+`show`, `build` and `rebuild` also take the picks as an argument: `curral template show go-1.27`.
 
 ## Credentials
 
@@ -226,7 +227,7 @@ Queue a headless task, or a batch of them (`--file`). See [tasks.md](tasks.md).
 
 | Flag | Meaning |
 |---|---|
-| `-t, --template` | Template (default from config). |
+| `-t, --template` | Picks from the template category files, as for `curral up`. |
 | `--repo` | Repo to clone and work on. |
 | `--agent` | `claude` (default), `opencode`, `pi`, `omp`, `codex` or `cmd`. |
 | `--cmd` | Shell command for `--agent cmd`. The prompt is on stdin, and its path in `$CURRAL_PROMPT_FILE`. |
@@ -291,7 +292,7 @@ See [snapshots.md](snapshots.md); `reset`, `rebase` and `gc` are under VM lifecy
 | `curral recordings <name>` | List a VM's session recordings. |
 | `curral recordings <name> play <id> [--speed 2] [--idle 2s]` | Replay one, with title and clipboard sequences dropped; `--idle` caps pauses. |
 | `curral doctor` | Check host requirements. |
-| `curral init` | Write a commented `config.yaml`, `secrets.env` (mode 0600) and `templates/example.yaml` (the `default` template's settings) under `~/.config/curral`. Files that exist are kept. |
+| `curral init` | Write a commented `config.yaml`, `secrets.env` (mode 0600) and every template category file (`templates/distros.yaml`, `runtimes.yaml`, ...) under `~/.config/curral`. Files that exist are kept. |
 | `curral version` | Print the version, commit, commit date and Go version. |
 | `curral completion bash\|zsh\|fish\|powershell` | Print a shell completion script. |
 

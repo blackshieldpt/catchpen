@@ -1,0 +1,36 @@
+default: [claude, opencode, pi, codex]
+claude:
+  description: Claude Code, with your subscription token (CLAUDE_CODE_OAUTH_TOKEN)
+  agents: { claude: { auth: oauth-token } }
+  runtimes: { node: "24" }
+claude-api-key:
+  description: Claude Code with ANTHROPIC_API_KEY instead
+  agents: { claude: { auth: api-key } }
+  runtimes: { node: "24" }
+claude-yolo:
+  description: curral run starts Claude Code without permission prompts
+  agents: { claude: { yolo: true } }
+  runtimes: { node: "24" }
+opencode:
+  description: opencode (provider keys in agents.opencode.keys)
+  agents: { opencode: {} }
+  runtimes: { node: "24" }
+pi:
+  description: pi (provider keys in agents.pi.keys)
+  agents: { pi: {} }
+  runtimes: { node: "24" }
+omp:
+  description: oh-my-pi
+  agents: { omp: {} }
+codex:
+  description: Codex, installed without credentials
+  agents: { codex: { auth: none } }
+  runtimes: { node: "24" }
+codex-api-key:
+  description: Codex with OPENAI_API_KEY
+  agents: { codex: { auth: api-key } }
+  runtimes: { node: "24" }
+codex-chatgpt:
+  description: Codex, signed in inside the VM (codex login --device-auth)
+  agents: { codex: { auth: chatgpt } }
+  runtimes: { node: "24" }

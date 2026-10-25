@@ -1,0 +1,6 @@
+default: [apt-cache, go-cache, npm-cache, pypi-cache, docker-cache]
+apt-cache: { description: apt packages, cache: [apt] }
+go-cache: { description: Go modules, cache: [go] }
+npm-cache: { description: npm packages, cache: [npm] }
+pypi-cache: { description: PyPI packages, cache: [pypi] }
+docker-cache: { description: Docker images (with docker), cache: [docker] }

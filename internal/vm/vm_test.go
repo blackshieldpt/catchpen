@@ -94,7 +94,7 @@ func TestBaseHash(t *testing.T) {
 
 func TestCreateRefusesOpenEgressWithoutConfirmation(t *testing.T) {
 	m := testManager(t)
-	writeFile(t, filepath.Join(m.P.Templates(), "wide.yaml"), "extends: minimal\nnetwork: { egress: open }\n")
+	vmtest.Template(t, m.P.Templates(), "wide", "", "network: { egress: open }\n")
 	_, err := m.Create(context.Background(), "a", CreateOpts{Template: "wide"})
 	if err == nil || !strings.Contains(err.Error(), "--allow-open") {
 		t.Fatalf("err = %v, want refusal mentioning --allow-open", err)
@@ -118,7 +118,7 @@ func TestCreateRejectsBadCPUs(t *testing.T) {
 
 func TestBaseGenerations(t *testing.T) {
 	m := testManager(t)
-	r, err := m.Resolve("minimal", "")
+	r, err := m.Resolve("minimal")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func needQemuImg(t *testing.T) {
 func TestCreateRollsBackOnFailure(t *testing.T) {
 	needQemuImg(t)
 	m := testManager(t)
-	r, err := m.Resolve("minimal", "")
+	r, err := m.Resolve("minimal")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,9 +227,7 @@ func TestDestroyBrokenVM(t *testing.T) {
 func TestCreateWithAgents(t *testing.T) {
 	needQemuImg(t)
 	m := testManager(t)
-	writeFile(t, filepath.Join(m.P.Templates(), "ag.yaml"), `
-extends: minimal
-runtimes: { node: "24" }
+	vmtest.Template(t, m.P.Templates(), "ag", "", `runtimes: { node: "24" }
 agents:
   claude: {}
   pi: { keys: [OPENROUTER_API_KEY, ANTHROPIC_API_KEY] }
@@ -240,7 +238,7 @@ mcp:
   - { name: plain, type: sse, url: "http://sse.example.com/sse" }
   - { name: fs, type: stdio, command: [npx, fs] }
 `)
-	r, err := m.Resolve("ag", "")
+	r, err := m.Resolve("ag")
 	if err != nil {
 		t.Fatal(err)
 	}

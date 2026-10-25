@@ -51,6 +51,31 @@ stuck. Check `qemu.log` and `curral stop -f <name>`.
 **`<binary> path ... cannot be used in ssh_config`**: install curral at a path without
 quotes, `%` or line breaks.
 
+## Templates
+
+**`unknown section "X" (curral template ls lists them)`**: `-t` names a section no
+category file has. `curral template ls` lists them all.
+
+**`...: X.yaml: old-style templates, which curral no longer reads`**: every command
+refuses while `~/.config/curral/templates/` holds a file that isn't a category file.
+Move its settings into sections of the category files, then remove or rename it.
+
+**`... created with the old-style template X`**: the VM predates category files.
+`reset --latest` and `rebase` refuse it and `creds push` keeps its env; create a new VM
+with `-t` picks.
+
+**`defaults.distro, defaults.template, defaults.resources and pool distro are gone`**:
+remove those keys from `config.yaml`; see [configuration.md](configuration.md).
+
+**`"X" is in several categories; say which: ...`**: pick it as `category:X`.
+
+**`<category> takes one section, got A and B`**: `distros`, `resources`, `ssh` and
+`idle` take one pick each in `-t`, which replaces the default. Pick one, and don't
+remove (`-name`) their default.
+
+**`-X: not in <category>'s default (...)`**: `-name` in `-t` only drops a section that
+is chosen; `curral template show -t <picks>` shows what a `-t` gives.
+
 ## Images
 
 **`checksum mismatch for <url>`**: the download was corrupted, or the image changed
@@ -63,8 +88,8 @@ after checking the new image; retrying won't help.
 
 **`refusing redirect to non-https`**: image and checksum URLs must stay on HTTPS.
 
-**`unknown distro`**: built-ins are `ubuntu-24.04`, `ubuntu-26.04` and `debian-13`; add
-others under `images:` in config.yaml.
+**`unknown distro`**: a section's `distro:` names neither a built-in (`ubuntu-24.04`,
+`ubuntu-26.04`, `debian-13`) nor an entry under `images:` in config.yaml.
 
 Interrupted downloads leave `images/*.part`, which `curral gc` removes after 90 minutes.
 
@@ -77,13 +102,13 @@ failed; see <build.log>`**:
 2. If the script never started, read `<base>.console.log` (kernel and cloud-init).
 3. Check `<base>.egress.log` for blocked downloads. The build VM can reach any public
    host but no private address, so a package mirror on your LAN won't work.
-4. Retry with `curral --debug template build <template> --rebuild` to watch it live.
+4. Retry with `curral --debug template build -t <picks> --rebuild` to watch it live.
 
 **`timed out after 45m0s`**: the build took too long, usually a slow mirror or a script
 waiting for input. **`build log exceeded 256 MiB`**: a script is printing far too much.
 
 **`template X changed since its base was built: building the new base first`**: shown
-by `reset --latest` and `rebase`; expected after you edit a template.
+by `reset --latest` and `rebase`; expected after you edit a section the VM's `-t` picks.
 
 **`base ... missing`**: a base file was deleted by hand. VMs on it can't start or be
 restored; destroy them, or put the file back. `curral gc` never removes a base a VM
@@ -117,8 +142,8 @@ users`**: `chmod 600 ~/.config/curral/secrets.env`.
 **`VM <name> is not running`**: `curral start <name>`. **`runtime state missing`**:
 `curral stop <name>`, then start it again.
 
-**`<agent> is not installed in <vm>`**: add `agents.<agent>` to the template and create a
-new VM: a VM's agents are fixed when it's created, so `curral reset` doesn't add one.
+**`<agent> is not installed in <vm>`**: create a new VM with the agent's section in `-t`
+(`-t omp`), or add it to the `agents.yaml` default: a VM's agents are fixed when it's created, so `curral reset` doesn't add one.
 
 **`recording: ...`**: the recording couldn't be written. Fix the disk or permissions, or
 set `record: false`.
@@ -130,7 +155,7 @@ A blocked request gets HTTP 403 with
 
 | Reason | Fix |
 |---|---|
-| `not in allowlist` | `curral egress allow <name> host[:port]`, or, for new VMs, add it to the template's `network.allow` or `presets`. |
+| `not in allowlist` | `curral egress allow <name> host[:port]`, or, for new VMs, put it in a `network.yaml` section's `allow` or `presets` and pick that section with `-t`. |
 | `denylisted` | `curral egress undeny <name> host`. |
 | a private address | The name resolves to a private or loopback address; set `allow_private` (`curral egress config <name> --allow-private`) if that's intended. |
 | `prompt unavailable: no watcher` | `on_deny: prompt` but nothing is answering: run `curral egress watch` or the daemon. |
@@ -237,7 +262,7 @@ and `journalctl --user -u curral -e`. After moving the binary, `curral daemon in
 
 **The daemon stops when you log out**: `sudo loginctl enable-linger $USER`.
 
-**Pool logs `pool: <err> (next try in 30m0s)`**: fix the error (often a template or base
+**Pool logs `pool: <err> (next try in 30m0s)`**: fix the error (often a bad `-t` spec or a base
 build failure), then `curral pool fill` to retry now.
 
 **`another curral is filling or draining the pool`**: wait for it to finish.

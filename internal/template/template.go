@@ -2,17 +2,11 @@
 package template
 
 import (
-	"bytes"
 	"embed"
-	"errors"
 	"fmt"
-	"io"
-	"io/fs"
 	"math"
-	"os"
-	"path"
-	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -50,7 +44,7 @@ func (r Resources) Override(o Resources) Resources {
 type Runtimes struct {
 	Node   string `yaml:"node,omitempty" json:"node,omitempty"`     // major version, e.g. "24"
 	Go     string `yaml:"go,omitempty" json:"go,omitempty"`         // e.g. "1.27.2"
-	Python string `yaml:"python,omitempty" json:"python,omitempty"` // "uv"
+	Python string `yaml:"python,omitempty" json:"python,omitempty"` // "uv", or a version like "3.14" (installed with uv)
 }
 
 type File struct {
@@ -89,9 +83,9 @@ func (p *Port) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
+// Template is a VM's settings: the sections picked from each category, merged.
 type Template struct {
-	Name        string            `yaml:"name" json:"name"`
-	Extends     string            `yaml:"extends,omitempty" json:"-"`
+	Name        string            `yaml:"name" json:"name"` // the -t spec it was built from
 	Description string            `yaml:"description,omitempty" json:"-"`
 	Distro      string            `yaml:"distro,omitempty" json:"distro,omitempty"`
 	Resources   Resources         `yaml:"resources,omitempty" json:"resources"`
@@ -110,11 +104,11 @@ type Template struct {
 	Tools       []string          `yaml:"tools,omitempty" json:"tools,omitempty"`         // gh, tea
 	Repos       []string          `yaml:"repos,omitempty" json:"repos,omitempty"`         // cloned into /workspace at start
 	IdleStop    string            `yaml:"idle_stop,omitempty" json:"idle_stop,omitempty"` // overrides config idle_stop
-	Cache       []string          `yaml:"cache,omitempty" json:"cache,omitempty"`         // host pull-through caches; replaces the parent's list
-	Canaries    []string          `yaml:"canaries,omitempty" json:"canaries,omitempty"`   // decoy credentials planted in the guest; replaces the parent's list
+	Cache       []string          `yaml:"cache,omitempty" json:"cache,omitempty"`         // host pull-through caches
+	Canaries    []string          `yaml:"canaries,omitempty" json:"canaries,omitempty"`   // decoy credentials planted in the guest
 
-	// Source is "builtin" or the file path; assets resolve relative to it.
-	Source string `yaml:"-" json:"-"`
+	// Parts are the sections merged, by category (for template show).
+	Parts []Part `yaml:"-" json:"-"`
 	// assets holds script/file contents keyed by the reference used in the template.
 	assets map[string][]byte
 }
@@ -123,111 +117,6 @@ func (t *Template) HasDocker() bool { return t.Docker != nil && *t.Docker }
 
 // Asset returns the content of a script or file src referenced by the template.
 func (t *Template) Asset(ref string) []byte { return t.assets[ref] }
-
-// Loader finds templates in the user dir first, then built-ins.
-type Loader struct {
-	UserDir string
-}
-
-var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
-
-// List returns all template names with their source.
-func (l Loader) List() (map[string]string, error) {
-	out := map[string]string{}
-	ents, _ := fs.ReadDir(builtinFS, "builtin")
-	for _, e := range ents {
-		if n, ok := strings.CutSuffix(e.Name(), ".yaml"); ok {
-			out[n] = "builtin"
-		}
-	}
-	ents, err := os.ReadDir(l.UserDir)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
-	}
-	for _, e := range ents {
-		if n, ok := strings.CutSuffix(e.Name(), ".yaml"); ok && nameRe.MatchString(n) {
-			out[n] = filepath.Join(l.UserDir, e.Name())
-		}
-	}
-	return out, nil
-}
-
-// raw loads one template file without resolving extends.
-func (l Loader) raw(name string) (*Template, error) {
-	if !nameRe.MatchString(name) {
-		return nil, fmt.Errorf("invalid template name %q", name)
-	}
-	var (
-		b      []byte
-		fsys   fs.FS
-		dir    string
-		source string
-	)
-	p := filepath.Join(l.UserDir, name+".yaml")
-	if data, err := os.ReadFile(p); err == nil {
-		b, fsys, dir, source = data, os.DirFS(l.UserDir), ".", p
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
-	} else if data, err := fs.ReadFile(builtinFS, "builtin/"+name+".yaml"); err == nil {
-		b, fsys, dir, source = data, builtinFS, "builtin", "builtin"
-	} else {
-		return nil, fmt.Errorf("template %q not found", name)
-	}
-	dec := yaml.NewDecoder(bytes.NewReader(b))
-	dec.KnownFields(true)
-	var t Template
-	if err := dec.Decode(&t); err != nil && !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("template %s: %w", name, err)
-	}
-	if t.Name != "" && t.Name != name {
-		return nil, fmt.Errorf("template %s: name field %q does not match file name", name, t.Name)
-	}
-	t.Name, t.Source = name, source
-	t.assets = map[string][]byte{}
-	refs := append([]string{}, t.Scripts...)
-	for _, f := range t.Files {
-		refs = append(refs, f.Src)
-	}
-	for _, r := range refs {
-		clean := path.Clean(r)
-		if path.IsAbs(clean) || strings.HasPrefix(clean, "..") || clean == "." {
-			return nil, fmt.Errorf("template %s: asset %q must be a relative path inside the template directory", name, r)
-		}
-		data, err := fs.ReadFile(fsys, path.Join(dir, clean))
-		if err != nil {
-			return nil, fmt.Errorf("template %s: asset %q: %w", name, r, err)
-		}
-		t.assets[r] = data
-	}
-	return &t, nil
-}
-
-// Load resolves name and its extends chain into one validated template.
-func (l Loader) Load(name string) (*Template, error) {
-	var chain []*Template
-	seen := map[string]bool{}
-	for n := name; n != ""; {
-		if seen[n] {
-			return nil, fmt.Errorf("template %s: extends cycle at %q", name, n)
-		}
-		seen[n] = true
-		t, err := l.raw(n)
-		if err != nil {
-			return nil, err
-		}
-		chain = append(chain, t)
-		n = t.Extends
-	}
-	res := &Template{assets: map[string][]byte{}}
-	for i := len(chain) - 1; i >= 0; i-- {
-		res.merge(chain[i])
-	}
-	res.Name, res.Source, res.Description = chain[0].Name, chain[0].Source, chain[0].Description
-	if err := res.Validate(); err != nil {
-		return nil, fmt.Errorf("template %s: %w", name, err)
-	}
-	return res, nil
-}
 
 // merge applies o over t: scalars override, lists append (deduplicated).
 func (t *Template) merge(o *Template) {
@@ -249,8 +138,8 @@ func (t *Template) merge(o *Template) {
 		t.Runtimes.Python = o.Runtimes.Python
 	}
 	t.Scripts = appendUniq(t.Scripts, o.Scripts...)
-	t.Files = append(t.Files, o.Files...)
-	t.Ports = append(t.Ports, o.Ports...)
+	t.Files = appendNew(t.Files, o.Files...)
+	t.Ports = appendNew(t.Ports, o.Ports...)
 	if o.Network.Egress != "" {
 		t.Network.Egress = o.Network.Egress
 	}
@@ -278,15 +167,20 @@ func (t *Template) merge(o *Template) {
 	if o.IdleStop != "" {
 		t.IdleStop = o.IdleStop
 	}
-	if o.Cache != nil { // cache: [] turns them off
-		t.Cache = o.Cache
-	}
-	if o.Canaries != nil {
-		t.Canaries = o.Canaries
-	}
+	t.Cache = appendUniq(t.Cache, o.Cache...)
+	t.Canaries = appendUniq(t.Canaries, o.Canaries...)
 	for k, v := range o.assets {
 		t.assets[k] = v
 	}
+}
+
+func appendNew[T comparable](a []T, b ...T) []T {
+	for _, x := range b {
+		if !slices.Contains(a, x) {
+			a = append(a, x)
+		}
+	}
+	return a
 }
 
 func appendUniq(a []string, b ...string) []string {
@@ -306,12 +200,13 @@ func appendUniq(a []string, b ...string) []string {
 }
 
 var (
-	pkgRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*(=[A-Za-z0-9.+~:-]+)?$`)
-	nodeRe = regexp.MustCompile(`^[0-9]{1,3}$`)
-	goRe   = regexp.MustCompile(`^1\.[0-9]{1,3}(\.[0-9]{1,3})?$`)
-	modeRe = regexp.MustCompile(`^0?[0-7]{3}$`)
-	sizeRe = regexp.MustCompile(`^([0-9]+)([MGT])$`)
-	dstRe  = regexp.MustCompile(`^(/|~/)[A-Za-z0-9._/@+-]+$`)
+	pkgRe    = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*(=[A-Za-z0-9.+~:-]+)?$`)
+	nodeRe   = regexp.MustCompile(`^[0-9]{1,3}$`)
+	goRe     = regexp.MustCompile(`^1\.[0-9]{1,3}(\.[0-9]{1,3})?$`)
+	pythonRe = regexp.MustCompile(`^3\.[0-9]{1,2}$`)
+	modeRe   = regexp.MustCompile(`^0?[0-7]{3}$`)
+	sizeRe   = regexp.MustCompile(`^([0-9]+)([MGT])$`)
+	dstRe    = regexp.MustCompile(`^(/|~/)[A-Za-z0-9._/@+-]+$`)
 )
 
 func (t *Template) Validate() error {
@@ -326,8 +221,8 @@ func (t *Template) Validate() error {
 	if r := t.Runtimes; r.Go != "" && !goRe.MatchString(r.Go) {
 		return fmt.Errorf("runtimes.go must look like 1.27 or 1.27.2, got %q", r.Go)
 	}
-	if r := t.Runtimes; r.Python != "" && r.Python != "uv" {
-		return fmt.Errorf(`runtimes.python must be "uv", got %q`, r.Python)
+	if r := t.Runtimes; r.Python != "" && r.Python != "uv" && !pythonRe.MatchString(r.Python) {
+		return fmt.Errorf(`runtimes.python must be "uv" or a version like 3.14, got %q`, r.Python)
 	}
 	for _, f := range t.Files {
 		if !dstRe.MatchString(f.Dst) || strings.Contains(f.Dst, "..") {
@@ -425,8 +320,4 @@ func ParseSize(s string) (int64, error) {
 }
 
 // YAML renders the resolved template (for `template show`).
-func (t *Template) YAML() ([]byte, error) {
-	c := *t
-	c.Extends = ""
-	return yaml.Marshal(&c)
-}
+func (t *Template) YAML() ([]byte, error) { return yaml.Marshal(t) }

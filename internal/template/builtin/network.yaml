@@ -1,0 +1,15 @@
+default: [allowlist, anthropic, github, npm, pypi, go, apt-ubuntu, apt-debian, docker-apt, docker-hub, ghcr]
+allowlist: { description: "Only allowed hosts, through the egress proxy", network: { egress: allowlist } }
+open: { description: Unfiltered internet (curral up asks for --allow-open), network: { egress: open } }
+offline: { description: No network at all, network: { egress: none } }
+prompt: { description: Ask before allowing a blocked host, network: { on_deny: prompt } }
+anthropic: { description: Anthropic API, network: { presets: [anthropic] } }
+github: { description: GitHub, network: { presets: [github] } }
+npm: { description: npm registry, network: { presets: [npm] } }
+pypi: { description: PyPI, network: { presets: [pypi] } }
+go: { description: Go module proxy and checksum database, network: { presets: [go] } }
+apt-ubuntu: { description: Ubuntu package mirrors, network: { presets: [apt-ubuntu] } }
+apt-debian: { description: Debian package mirrors, network: { presets: [apt-debian] } }
+docker-apt: { description: Docker's apt repository, network: { presets: [docker-apt] } }
+docker-hub: { description: Docker Hub, network: { presets: [docker-hub] } }
+ghcr: { description: GitHub Container Registry, network: { presets: [ghcr] } }

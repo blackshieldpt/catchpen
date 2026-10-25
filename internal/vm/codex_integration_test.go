@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blackshieldpt/curral/internal/vmtest"
+
 	"github.com/blackshieldpt/curral/internal/egress"
 )
 
@@ -21,10 +23,8 @@ func TestCodex(t *testing.T) {
 	m := integrationManager(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 	defer cancel()
-	tpl := "extends: minimal\nruntimes: { node: \"24\" }\nagents: { codex: {} }\n"
-	if err := os.WriteFile(filepath.Join(m.P.Templates(), "cx.yaml"), []byte(tpl), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	tpl := "runtimes: { node: \"24\" }\nagents: { codex: {} }\n"
+	vmtest.Template(t, m.P.Templates(), "cx", "", tpl)
 	const key = "sk-proj-curral-integration-fake"
 	t.Setenv("OPENAI_API_KEY", key)
 	if _, err := m.Create(ctx, "cx", CreateOpts{Template: "cx"}); err != nil {

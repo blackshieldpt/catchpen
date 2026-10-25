@@ -1,0 +1,4 @@
+default: [aws-canary, env-canary, git-canary]
+aws-canary: { description: Decoy AWS credentials, canaries: [aws] }
+env-canary: { description: Decoy secrets in the environment, canaries: [env] }
+git-canary: { description: Decoy git credentials, canaries: [git] }

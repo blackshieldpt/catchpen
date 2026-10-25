@@ -1,0 +1,2 @@
+registry: { description: My registry, network: { allow: [registry.example.com:443] } }
+lan: { description: Allow private addresses, network: { allow_private: true } }

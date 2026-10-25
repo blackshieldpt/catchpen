@@ -54,7 +54,7 @@ func keyOf(s *State) poolKey {
 
 // poolKeyFor is the key of a VM created now from r without overrides.
 func (m *Manager) poolKeyFor(r *Resolved) (poolKey, error) {
-	res := m.Cfg.Defaults.Resources.Override(r.T.Resources)
+	res := r.T.Resources
 	memMB, err := template.ParseSize(res.Memory)
 	if err != nil {
 		return poolKey{}, err
@@ -183,7 +183,7 @@ func (m *Manager) poolWants() ([]poolWant, error) {
 	var errs []error
 	seen := map[poolKey]bool{}
 	for _, e := range m.Cfg.Pool {
-		r, err := m.Resolve(e.Template, e.Distro)
+		r, err := m.Resolve(e.Template)
 		if err == nil {
 			var k poolKey
 			if k, err = m.poolKeyFor(r); err == nil && seen[k] {
@@ -293,7 +293,7 @@ func (m *Manager) fillOne(ctx context.Context, e config.PoolEntry) (err error) {
 	m.logf("filling the pool: %s (template %s)", name, e.Template)
 	// AllowOpen: listing the template in pool: is the consent, and a pool VM
 	// has nothing to leak; claiming it still needs --allow-open.
-	if _, err := m.Create(ctx, name, CreateOpts{Template: e.Template, Distro: e.Distro, AllowOpen: true, pool: true}); err != nil {
+	if _, err := m.Create(ctx, name, CreateOpts{Template: e.Template, AllowOpen: true, pool: true}); err != nil {
 		return err
 	}
 	defer func() {

@@ -407,7 +407,10 @@ func (m *Manager) syncClock(ctx context.Context, c *ssh.Client) {
 
 // baseFor returns the template's current base, building it if needed.
 func (m *Manager) baseFor(ctx context.Context, s *State) (string, error) {
-	r, err := m.Resolve(s.Template, s.Distro)
+	if !s.Picks {
+		return "", fmt.Errorf("%s was created with the old-style template %s, which curral no longer reads; create a new VM with -t picks (see curral template ls)", s.Name, s.Template)
+	}
+	r, err := m.Resolve(s.Template)
 	if err != nil {
 		return "", err
 	}

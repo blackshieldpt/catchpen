@@ -15,8 +15,8 @@ Run every command on the host unless it says "in the VM".
 ## Before you start
 
 curral is installed and `curral doctor` passes ([Installation](installation.md)), and
-you've run `curral init`, which creates `~/.config/curral/secrets.env` and the
-`templates` folder.
+you've run `curral init`, which creates `~/.config/curral/secrets.env` and the template
+category files in `~/.config/curral/templates/` (see [Templates](templates.md)).
 
 ## Part 1: SSH
 
@@ -40,25 +40,34 @@ curral forge ls
 `forge ls` should list `github`. You do this once per host. `agent` mode means the VM
 gets no key of its own: it asks your key, through a restricted agent, to sign.
 
-### 3. Create a template
+### 3. Add your key and a profile
 
-Save this as `~/.config/curral/templates/gh.yaml`:
+Add this section to `~/.config/curral/templates/ssh.yaml`:
 
 ```yaml
-extends: default
-ssh:
-  agent: restricted
-  agent_keys: [~/.ssh/id_ed25519]   # the key from step 1
-  confirm: false                    # see the note below
+github-ssh:
+  ssh:
+    agent: restricted
+    agent_keys: [~/.ssh/id_ed25519]   # the key from step 1
+    confirm: false                    # see the note below
 ```
 
 With `confirm: true`, curral asks you to approve each use of the key in a desktop
 pop-up (`ssh-askpass`). That needs a display, so on a server keep `confirm: false`.
 
+Then name what this project's VMs get, in `~/.config/curral/templates/profiles.yaml`:
+
+```yaml
+acme-api: [github-ssh]
+```
+
+A profile is a list of picks; you'll add to it in Part 2, and can add runtimes too
+(`acme-api: [github-ssh, go-1.27]`).
+
 ### 4. Create the VM with the repo
 
 ```
-curral up dev -t gh --repo github:acme/api
+curral up dev -t acme-api --repo github:acme/api
 ```
 
 If the key has a passphrase, curral asks for it here. The repo is cloned into
@@ -107,30 +116,32 @@ GH_TOKEN=github_pat_...
 
 ### 3. Pass it to the VM
 
-Add one line to `gh.yaml`:
+Add this section to `~/.config/curral/templates/env.yaml`:
 
 ```yaml
-extends: default
-env: { GH_TOKEN: "secret:GH_TOKEN" }
-ssh:
-  agent: restricted
-  agent_keys: [~/.ssh/id_ed25519]
-  confirm: false
+gh-token:
+  env: { GH_TOKEN: "secret:GH_TOKEN" }
+```
+
+and add it to the profile in `profiles.yaml`:
+
+```yaml
+acme-api: [github-ssh, gh-token]
 ```
 
 `secret:GH_TOKEN` tells curral to read the value from `secrets.env` on the host; the
-template itself holds no secret.
+category files hold no secret.
 
 ### 4. Push it to the VM
 
-New VMs made from `gh.yaml` get the token when they're created. For a VM that already
-exists:
+New VMs made with `-t acme-api` get the token when they're created. The VM from Part 1 picked
+the same profile, so it gets it too:
 
 ```
 curral creds push dev
 ```
 
-It prints `dev: env from template gh: +GH_TOKEN`. New sessions get the token; a Claude
+It prints `dev: env from template acme-api: +GH_TOKEN`. New sessions get the token; a Claude
 Code session that was already open doesn't, so restart the VM to be sure:
 
 ```
@@ -166,6 +177,6 @@ again.
 |---|---|
 | `no forge for host github.com` | Part 1, step 2: `curral forge add ...` was not run on this host. |
 | `Permission denied (publickey)` on clone or push | Run `ssh -T git@github.com` on the host (step 1), and check `agent_keys` names that key. |
-| `the restricted agent refused` | `confirm: true` on a host without a display: set `confirm: false` in `gh.yaml` and create the VM again (a VM keeps the `ssh:` settings it was created with). |
+| `the restricted agent refused` | `confirm: true` on a host without a display: set `confirm: false` in `ssh.yaml` and create the VM again (a VM keeps the `ssh:` settings it was created with). |
 | `gh: To get started with GitHub CLI, please run: gh auth login` | Part 2: run `curral creds push dev`, then open a new session (or restart the VM). |
 | `gh` says `HTTP 403` or `Resource not accessible` | The token lacks a permission or the repo (Part 2, step 1), or an organization owner hasn't approved it. |

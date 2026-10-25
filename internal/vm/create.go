@@ -23,8 +23,7 @@ import (
 )
 
 type CreateOpts struct {
-	Template   string
-	Distro     string
+	Template   string // a -t spec: picks from the category files
 	CPUs       int
 	Memory     string
 	Disk       string
@@ -47,17 +46,13 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 	if _, err := os.Stat(m.dir(name)); err == nil {
 		return nil, fmt.Errorf("VM %q already exists", name)
 	}
-	tplName := o.Template
-	if tplName == "" {
-		tplName = m.Cfg.Defaults.Template
-	}
-	r, err := m.Resolve(tplName, o.Distro)
+	r, err := m.Resolve(o.Template)
 	if err != nil {
 		return nil, err
 	}
 	if o.ClaudeAuth != "" {
 		if r.T.Agents.Claude == nil {
-			return nil, fmt.Errorf("template %s has no claude agent", r.T.Name)
+			return nil, fmt.Errorf("-t %s has no claude agent", r.T.Name)
 		}
 		c := *r.T.Agents.Claude
 		c.Auth = o.ClaudeAuth
@@ -66,7 +61,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 			return nil, err
 		}
 	}
-	res := m.Cfg.Defaults.Resources.Override(r.T.Resources).Override(template.Resources{CPUs: o.CPUs, Memory: o.Memory, Disk: o.Disk})
+	res := r.T.Resources.Override(template.Resources{CPUs: o.CPUs, Memory: o.Memory, Disk: o.Disk})
 	if res.CPUs < 1 || res.CPUs > maxCPUs {
 		return nil, fmt.Errorf("invalid CPU count %d (1-%d)", res.CPUs, maxCPUs)
 	}
@@ -83,7 +78,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		egressMode = egress.ModeAllowlist
 	}
 	if egressMode == egress.ModeOpen && !o.AllowOpen {
-		return nil, fmt.Errorf("template %s uses network.egress: open (unfiltered internet and the host's 127.0.0.1 services); pass --allow-open to confirm", r.T.Name)
+		return nil, fmt.Errorf("-t %s has network egress open (unfiltered internet and the host's 127.0.0.1 services); pass --allow-open to confirm", r.T.Name)
 	}
 	if o.SSHAgent != "" || len(o.AgentKeys) > 0 {
 		if o.SSHAgent != "" {
@@ -205,7 +200,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		return nil, err
 	}
 	*s = State{
-		Name: name, Template: r.T.Name, Distro: r.Distro.Name, User: r.User, Base: base,
+		Name: name, Template: r.T.Name, Picks: true, Distro: r.Distro.Name, User: r.User, Base: base,
 		CPUs: res.CPUs, MemoryMB: memMB, DiskMB: max(diskMB, baseMB), Ports: r.T.Ports,
 		Egress: egressMode, Docker: r.T.HasDocker(), Created: time.Now().UTC(),
 		Agents: r.T.Agents, Env: r.T.Env, MCP: r.T.MCP, Sync: r.T.Sync,

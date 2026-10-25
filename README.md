@@ -10,7 +10,7 @@
 [![Security policy](https://img.shields.io/badge/security-policy-red)](SECURITY.md)
 
 `curral` runs Claude Code, opencode, pi, omp and Codex in QEMU/KVM virtual machines built
-from declarative templates, so an agent can install packages, run code and use sudo
+from declarative templates you compose with `-t`, so an agent can install packages, run code and use sudo
 without reaching your host, your credentials or your network.
 
 ## Features
@@ -22,7 +22,7 @@ without reaching your host, your credentials or your network.
 | **Scoped credentials** | Agent tokens and per-VM forge deploy keys or tokens, pushed over SSH at start and never baked into images. |
 | **Work leaves through the host** | `curral pull` and `curral pr` bring commits out as scanned git bundles, so the VM needs no push access. |
 | **Headless tasks** | Run an agent on a prompt in a throwaway VM and get a PR, a bundle or a patch back. |
-| **Canaries** | Decoy credentials planted per VM (the default template plants them); their use pauses the VM by default. |
+| **Canaries** | Decoy credentials planted per VM (planted by default); their use pauses the VM by default. |
 | **Operations** | Snapshots, warm pool, idle stop, scheduled base rebuilds, shared package caches, session recordings and an audit log. |
 
 ## Quick start
@@ -71,7 +71,7 @@ KVM.
    ```
 
 6. Store it where curral finds it. `curral init` writes a commented `config.yaml`,
-   `secrets.env` and an example template, and keeps files that exist; uncomment
+   `secrets.env` and the template category files, and keeps files that exist; uncomment
    `CLAUDE_CODE_OAUTH_TOKEN=` in `secrets.env` and paste the token after it:
 
    ```sh
@@ -114,7 +114,7 @@ source build, and [docs/development.md](docs/development.md) for tests.
 ### VMs
 
 ```sh
-curral up dev                   # create and start a VM from the default template
+curral up dev                   # create and start a VM with the default template
 curral run dev claude           # Claude Code in a guest tmux session (reattaches if running)
 curral ssh dev                  # a shell; curral ssh dev -- docker ps runs a command
 curral attach dev               # the guest's main tmux session
@@ -149,9 +149,20 @@ curral task ls
 
 ### Templates
 
-The `default` template has Docker, Node 24, uv, `gh`, Claude Code, opencode, pi and Codex
-(Codex without credentials until you set `agents.codex.auth`). Write your own in
-`~/.config/curral/templates/`; see [docs/templates.md](docs/templates.md).
+A VM's template is a `-t` list of sections picked from category files (distros,
+resources, tools, agents, runtimes, network and more). Each category has a default, so
+`curral up dev` gets Docker, Node 24, uv, `gh`, Claude Code, opencode, pi and Codex
+(Codex without credentials unless you pick `codex-api-key` or `codex-chatgpt`):
+
+```sh
+curral up dev -t go-1.27,python-3.14                 # the defaults, plus Go and Python 3.14
+curral up dev -t ubuntu-26.04,large,go-1.27,-docker  # another distro and size, Go, no Docker
+curral up dev -t minimal                             # small, base tools, no agents or runtimes
+curral template ls                                   # every section, with the defaults marked
+```
+
+Add your own sections in `~/.config/curral/templates/<category>.yaml`; see
+[docs/templates.md](docs/templates.md).
 
 ## Documentation
 

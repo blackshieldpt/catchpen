@@ -5,10 +5,11 @@ package vm
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/blackshieldpt/curral/internal/vmtest"
 
 	"github.com/blackshieldpt/curral/internal/canary"
 	"github.com/blackshieldpt/curral/internal/qemu"
@@ -21,9 +22,7 @@ func TestCanaries(t *testing.T) {
 	m := integrationManager(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
-	if err := os.WriteFile(filepath.Join(m.P.Templates(), "cn.yaml"), []byte("extends: minimal\ncanaries: [aws, env, git]\ncache: [go]\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	vmtest.Template(t, m.P.Templates(), "cn", "", "canaries: [aws, env, git]\ncache: [go]\n")
 	if _, err := m.Create(ctx, "cn", CreateOpts{Template: "cn"}); err != nil {
 		t.Fatal(err)
 	}

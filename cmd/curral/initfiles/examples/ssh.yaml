@@ -1,0 +1,3 @@
+github-ssh:
+  description: Sign git over SSH with my key (see the GitHub tutorial)
+  ssh: { agent: restricted, agent_keys: [~/.ssh/id_ed25519], confirm: false }

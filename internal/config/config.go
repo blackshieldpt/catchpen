@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"regexp"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 
@@ -20,10 +21,7 @@ import (
 )
 
 type Defaults struct {
-	Distro    string             `yaml:"distro"`
-	Template  string             `yaml:"template"`
-	Resources template.Resources `yaml:"resources"`
-	User      string             `yaml:"user"`
+	User string `yaml:"user"`
 }
 
 type Config struct {
@@ -46,11 +44,10 @@ type Config struct {
 	CanaryAction string `yaml:"canary_action"`
 }
 
-// PoolEntry asks for Size booted, stopped VMs of a template, ready for up
-// and task to claim.
+// PoolEntry asks for Size booted, stopped VMs of a template (a -t spec), ready
+// for up and task to claim.
 type PoolEntry struct {
 	Template string `yaml:"template"`
-	Distro   string `yaml:"distro"` // default: the template's, then defaults.distro
 	Size     int    `yaml:"size"`
 }
 
@@ -86,12 +83,7 @@ func (c Config) CacheMaxBytes() int64 {
 func (c Config) Recording() bool { return c.Record == nil || *c.Record }
 
 func Default() Config {
-	return Config{Tasks: TaskLimits{MaxVMs: 2}, Defaults: Defaults{
-		Distro:    "ubuntu-24.04",
-		Template:  "default",
-		Resources: template.Resources{CPUs: 4, Memory: "8G", Disk: "40G"},
-		User:      "agent",
-	}}
+	return Config{Tasks: TaskLimits{MaxVMs: 2}, Defaults: Defaults{User: "agent"}}
 }
 
 // Load reads path over the defaults; a missing file yields the defaults.
@@ -108,18 +100,16 @@ func Load(path string) (Config, error) {
 	dec.KnownFields(true)
 	var f Config
 	if err := dec.Decode(&f); err != nil && !errors.Is(err, io.EOF) {
+		for _, k := range []string{"distro", "template", "resources"} {
+			if strings.Contains(err.Error(), "field "+k+" not found") {
+				return c, fmt.Errorf("%s: %w (defaults.distro, defaults.template, defaults.resources and pool distro are gone: set the defaults in templates/distros.yaml and resources.yaml, and give a pool entry's distro in its template, e.g. \"debian-13,go-1.27\")", path, err)
+			}
+		}
 		return c, fmt.Errorf("%s: %w", path, err)
-	}
-	if f.Defaults.Distro != "" {
-		c.Defaults.Distro = f.Defaults.Distro
-	}
-	if f.Defaults.Template != "" {
-		c.Defaults.Template = f.Defaults.Template
 	}
 	if f.Defaults.User != "" {
 		c.Defaults.User = f.Defaults.User
 	}
-	c.Defaults.Resources = c.Defaults.Resources.Override(f.Defaults.Resources)
 	c.Images = f.Images
 	c.Secrets = f.Secrets
 	c.Record = f.Record
@@ -141,15 +131,16 @@ func Load(path string) (Config, error) {
 	if _, err := template.ParseInterval(c.Rebuild); err != nil {
 		return c, fmt.Errorf("%s: rebuild: %w", path, err)
 	}
-	seen := map[[2]string]bool{}
-	for _, e := range c.Pool {
-		if e.Template == "" || e.Size < 0 || e.Size > 32 {
-			return c, fmt.Errorf("%s: pool: each entry needs a template and a size of 0-32", path)
+	seen := map[string]bool{}
+	for i, e := range c.Pool {
+		if e.Size < 0 || e.Size > 32 {
+			return c, fmt.Errorf("%s: pool: each entry needs a size of 0-32", path)
 		}
-		if seen[[2]string{e.Template, e.Distro}] {
-			return c, fmt.Errorf("%s: pool: template %s (distro %q) listed twice", path, e.Template, e.Distro)
+		c.Pool[i].Template = template.NormalizeSpec(e.Template)
+		if seen[c.Pool[i].Template] {
+			return c, fmt.Errorf("%s: pool: template %s listed twice", path, c.Pool[i].Template)
 		}
-		seen[[2]string{e.Template, e.Distro}] = true
+		seen[c.Pool[i].Template] = true
 	}
 	if c.Tasks.MaxVMs == 0 {
 		c.Tasks.MaxVMs = 2

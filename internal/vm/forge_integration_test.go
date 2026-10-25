@@ -57,9 +57,7 @@ func TestForges(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Gitea is on a private address, which the proxy only allows with allow_private.
-	if err := os.WriteFile(filepath.Join(m.P.Templates(), "fg.yaml"), []byte("extends: minimal\nnetwork: { allow_private: true }\ncanaries: [git]\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	vmtest.Template(t, m.P.Templates(), "fg", "", "network: { allow_private: true }\ncanaries: [git]\n")
 
 	if _, err := m.Create(ctx, "fg1", CreateOpts{Template: "fg", Repos: []string{"gd:bot/app", "gm:bot/lib"}}); err != nil {
 		t.Fatal(err)
@@ -235,7 +233,7 @@ func TestAgentForwarding(t *testing.T) {
 	if err := forge.Update(m.P.Forges(), func(r *forge.Registry) error { r.Forges = []forge.Forge{ga}; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(m.P.Templates(), "ag.yaml"), []byte("extends: minimal\nnetwork: { allow_private: true }\nssh: { agent: restricted, agent_keys: ["+keyFile+"] }\n"), 0o600)
+	vmtest.Template(t, m.P.Templates(), "ag", "", "network: { allow_private: true }\nssh: { agent: restricted, agent_keys: ["+keyFile+"] }\n")
 
 	if _, err := m.Create(ctx, "ag2", CreateOpts{Template: "ag", Repos: []string{"ga:bot/app"}}); err != nil {
 		t.Fatal(err)

@@ -105,8 +105,8 @@ curral setup-ssh          # adds an Include to ~/.ssh/config; --remove takes it 
 
 1. Give Claude Code a credential. With a Claude subscription, create a long-lived token
    once (`claude setup-token`, with Claude Code installed on the host). `curral init`
-   writes a commented `config.yaml`, `secrets.env` (mode 0600) and
-   `templates/example.yaml` under `~/.config/curral`, keeping files that exist.
+   writes a commented `config.yaml`, `secrets.env` (mode 0600) and the template
+   category files in `templates/` under `~/.config/curral`, keeping files that exist.
    Uncomment `CLAUDE_CODE_OAUTH_TOKEN=` in `secrets.env` and put the token after it:
 
    ```
@@ -115,10 +115,10 @@ curral setup-ssh          # adds an Include to ~/.ssh/config; --remove takes it 
    ```
 
    With an API key, set `ANTHROPIC_API_KEY` there instead and create VMs with
-   `--claude-auth api-key`. Other ways to supply secrets are in
+   `--claude-auth api-key` (or `-t claude-api-key`). Other ways to supply secrets are in
    [configuration.md](configuration.md#secrets).
 
-2. Create and start a VM from the `default` template:
+2. Create and start a VM with the default template (every category's default):
 
    ```
    curral up dev

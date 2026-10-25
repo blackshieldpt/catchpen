@@ -1,13 +1,17 @@
 # Package caches
 
-VMs of templates that list `cache:` fetch packages through curral on the host, which
+VMs whose template lists `cache:` fetch packages through curral on the host, which
 keeps what never changes for every other VM and base build.
 
-```yaml
-# template
-cache: [apt, go, npm, pypi, docker]   # the default template has all five; [] turns them off
-docker: true                          # the docker cache needs Docker in the VM
+Each cache is a section of `caches.yaml`: `apt-cache`, `go-cache`, `npm-cache`,
+`pypi-cache` and `docker-cache`. The default has all five; `-name` drops one:
+
 ```
+curral up dev -t -npm-cache,-docker-cache
+```
+
+The docker cache needs Docker in the VM, which the `docker` section of `runtimes.yaml`
+(a default) installs. The built-in `minimal` profile has no caches.
 
 ```yaml
 # config.yaml

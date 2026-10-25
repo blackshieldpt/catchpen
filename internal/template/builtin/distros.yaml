@@ -1,0 +1,4 @@
+default: ubuntu-24.04
+ubuntu-24.04: { description: Ubuntu 24.04 LTS, distro: ubuntu-24.04 }
+ubuntu-26.04: { description: Ubuntu 26.04 LTS, distro: ubuntu-26.04 }
+debian-13: { description: Debian 13 (trixie), distro: debian-13 }

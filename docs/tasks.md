@@ -7,6 +7,7 @@ work out through the host.
 curral task run --repo github:acme/api --prompt "fix issue #42"
 curral task run --repo github:acme/api --prompt-file task.md --agent opencode --out bundle --into ~/src/api
 curral task run --agent cmd --cmd 'make fix' --prompt "..."   # any command, prompt on stdin
+curral task run -t go-1.27,codex-api-key --agent codex --repo github:acme/api --prompt "..."
 curral task run --file tasks.yaml --parallel 2
 curral task ls
 curral task show <id>
@@ -23,13 +24,14 @@ curral task rm <id>
    tasks: { max_vms: 2, max_memory: 24G }
    ```
 
-2. It gets a new VM named `task-<id>`, from the warm pool when one matches, with
-   read-only deploy keys unless `--rw`.
+2. It gets a new VM named `task-<id>`, with the template `-t` gives (as on
+   `curral up`), from the warm pool when one matches, with read-only deploy keys unless
+   `--rw`.
 3. The agent works on branch `curral/<id>` without permission prompts: claude
    `-p --output-format stream-json`, `opencode run --format json --auto`,
    `pi -p --mode json`, `codex exec --json --yolo`. omp also runs headless. Codex
-   tasks need `auth: api-key` (a task whose template has `chatgpt` or `none`, as `default`
-   does, is refused), and Codex
+   tasks need `-t codex-api-key` (the default `codex` section has no credentials, and
+   `codex-chatgpt` has no sign-in in a new VM, so both are refused), and Codex
    reports no cost. `--agent cmd` runs your command with the prompt on stdin
    and its path in `$CURRAL_PROMPT_FILE`. `--timeout` (default 2h, from 1m to 48h)
    stops it; `--max-budget-usd` caps Claude's spend (claude only). Prompts are limited
@@ -84,8 +86,8 @@ tasks:
 matrix: { agent: [claude, opencode] }
 ```
 
-Each task has `prompt` or `prompt_file`, and any of `agent`, `repo`, `template`,
-`timeout`, `out`, `into`, `title`, `rw`, `keep`, `cmd` and `max_budget_usd`. The optional
+Each task has `prompt` or `prompt_file`, and any of `agent`, `repo`, `template` (a `-t`
+spec), `timeout`, `out`, `into`, `title`, `rw`, `keep`, `cmd` and `max_budget_usd`. The optional
 `matrix: { agent: [...], repo: [...] }` runs each task once per combination, except
 for the keys a task sets itself: in the example, the second task runs once, with
 opencode. A batch holds at most 100 tasks.

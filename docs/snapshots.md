@@ -28,7 +28,7 @@ task. Memory snapshots hold whatever was in the guest's memory, credentials incl
 ## Base generations
 
 A rebuild never replaces a base in use. It adds a generation
-(`<template>-<hash>.2.qcow2`) that new VMs use; the one it supersedes is removed if no VM
+(`<distro>-<hash>.2.qcow2`) that new VMs use; the one it supersedes is removed if no VM
 uses it. `curral ls` marks VMs on an older generation `stale-base`.
 
 To move a VM to new software:
@@ -48,7 +48,7 @@ The daemon can rebuild bases on a schedule (`rebuild:` in config.yaml); see
 
 `curral gc` removes:
 
-- bases no VM uses (each template's current base stays);
+- bases no VM uses (the current base of each `-t` spec stays);
 - leftovers of interrupted builds, downloads, resets and destroys;
 - package cache objects past `cache_max`.
 

@@ -48,21 +48,25 @@ func TestInitFilesLoadAsWritten(t *testing.T) {
 	if st, _ := os.Stat(p.SecretsFile()); st.Mode().Perm() != 0o600 {
 		t.Fatalf("secrets.env mode %o", st.Mode().Perm())
 	}
-	// example.yaml is the default template under another name and description.
-	l := template.Loader{UserDir: p.Templates()}
-	e, err := l.Load("example")
+	// The category files are all comments: the built-in defaults apply.
+	lib, err := template.Loader{UserDir: p.Templates()}.Library()
 	if err != nil {
 		t.Fatal(err)
 	}
-	d, err := template.Loader{}.Load("default")
+	for _, c := range template.Categories {
+		if _, err := os.Stat(filepath.Join(p.Templates(), c.Name+".yaml")); err != nil {
+			t.Errorf("no %s.yaml: %v", c.Name, err)
+		}
+	}
+	got, err := lib.Load("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.Name, e.Description, e.Source = d.Name, d.Description, d.Source
-	ey, _ := e.YAML()
-	dy, _ := d.YAML()
-	if string(ey) != string(dy) {
-		t.Fatalf("example.yaml differs from default:\n%s\nwant:\n%s", ey, dy)
+	want, _ := template.Loader{}.Load("")
+	gy, _ := got.YAML()
+	wy, _ := want.YAML()
+	if string(gy) != string(wy) {
+		t.Fatalf("defaults with the init files:\n%s\nwant:\n%s", gy, wy)
 	}
 }
 
@@ -100,9 +104,12 @@ func TestInitFilesLoadUncommented(t *testing.T) {
 	}
 
 	dir := p.Templates()
-	b, _ = os.ReadFile(filepath.Join(dir, "example.yaml"))
-	if err := os.WriteFile(filepath.Join(dir, "example.yaml"), uncomment(b), 0o644); err != nil {
-		t.Fatal(err)
+	for _, c := range template.Categories {
+		f := filepath.Join(dir, c.Name+".yaml")
+		b, _ = os.ReadFile(f)
+		if err := os.WriteFile(f, uncomment(b), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for _, a := range []string{"scripts/setup.sh", "files/gitconfig"} {
 		if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(a)), 0o700); err != nil {
@@ -112,8 +119,26 @@ func TestInitFilesLoadUncommented(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := (template.Loader{UserDir: dir}).Load("example"); err != nil {
+	lib, err := template.Loader{UserDir: dir}.Library()
+	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := lib.Load(""); err != nil {
+		t.Fatal(err)
+	}
+	// Every section, built-in copy or example, loads on its own.
+	n := 0
+	for _, c := range template.Categories {
+		secs, _ := lib.Sections(c.Name)
+		for _, sec := range secs {
+			if _, err := lib.Load(c.Name + ":" + sec.Name); err != nil {
+				t.Errorf("%s:%s: %v", c.Name, sec.Name, err)
+			}
+			n++
+		}
+	}
+	if n < 60 {
+		t.Errorf("only %d sections", n)
 	}
 }
 

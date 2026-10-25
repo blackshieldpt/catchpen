@@ -39,8 +39,9 @@ are always `secret:` references; see [configuration.md](configuration.md#secrets
 
 In the VM, git SSH goes through the egress proxy (`~/.ssh/curral_config`, with pinned
 `known_hosts`), HTTPS tokens sit in `~/.config/curral/git-credentials`, `gh` gets
-`GH_TOKEN` and `tea` a login. Forge hosts are added to the VM's allowlist. Install the
-CLIs with `tools: [gh, tea]` in a template (the `default` template has `gh`).
+`GH_TOKEN` and `tea` a login. Forge hosts are added to the VM's allowlist. The CLIs are
+the `gh` and `tea` sections of `tools.yaml`: `gh` is in the default, `-t tea` adds `tea`
+and `-t -gh` drops `gh`.
 
 ## Repos
 
@@ -48,8 +49,18 @@ CLIs with `tools: [gh, tea]` in a template (the `default` template has `gh`).
 curral up dev --repo github:acme/api --repo https://git.acme.example/team/web [--ro]
 ```
 
-Repos (`--repo`, or `repos:` in a template) are `forge:owner/repo`, or a URL whose host
-matches a forge. They are cloned into `/workspace/<repo>` at start.
+Repos are `forge:owner/repo`, or a URL whose host matches a forge. They are cloned into
+`/workspace/<repo>` at start. Repos you use often can go in a section of `repos.yaml`
+instead of `--repo`:
+
+```yaml
+# ~/.config/curral/templates/repos.yaml
+api: { repos: [github:acme/api] }
+```
+
+```
+curral up dev -t api
+```
 
 ## Getting work out
 
@@ -71,19 +82,29 @@ same forge repo, then opens the PR with the forge's API token. `--title`, `--bod
 
 ## SSH agent
 
+A VM's agent comes from `ssh.yaml`, a one-choice category: the default is `ssh-off`
+(no agent), the built-in `ssh-host` forwards your own agent, and a section of your own
+sets up a restricted one:
+
 ```yaml
-# template
-ssh:
-  agent: restricted          # off (default) | restricted | host
-  agent_keys: [~/.ssh/id_ed25519]
-  confirm: true              # default: ask (ssh-askpass) on every use of a key
+# ~/.config/curral/templates/ssh.yaml
+my-key:
+  ssh:
+    agent: restricted          # off | restricted | host
+    agent_keys: [~/.ssh/id_ed25519]
+    confirm: true              # default: ask (ssh-askpass) on every use of a key
+```
+
+```
+curral up dev -t my-key
 ```
 
 With `restricted`, `curral start` runs a per-VM `ssh-agent` holding only `agent_keys`,
 each destination-constrained (`ssh-add -h`), so it signs only on the path host → VM →
 that VM's `agent`-mode forges. The VM can't use it to log in anywhere else, including
 back into itself. `ssh curral-<vm>` forwards that agent, never your own, and it ends when
-the VM stops. `--ssh-agent` and `--agent-key` on `curral up` override the template.
+the VM stops. `--ssh-agent` and `--agent-key` on `curral up` override the VM's `ssh.yaml`
+section.
 
 The constraints need the forge's SSH server to support OpenSSH host-bound
 authentication: github.com and Gitea behind OpenSSH do; gitlab.com and Gitea's built-in
@@ -109,4 +130,5 @@ curral forward dev --stop
 
 Each forward is a background `ssh -N`, logged in `vms/<name>/forward.log`; all of them
 end when the VM stops. `-R` bypasses the egress proxy, so it is recorded in the VM's
-egress log. Template `ports:` are forwarded at start instead.
+egress log. `ports:` from a `ports.yaml` section, such as
+`web: { ports: [3000, "8080:80"] }` picked with `-t web`, are forwarded at start instead.

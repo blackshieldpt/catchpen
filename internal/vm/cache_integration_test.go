@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blackshieldpt/curral/internal/vmtest"
+
 	"github.com/blackshieldpt/curral/internal/cache"
 	"github.com/blackshieldpt/curral/internal/egress"
 )
@@ -21,15 +23,12 @@ func TestCaches(t *testing.T) {
 	m := integrationManager(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Minute)
 	defer cancel()
-	tpl := `extends: minimal
-docker: true
+	tpl := `docker: true
 runtimes: { node: "24", python: uv, go: "1.27" }
 network: { presets: [docker-apt] }
 cache: [apt, go, npm, pypi, docker]
 `
-	if err := os.WriteFile(filepath.Join(m.P.Templates(), "ch.yaml"), []byte(tpl), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	vmtest.Template(t, m.P.Templates(), "ch", "", tpl)
 	install := strings.Join([]string{
 		"sudo apt-get -q update >/dev/null && sudo apt-get -qy install --no-install-recommends cowsay >/dev/null",
 		"cd $(mktemp -d) && npm install --no-audit --no-fund --loglevel=error left-pad@1.3.0 >/dev/null",

@@ -1,99 +1,168 @@
 # Templates
 
-A template describes a VM: its distro, resources, software, network policy, agents,
-credentials and repos. Software is baked into a **base** image built from the template;
-VMs are thin copy-on-write overlays on it.
+A VM's template is what it contains: distro, size, software, network policy, agents,
+credentials and repos. You build one with `-t`, by picking **sections** from
+**category files**:
 
 ```
-curral template ls                  # built-in and user templates
-curral template show default        # a template after extends is applied
-curral template build go [--rebuild]
-curral template rebuild --all       # fresh cloud image and packages, as a new base
+curral up dev                                        # every category's default
+curral up dev -t go-1.27,python-3.14                 # the defaults, plus Go and Python 3.14
+curral up dev -t ubuntu-26.04,large,go-1.27,-docker  # another distro and size, Go, no Docker
 ```
 
-## Where templates live
+Software is baked into a **base** image built from the template; VMs are thin
+copy-on-write overlays on it.
 
-User templates are `~/.config/curral/templates/<name>.yaml` and shadow a built-in of
-the same name. `curral init` writes `example.yaml` there: the `default` template's
-settings, with the options `default` doesn't set commented out. Names match
-`^[a-z0-9][a-z0-9_-]{0,31}$`; an optional `name:` field must equal the file name.
-Relative paths in `scripts` and `files[].src` resolve inside the template's own
-directory; absolute paths and `..` are rejected. Unknown keys are errors.
+```
+curral template ls [category]        # every section, with the defaults marked
+curral template show -t go-1.27      # the settings a -t gives, and where they come from
+curral template build -t go-1.27 [--rebuild]
+curral template rebuild --all        # fresh cloud image and packages, as a new base
+```
 
-Built-ins:
+## How `-t` works
 
-| Template | Contents |
-|---|---|
-| `base` | `ca-certificates curl git jq tmux ripgrep unzip less file htop netcat-openbsd`; `egress: allowlist` with the `anthropic` preset. |
-| `minimal` | `base` with 2 CPUs, 4G memory, 20G disk. |
-| `default` | `base` with 4 CPUs, 8G, 40G; `build-essential make python3 python3-venv pkg-config`; Docker; `gh`; Node 24 and uv; Claude Code (OAuth token), opencode, pi and Codex (installed with `auth: none`: no credentials until a template sets `agents.codex.auth`); the `github npm pypi go apt-ubuntu apt-debian docker-apt docker-hub ghcr` presets; all five package caches; all three canaries. |
+Each category is a file of named sections, plus a `default`. For every category:
 
-## Example
+- if `-t` names none of its sections, its **default** applies;
+- in most categories, the sections `-t` names are **added** to the default, and
+  `-name` drops one of the default's sections (`-t -docker,-codex`);
+- in the one-choice categories (`distros`, `resources`, `ssh`, `idle`), the section `-t`
+  names **replaces** the default, and naming two is an error. A size may set only some
+  of `cpus`, `memory` and `disk`; the default size gives the rest.
+
+Picks apply left to right: `-t docker,-docker` has no Docker. A pick named in `-t` wins
+over one from a profile (`-t minimal,large` is minimal at the large size), and a
+profile's `-name` of a section that isn't chosen does nothing.
+
+`-t` is a comma-separated list of at most 160 characters (put longer ones in a
+profile). A name must be unique across categories; when it isn't
+(say you add a `docker` section to `network.yaml`), say which: `-t runtimes:docker`. `category:default` is that category's default, so
+`-t runtimes:default` is the same as no runtime picks.
+
+Sections are merged in category order, below. Within a category, lists add up
+(`packages`, `presets`, `cache`, ...), settings like `go:` or `egress:` take the last
+section's value, agents merge field by field, `env` by name and `mcp` by server name. A
+runtime picked with `-t` overrides the Node version the agents ask for (`-t node-22`).
+
+A VM records its `-t` (`curral ls` shows it as TEMPLATE), and uses it again for
+`curral reset --latest`, `rebase`, `template rebuild --all` and `creds push`. So editing a
+section changes what those give for every VM that picked it.
+
+## Categories
+
+| File | Sections set | Built-in default | Built-in sections |
+|---|---|---|---|
+| `distros.yaml` | `distro` | `ubuntu-24.04` | `ubuntu-24.04`, `ubuntu-26.04`, `debian-13` |
+| `resources.yaml` | `resources` | `medium` (4 CPUs, 8G, 40G) | `small` (2, 4G, 20G), `large` (8, 16G, 80G), `xlarge` (16, 32G, 160G) |
+| `tools.yaml` | `packages`, `tools`, `scripts`, `files` | `base`, `build`, `gh` | `base` (git, curl, jq, tmux, ripgrep, ...), `build` (build-essential, make, python3, ...), `gh`, `tea` |
+| `agents.yaml` | `agents`, and the `runtimes` they need | `claude`, `opencode`, `pi`, `codex` | `claude-api-key`, `claude-yolo`, `omp`, `codex-api-key`, `codex-chatgpt` |
+| `runtimes.yaml` | `runtimes`, `docker` | `docker`, `uv` | `node-22`, `node-24`, `go-1.26`, `go-1.27`, `python-3.12`, `python-3.13`, `python-3.14` |
+| `network.yaml` | `network` | `allowlist` and the presets below | `anthropic`, `github`, `npm`, `pypi`, `go`, `apt-ubuntu`, `apt-debian`, `docker-apt`, `docker-hub`, `ghcr` (one per preset); `open`, `offline`, `prompt` |
+| `caches.yaml` | `cache` | all five | `apt-cache`, `go-cache`, `npm-cache`, `pypi-cache`, `docker-cache` |
+| `canaries.yaml` | `canaries` | all three | `aws-canary`, `env-canary`, `git-canary` |
+| `env.yaml` | `env` | none | none |
+| `mcp.yaml` | `mcp` | none | none |
+| `ssh.yaml` | `ssh` | `ssh-off` | `ssh-host` |
+| `sync.yaml` | `sync` | none (git identity is copied) | `claude-config`, `no-git-identity` |
+| `repos.yaml` | `repos` | none | none |
+| `ports.yaml` | `ports` | none | none |
+| `idle.yaml` | `idle_stop` | none (`config.yaml` `idle_stop`) | `idle-30m`, `idle-1h`, `idle-2h`, `idle-off` |
+| `profiles.yaml` | lists of picks | none | `minimal` |
+
+`curral template ls` prints the full list with descriptions. A section may set only its
+category's settings, and a `description`.
+
+## Your sections
+
+`curral init` writes every category file to `~/.config/curral/templates/`. Each one
+explains itself, shows curral's built-in sections commented out, and has examples:
 
 ```yaml
-# ~/.config/curral/templates/go.yaml
-description: Go development
-extends: default
-distro: debian-13
-resources: { cpus: 8, memory: 16G, disk: 60G }
-packages: [protobuf-compiler]
-runtimes: { go: "1.27" }
-docker: true
-scripts: [scripts/setup.sh]      # run as root at base build
-files:
-  - { src: files/gitconfig, dst: ~/.gitconfig, mode: "0644" }
-ports: [8080, "9000:9000"]
-network:
-  egress: allowlist
-  presets: [go]
-  allow: [registry.example.com:443]
-  on_deny: log
-cache: [apt, go, npm]
-canaries: [aws, env, git]
-idle_stop: 2h
+# ~/.config/curral/templates/ssh.yaml
+github-ssh:
+  description: Sign git over SSH with my key
+  ssh: { agent: restricted, agent_keys: [~/.ssh/id_ed25519], confirm: false }
 ```
 
-## Fields
+```yaml
+# ~/.config/curral/templates/env.yaml
+gh-token: { env: { GH_TOKEN: "secret:GH_TOKEN" } }
+```
 
-| Field | Values |
+```
+curral up dev -t github-ssh,gh-token --repo github:acme/api
+```
+
+Your file is read on top of curral's: a section with a built-in name replaces it, and
+`default:` replaces the built-in default. Sections you don't redefine keep tracking
+curral's, so new built-in sections (a new Go version, say) reach you on upgrade.
+
+Section names are lower case letters, digits, `.`, `_` and `-`, each defined once per
+file. Any other `*.yaml` in that folder, such as an old-style template, is refused
+until you move or rename it. Relative paths in
+`scripts` and `files[].src` resolve inside `~/.config/curral/templates/`; absolute paths
+and `..` are rejected. Unknown settings are errors.
+
+### Profiles
+
+A section can also be a list of picks, used like one section. `profiles.yaml` holds lists
+that span categories:
+
+```yaml
+# ~/.config/curral/templates/profiles.yaml
+acme-api: [github-ssh, gh-token, api, go-1.27, large]
+```
+
+```
+curral up dev -t acme-api
+```
+
+Lists may include `-name` and other lists. In a category file other than
+`profiles.yaml`, a list names sections of that category: `runtimes.yaml` could hold
+`web: [node-24, python-3.14]`.
+
+The built-in `minimal` profile is the defaults minus everything optional: `small`, the
+`base` tools, the allowlist with only the `anthropic` preset, and no agents, runtimes,
+caches or canaries.
+
+### Defaults
+
+`default:` is a section name, a list of names, or settings of its own:
+
+```yaml
+# ~/.config/curral/templates/resources.yaml
+default: large                     # every VM gets 8 CPUs unless -t says otherwise
+```
+
+```yaml
+# ~/.config/curral/templates/agents.yaml
+default: [claude, omp]             # no opencode, pi or codex by default
+```
+
+## Settings
+
+| Setting | Values |
 |---|---|
-| `extends` | One parent template. Cycles are errors. |
-| `description` | Free text; not inherited. |
 | `distro` | `ubuntu-24.04`, `ubuntu-26.04`, `debian-13`, or a name from `images:` in config.yaml. |
-| `resources` | `cpus` (0 to 256), `memory`, `disk`: sizes like `512M`, `8G`, `1T`. |
+| `resources` | `cpus` (0 to 256), `memory`, `disk`: sizes like `512M`, `8G`, `1T`. `--cpus`, `--mem` and `--disk` on `curral up` override them. |
 | `packages` | apt package names, optionally `name=version`. |
 | `docker` | `true` installs Docker and configures it for the proxy and caches. |
-| `runtimes` | `node: "24"` (a major version, quoted), `go: "1.27"` or `"1.27.1"`, `python: uv`. |
+| `runtimes` | `node: "24"` (a major version, quoted), `go: "1.27"` or `"1.27.1"`, `python: uv` or a version like `"3.14"` (installed with uv, as `python3.14` and `python`). |
 | `scripts` | Scripts run as root at base build, in order. |
 | `files` | `{src, dst, mode}`: copied in at base build. `dst` is absolute or `~/`; `mode` like `"0644"`. |
 | `tools` | `gh`, `tea`. |
 | `ports` | `"guest"` or `"host:guest"`, bound to `127.0.0.1`. Host port 0 or omitted picks a free port at start. |
 | `network` | `egress` (`allowlist`, `open`, `none`), `presets`, `allow`, `on_deny` (`log`, `prompt`), `prompt_timeout` (default `30s`), `allow_private`. See [egress.md](egress.md). |
 | `agents` | `claude`, `opencode`, `pi`, `omp`, `codex`. See [agents.md](agents.md). |
-| `env` | Environment for every ssh session: literal values or `secret:NAME`. Names are upper case; `HOME`, `USER`, `PATH`, `SHELL` and `LOGNAME` are refused, and so is `ANTHROPIC_API_KEY` in a template with Claude whose `auth` isn't `api-key`. |
+| `env` | Environment for every ssh session: literal values or `secret:NAME`. Names are upper case; `HOME`, `USER`, `PATH`, `SHELL` and `LOGNAME` are refused, and so is `ANTHROPIC_API_KEY` with Claude whose `auth` isn't `api-key`. |
 | `mcp` | MCP servers for all agents. See [agents.md](agents.md#mcp-servers). |
 | `sync` | `git_identity` (default `true`), `claude_config` (default `false`). |
 | `ssh` | `agent` (`off`, `restricted`, `host`), `agent_keys`, `confirm` (default `true`). See [forges.md](forges.md#ssh-agent). |
 | `repos` | Repos cloned into `/workspace/<repo>` at start. See [forges.md](forges.md). |
 | `idle_stop` | `off`, `daily`, `weekly` or a duration of at least `1m`; overrides `config.yaml`. |
-| `cache` | Any of `apt`, `go`, `npm`, `pypi`, `docker`; `[]` turns them off. See [package-caches.md](package-caches.md). |
-| `canaries` | Any of `aws`, `env`, `git`; `[]` turns them off. See [canaries.md](canaries.md). |
-
-## How `extends` merges
-
-The chain is applied from the root parent down to the leaf, and the result is validated
-once.
-
-- **Scalars override** when the child sets them: `distro`, `docker`, `runtimes.*`,
-  `network.egress`, `on_deny`, `prompt_timeout`, `allow_private`, `ssh.agent`,
-  `ssh.confirm`, `sync.*`, `idle_stop`, and `resources` field by field.
-- **Lists append**, without duplicates: `packages`, `scripts`, `network.presets`,
-  `network.allow`, `tools`, `repos`, `ssh.agent_keys`. `files` and `ports` append as
-  they are.
-- **Lists replace**: `cache` and `canaries`. A child's `[]` clears them.
-- **Agents** merge field by field (`version`, `auth`, `yolo` override; `keys` append). A
-  child can add an agent but not remove one.
-- **`env`** merges by key and **`mcp`** by server name.
+| `cache` | Any of `apt`, `go`, `npm`, `pypi`, `docker`. See [package-caches.md](package-caches.md). |
+| `canaries` | Any of `aws`, `env`, `git`. See [canaries.md](canaries.md). |
 
 ## Bases and rebuilds
 
@@ -101,11 +170,15 @@ The first `curral up` of a template downloads and verifies the cloud image and b
 the base, which takes a few minutes. Later VMs of the template boot in seconds. On a
 terminal, the build shows its current step with a spinner and how long it has run.
 
+Bases are named after the distro and a hash of what they contain
+(`ubuntu-24.04-<hash>.qcow2`), so `-t` lists that give the same software share one
+base: `-t large` or `-t ssh-host` don't build another.
+
 Changing the software in a template (packages, runtimes, scripts, files, agents' versions
 and the like) means a new base, built on the next `up` of a new VM. Existing VMs keep
 their base and software; only `reset --latest` (a fresh disk on the new base) gives
 them the new software, while `rebase` moves a disk onto the new base without changing
-its files. See [snapshots.md](snapshots.md). `curral template build <name> --rebuild`
+its files. See [snapshots.md](snapshots.md). `curral template build -t <picks> --rebuild`
 forces a build, re-checking the cloud image upstream, and `curral template rebuild --all`
 refreshes every base.
 

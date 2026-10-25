@@ -130,9 +130,7 @@ func TestLifecycle(t *testing.T) {
 // sees after the credential push. Credentials are fake.
 func TestAgents(t *testing.T) {
 	m := integrationManager(t)
-	if err := os.WriteFile(filepath.Join(m.P.Templates(), "agents.yaml"), []byte(`
-extends: minimal
-runtimes: { node: "24" }
+	vmtest.Template(t, m.P.Templates(), "agents", "", `runtimes: { node: "24" }
 agents:
   claude: {}
   opencode: { keys: [ANTHROPIC_API_KEY] }
@@ -140,9 +138,7 @@ agents:
 env: { FOO: "literal value", BAR: "secret:IT_BAR" }
 mcp:
   - { name: fs, type: stdio, command: [npx, -y, "@modelcontextprotocol/server-filesystem", /tmp] }
-`), 0o600); err != nil {
-		t.Fatal(err)
-	}
+`)
 	const oauth, key = "sk-ant-oat01-curral-integration-fake", "sk-ant-api03-curral-integration-fake-key"
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", oauth)
 	t.Setenv("ANTHROPIC_API_KEY", key)

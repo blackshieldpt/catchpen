@@ -4,11 +4,11 @@ package vm
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/blackshieldpt/curral/internal/vmtest"
 )
 
 // TestOMP builds a base with oh-my-pi and checks it is installed, set not to
@@ -17,10 +17,8 @@ func TestOMP(t *testing.T) {
 	m := integrationManager(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 	defer cancel()
-	tpl := "extends: minimal\nagents: { omp: { keys: [OPENROUTER_API_KEY] } }\n"
-	if err := os.WriteFile(filepath.Join(m.P.Templates(), "om.yaml"), []byte(tpl), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	tpl := "agents: { omp: { keys: [OPENROUTER_API_KEY] } }\n"
+	vmtest.Template(t, m.P.Templates(), "om", "", tpl)
 	t.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
 	if _, err := m.Create(ctx, "om", CreateOpts{Template: "om"}); err != nil {
 		t.Fatal(err)

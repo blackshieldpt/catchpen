@@ -39,20 +39,18 @@ func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) 
 // Submit records a task and starts its supervisor (curral task-supervise)
 // in the background. The spec must be normalized.
 func (r *Runner) Submit(spec task.Spec) (*task.Task, error) {
-	if spec.Template == "" {
-		spec.Template = r.M.Cfg.Defaults.Template
-	}
-	res, err := r.M.Resolve(spec.Template, "")
+	spec.Template = template.NormalizeSpec(spec.Template)
+	res, err := r.M.Resolve(spec.Template)
 	if err != nil {
 		return nil, err
 	}
 	if spec.Agent != "cmd" {
 		a := res.T.Agents.Get(spec.Agent)
 		if a == nil {
-			return nil, fmt.Errorf("template %s doesn't install %s", res.T.Name, spec.Agent)
+			return nil, fmt.Errorf("-t %s doesn't install %s", res.T.Name, spec.Agent)
 		}
 		if spec.Agent == "codex" && (a.Auth == template.CodexChatGPT || a.Auth == template.CodexNone) {
-			return nil, fmt.Errorf("codex tasks need agents.codex.auth: api-key in template %s (it has %s; a new VM has no sign-in)", res.T.Name, a.Auth)
+			return nil, fmt.Errorf("codex tasks need Codex with an API key: add codex-api-key to -t (-t %s has auth %s; a new VM has no sign-in)", res.T.Name, a.Auth)
 		}
 	}
 	if spec.Into != "" {
@@ -60,7 +58,7 @@ func (r *Runner) Submit(spec task.Spec) (*task.Task, error) {
 			return nil, fmt.Errorf("--out %s needs a host repository: %s is not one (use --into)", spec.Out, spec.Into)
 		}
 	}
-	mem, err := template.ParseSize(r.M.Cfg.Defaults.Resources.Override(res.T.Resources).Memory)
+	mem, err := template.ParseSize(res.T.Resources.Memory)
 	if err != nil {
 		return nil, err
 	}

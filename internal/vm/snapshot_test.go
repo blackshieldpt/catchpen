@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -51,7 +52,7 @@ func view(t *testing.T, img string) []byte {
 func offlineVM(t *testing.T, m *Manager, name string) (*State, *Resolved) {
 	t.Helper()
 	needQemuImg(t)
-	r, err := m.Resolve("minimal", "")
+	r, err := m.Resolve("minimal")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +70,7 @@ func offlineVM(t *testing.T, m *Manager, name string) (*State, *Resolved) {
 	if out, err := exec.Command("qemu-img", "create", "-q", "-f", "qcow2", "-F", "qcow2", "-b", base, m.vm(name).path(diskFile)).CombinedOutput(); err != nil {
 		t.Fatalf("%v %s", err, out)
 	}
-	s := &State{Name: name, Template: r.T.Name, Distro: r.Distro.Name, User: r.User, Base: base, DiskMB: 4, Booted: true, Created: time.Now()}
+	s := &State{Name: name, Template: r.T.Name, Picks: true, Distro: r.Distro.Name, User: r.User, Base: base, DiskMB: 4, Booted: true, Created: time.Now()}
 	if err := m.save(s); err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +187,7 @@ func TestResetFreshDisk(t *testing.T) {
 
 func TestGC(t *testing.T) {
 	m := testManager(t)
-	r, err := m.Resolve("minimal", "")
+	r, err := m.Resolve("minimal")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,6 +196,9 @@ func TestGC(t *testing.T) {
 	stale := filepath.Join(b, "minimal-0123456789abcdef.qcow2") // an old template version
 	for _, p := range []string{g1, g2, g3, stale} {
 		writeFile(t, p, "base")
+	}
+	if err := r.recordSpec(m.P); err != nil {
+		t.Fatal(err)
 	}
 	writeFile(t, strings.TrimSuffix(g1, ".qcow2")+".build.log", "log")
 	writeFile(t, strings.TrimSuffix(g3, ".qcow2")+".build.log", "log")
@@ -222,8 +226,8 @@ func TestGC(t *testing.T) {
 		}
 		return strings.Join(n, " ")
 	}
-	want := "bases/minimal-0123456789abcdef.qcow2 bases/" + filepath.Base(g1) + " bases/" + strings.TrimSuffix(filepath.Base(g1), ".qcow2") + ".build.log" +
-		" bases/minimal-fedcba9876543210.build.log images/ubuntu.img.part vms/.destroyed-x-1"
+	want := "bases/minimal-0123456789abcdef.qcow2 bases/minimal-fedcba9876543210.build.log bases/" + filepath.Base(g1) +
+		" bases/" + strings.TrimSuffix(filepath.Base(g1), ".qcow2") + ".build.log images/ubuntu.img.part vms/.destroyed-x-1"
 	items, err := m.GC(true)
 	if err != nil || names(items) != want {
 		t.Fatalf("dry run:\n got %s\nwant %s (%v)", names(items), want, err)
@@ -253,12 +257,15 @@ func TestGCKeepsInUseAndCurrent(t *testing.T) {
 	needQemuImg(t)
 	m := testManager(t)
 	m.Cfg.Images = map[string]image.Spec{"mydistro": {Name: "mydistro", URL: "https://example.com/x.img", SHA256: strings.Repeat("a", 64)}}
-	custom, err := m.Resolve("minimal", "mydistro")
+	writeFile(t, filepath.Join(m.P.Templates(), "distros.yaml"), "mydistro: { distro: mydistro }\n")
+	custom, err := m.Resolve("minimal,mydistro")
 	if err != nil {
 		t.Fatal(err)
 	}
-	def, _ := m.Resolve("minimal", "")
+	def, _ := m.Resolve("minimal")
 	writeFile(t, custom.basePath(m.P, 1), "base") // current for a config-defined distro
+	custom.recordSpec(m.P)
+	def.recordSpec(m.P)
 	// A base only the disk refers to: reset or rebase interrupted before its state was saved.
 	byDisk := def.basePath(m.P, 1)
 	if out, err := exec.Command("qemu-img", "create", "-q", "-f", "qcow2", byDisk, "1M").CombinedOutput(); err != nil {
@@ -316,12 +323,55 @@ func qemuCreateOverlay(disk, base string) error {
 func TestRebuildTargetsUseTheBasesDistro(t *testing.T) {
 	m := testManager(t)
 	m.Cfg.Images = map[string]image.Spec{"mydistro": {Name: "mydistro", URL: "https://example.com/x.img", SHA256: strings.Repeat("a", 64)}}
-	custom, _ := m.Resolve("minimal", "mydistro")
+	writeFile(t, filepath.Join(m.P.Templates(), "distros.yaml"), "mydistro: { distro: mydistro }\n")
+	custom, _ := m.Resolve("minimal,mydistro")
 	writeFile(t, custom.basePath(m.P, 2), "base")
+	custom.recordSpec(m.P)
 	writeFile(t, filepath.Join(m.P.Bases(), "minimal-0123456789abcdef.qcow2"), "old version")
 	got, err := m.RebuildTargets()
-	if err != nil || len(got) != 1 || got[0] != [2]string{"minimal", "mydistro"} {
+	if err != nil || len(got) != 1 || got[0] != "minimal,mydistro" {
 		t.Errorf("targets %v %v", got, err)
+	}
+}
+
+// -t lists that give the same software share one base, named after the
+// distro (QEMU splits options on a -t's commas), and rebuild --all covers each.
+func TestSameContentSharesABase(t *testing.T) {
+	m := testManager(t)
+	a, err := m.Resolve("minimal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := m.Resolve("minimal,large,ssh-host")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.basePath(m.P, 1) != b.basePath(m.P, 1) || !strings.HasPrefix(filepath.Base(a.basePath(m.P, 1)), "ubuntu-24.04-") {
+		t.Fatalf("bases %s %s", a.basePath(m.P, 1), b.basePath(m.P, 1))
+	}
+	writeFile(t, a.basePath(m.P, 1), "base")
+	a.recordSpec(m.P)
+	b.recordSpec(m.P)
+	a.recordSpec(m.P)
+	got, err := m.RebuildTargets()
+	if err != nil || !slices.Equal(got, []string{"minimal", "minimal,large,ssh-host"}) {
+		t.Errorf("targets %v %v", got, err)
+	}
+	// A spec that now gives other content no longer counts for this base.
+	writeFile(t, filepath.Join(m.P.Templates(), "resources.yaml"), "large: { resources: { cpus: 8, memory: 16G, disk: 80G }, description: x }\n")
+	writeFile(t, filepath.Join(m.P.Templates(), "profiles.yaml"), "")
+	if items, err := m.GC(false); err != nil || len(items) != 0 {
+		t.Errorf("gc of a current base: %+v %v", items, err)
+	}
+	// A template file that doesn't load keeps every base.
+	writeFile(t, filepath.Join(m.P.Templates(), "tools.yaml"), "x: [")
+	os.Remove(a.specsPath(m.P))
+	if items, err := m.GC(false); err != nil || len(items) != 0 {
+		t.Errorf("gc with broken templates: %+v %v", items, err)
+	}
+	os.Remove(filepath.Join(m.P.Templates(), "tools.yaml"))
+	if items, err := m.GC(false); err != nil || len(items) != 1 {
+		t.Errorf("gc of a base no spec gives: %+v %v", items, err)
 	}
 }
 

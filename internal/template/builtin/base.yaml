@@ -1,5 +1,0 @@
-description: Common tools every template builds on
-packages: [ca-certificates, curl, git, jq, tmux, ripgrep, unzip, less, file, htop, netcat-openbsd]
-network:
-  egress: allowlist
-  presets: [anthropic]

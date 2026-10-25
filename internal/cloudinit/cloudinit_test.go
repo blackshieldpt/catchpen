@@ -69,6 +69,22 @@ func TestBuildScriptSections(t *testing.T) {
 	}
 }
 
+func TestBuildScriptPythonVersion(t *testing.T) {
+	py, err := BuildScript(load(t, "minimal,python-3.14"), "agent", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"installing uv", "uv --no-progress python install 3.14\n", "/usr/local/bin/python3.14\n", "python3.14 --version"} {
+		if !strings.Contains(py, want) {
+			t.Errorf("python-3.14 build script missing %q", want)
+		}
+	}
+	uv, _ := BuildScript(load(t, "minimal,uv"), "agent", nil)
+	if !strings.Contains(uv, "installing uv") || strings.Contains(uv, "uv python install") {
+		t.Error("uv alone installs no Python")
+	}
+}
+
 func TestBuildUserData(t *testing.T) {
 	m := parse(t, mustB(BuildUserData(load(t, "minimal"), "agent", nil)))
 	users := m["users"].([]any)

@@ -58,8 +58,11 @@ const (
 
 // State is persisted as vms/<name>/vm.json.
 type State struct {
-	Name     string          `json:"name"`
-	Template string          `json:"template"`
+	Name     string `json:"name"`
+	Template string `json:"template"`
+	// Picks marks Template as a -t of category picks; VMs made before
+	// category files have old template names, which mean something else now.
+	Picks    bool            `json:"picks,omitempty"`
 	Distro   string          `json:"distro"`
 	User     string          `json:"user"`
 	Base     string          `json:"base"`

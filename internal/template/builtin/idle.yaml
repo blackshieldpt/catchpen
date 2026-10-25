@@ -1,0 +1,4 @@
+idle-30m: { description: Stop after 30 minutes idle, idle_stop: 30m }
+idle-1h: { description: Stop after an hour idle, idle_stop: 1h }
+idle-2h: { description: Stop after two hours idle, idle_stop: 2h }
+idle-off: { description: Never stop when idle (overrides config.yaml idle_stop), idle_stop: "off" }

@@ -57,7 +57,8 @@ the agent user has passwordless sudo inside it.
   `egress.log` rotates at 32 MiB, keeping one old file, so a guest making many denied
   requests can push older entries out.
 - `network.egress: open` gives the guest unfiltered internet and the host's `127.0.0.1`
-  services. `curral up` requires `--allow-open` for such templates.
+  services (the `open` section of `network.yaml`). `curral up` requires `--allow-open`
+  for it.
 - `curral forward -R` bypasses the proxy. It is recorded in the audit log, and in the
   egress log of allowlist-mode VMs.
 
@@ -137,5 +138,6 @@ the agent user has passwordless sudo inside it.
   reads. Use `pull` or `pr` to get work out rather than giving the VM push access.
 - Prefer `ssh.agent: restricted` with `confirm: true` over `host`.
 - Pin `version:` for agents installed from release binaries.
-- Keep canaries on (the default template plants all three) and `canary_action: pause`.
+- Keep canaries on (the `canaries.yaml` default plants all three) and
+  `canary_action: pause`.
 - Review `curral audit` and `curral egress log` for VMs that ran unattended.

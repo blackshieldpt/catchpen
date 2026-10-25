@@ -11,7 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -36,30 +38,53 @@ type Resolved struct {
 	Hash   string
 }
 
-func (m *Manager) Resolve(tplName, distro string) (*Resolved, error) {
-	t, err := m.Tpl.Load(tplName)
+var unsafeNameRe = regexp.MustCompile(`[^a-z0-9._-]`)
+
+// stem names a base after its distro; with the hash it identifies the
+// content, so -t lists that give the same software share one base. It is
+// also the build VM's QEMU name, which can't hold commas.
+func (r *Resolved) stem() string { return unsafeNameRe.ReplaceAllString(r.Distro.Name, "_") }
+
+// specsPath lists the -t specs that used a base, for rebuild --all and gc.
+func (r *Resolved) specsPath(p paths.Paths) string {
+	return filepath.Join(p.Bases(), r.stem()+"-"+r.Hash+".specs")
+}
+
+func readSpecs(path string) []string {
+	b, _ := os.ReadFile(path)
+	return strings.Fields(string(b))
+}
+
+// recordSpec adds the template's spec to its base's list. Callers hold the
+// build lock.
+func (r *Resolved) recordSpec(p paths.Paths) error {
+	specs := readSpecs(r.specsPath(p))
+	if slices.Contains(specs, r.T.Name) {
+		return nil
+	}
+	return fsutil.WriteFileAtomic(r.specsPath(p), []byte(strings.Join(append(specs, r.T.Name), "\n")+"\n"), 0o600)
+}
+
+// Resolve builds the template for a -t spec and the base it needs.
+func (m *Manager) Resolve(spec string) (*Resolved, error) {
+	t, err := m.Tpl.Load(spec)
 	if err != nil {
 		return nil, err
 	}
-	d := distro
-	if d == "" {
-		d = t.Distro
+	if t.Distro == "" {
+		return nil, fmt.Errorf("-t %s: no distro (distros.yaml has no default)", t.Name)
 	}
-	if d == "" {
-		d = m.Cfg.Defaults.Distro
-	}
-	spec, err := m.Cfg.Distro(d)
+	dspec, err := m.Cfg.Distro(t.Distro)
 	if err != nil {
 		return nil, err
 	}
-	t.Distro = d
 	user := m.Cfg.Defaults.User
 	// The caches a build uses aren't baked in: they don't make another base.
 	ud, err := cloudinit.BuildUserData(t, user, nil)
 	if err != nil {
 		return nil, err
 	}
-	return &Resolved{T: t, Distro: spec, User: user, Hash: baseHash(spec, user, ud)}, nil
+	return &Resolved{T: t, Distro: dspec, User: user, Hash: baseHash(dspec, user, ud)}, nil
 }
 
 // baseHash identifies a base: the source image (URL and pin) plus the rendered
@@ -72,14 +97,14 @@ func baseHash(spec image.Spec, user string, buildUserData []byte) string {
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
-// basePath is generation gen of the template base: <tpl>-<hash>.qcow2 for the
-// first, <tpl>-<hash>.<gen>.qcow2 for rebuilds. A rebuild never replaces a
+// basePath is generation gen of the template base: <distro>-<hash>.qcow2 for
+// the first, <distro>-<hash>.<gen>.qcow2 for rebuilds. A rebuild never replaces a
 // file VMs may be overlays on.
 func (r *Resolved) basePath(p paths.Paths, gen int) string {
 	if gen <= 1 {
-		return filepath.Join(p.Bases(), fmt.Sprintf("%s-%s.qcow2", r.T.Name, r.Hash))
+		return filepath.Join(p.Bases(), fmt.Sprintf("%s-%s.qcow2", r.stem(), r.Hash))
 	}
-	return filepath.Join(p.Bases(), fmt.Sprintf("%s-%s.%d.qcow2", r.T.Name, r.Hash, gen))
+	return filepath.Join(p.Bases(), fmt.Sprintf("%s-%s.%d.qcow2", r.stem(), r.Hash, gen))
 }
 
 // baseGen returns the newest built generation (0 if none).
@@ -88,9 +113,9 @@ func (r *Resolved) baseGen(p paths.Paths) int {
 	if _, err := os.Stat(r.basePath(p, 1)); err == nil {
 		gen = 1
 	}
-	matches, _ := filepath.Glob(filepath.Join(p.Bases(), fmt.Sprintf("%s-%s.*.qcow2", r.T.Name, r.Hash)))
+	matches, _ := filepath.Glob(filepath.Join(p.Bases(), fmt.Sprintf("%s-%s.*.qcow2", r.stem(), r.Hash)))
 	for _, mt := range matches {
-		n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(filepath.Base(mt), r.T.Name+"-"+r.Hash+"."), ".qcow2"))
+		n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(filepath.Base(mt), r.stem()+"-"+r.Hash+"."), ".qcow2"))
 		if err == nil && n > gen {
 			gen = n
 		}
@@ -113,6 +138,9 @@ func (m *Manager) EnsureBase(ctx context.Context, r *Resolved, rebuild bool) (st
 		return "", err
 	}
 	defer unlock()
+	if err := r.recordSpec(m.P); err != nil {
+		return "", err
+	}
 	gen := r.baseGen(m.P)
 	if gen > 0 && !rebuild {
 		return r.basePath(m.P, gen), nil
@@ -163,13 +191,13 @@ func (m *Manager) EnsureBase(ctx context.Context, r *Resolved, rebuild bool) (st
 		return "", err
 	}
 	spec := qemu.Spec{
-		Name: "build-" + r.T.Name, CPUs: min(runtime.NumCPU(), 4), MemoryMB: 4096,
+		Name: "build-" + r.stem(), CPUs: min(runtime.NumCPU(), 4), MemoryMB: 4096,
 		Disk: work, Seed: seed, Egress: egress.ModeAllowlist, SerialFile: consolef, LogFile: logf,
-		ProxyCmd: []string{m.Bin, "egress-stdio", "--dir", edir, "--vm", "build-" + r.T.Name},
+		ProxyCmd: []string{m.Bin, "egress-stdio", "--dir", edir, "--vm", "build-" + r.stem()},
 		ProxyIP:  cloudinit.ProxyAddr, ProxyPort: cloudinit.ProxyPort,
 	}
 	if len(caches) > 0 {
-		spec.CacheCmd, spec.CacheIP, spec.CachePort = m.cacheCmd(edir, "build-"+r.T.Name, caches), cache.Addr, cache.Port
+		spec.CacheCmd, spec.CacheIP, spec.CachePort = m.cacheCmd(edir, "build-"+r.stem(), caches), cache.Addr, cache.Port
 	}
 	err = m.runForeground(ctx, spec, logf, consolef, buildTimeout)
 	_ = os.Rename(filepath.Join(edir, egress.LogFile), stem+".egress.log")

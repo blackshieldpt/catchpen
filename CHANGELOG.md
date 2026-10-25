@@ -6,10 +6,35 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ## [Unreleased]
 
+### Changed (breaking)
+
+- Templates are now [category files](docs/templates.md) of named sections: `distros`,
+  `resources`, `tools`, `agents`, `runtimes`, `network`, `caches`, `canaries`, `env`,
+  `mcp`, `ssh`, `sync`, `repos`, `ports`, `idle` and `profiles`, each with a `default`.
+  `-t` is a comma-separated list of picks, like `-t go-1.27,python-3.14` or
+  `-t ubuntu-26.04,large,-docker`: categories not named keep their default, picks add to
+  it (in `distros`, `resources`, `ssh` and `idle` they replace it), and `-name` drops a
+  default section. Profiles are named lists of picks from any category. Template files
+  with `extends:`, the built-in `base` and `default` templates (`minimal` is now a
+  profile), `--distro` and config.yaml's `defaults.distro`, `defaults.template`,
+  `defaults.resources` and pool `distro:` are gone, with errors that say so. Commands
+  refuse while old template files are in `~/.config/curral/templates/`; VMs made before
+  keep running, but `reset --latest` and `rebase` refuse them and `creds push` leaves
+  their env alone.
+- Bases are named after the distro and a hash of their content
+  (`ubuntu-24.04-<hash>.qcow2`), so `-t` lists that give the same software share one.
+- `curral init` writes every category file, commented, with curral's built-in sections
+  and examples, instead of `templates/example.yaml`.
+- `curral template ls [category]`, `show -t`, `build -t` and `rebuild -t` work on picks.
+
 ### Added
 
 - A [GitHub tutorial](docs/github.md): your SSH key for git, and a token for `gh`, step
   by step.
+- Go 1.26 and 1.27, Node 22 and 24, and Python 3.12, 3.13 and 3.14 runtime sections.
+  `runtimes: { python: "3.14" }` installs that Python with uv, as `python3.14` and
+  `python`.
+- `small`, `medium`, `large` and `xlarge` resource sections.
 
 ### Changed
 

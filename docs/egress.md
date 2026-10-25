@@ -1,12 +1,12 @@
 # Egress
 
-Each VM's network access is set by `network.egress` in its template:
+Each VM's network access is set by `network.egress`, from its `network.yaml` sections:
 
-| Mode | What the guest can reach |
-|---|---|
-| `allowlist` (default) | Only hosts on the VM's allowlist, through curral's proxy. |
-| `none` | No network. The notification relay still carries agents' short notification texts to your sinks. |
-| `open` | The internet, unfiltered, and the host's `127.0.0.1` services. `curral up` requires `--allow-open`. |
+| Mode | Section | What the guest can reach |
+|---|---|---|
+| `allowlist` (default) | `allowlist` | Only hosts on the VM's allowlist, through curral's proxy. |
+| `none` | `offline` | No network. The notification relay still carries agents' short notification texts to your sinks. |
+| `open` | `open` | The internet, unfiltered, and the host's `127.0.0.1` services. `curral up` requires `--allow-open`. |
 
 ## How allowlist mode works
 
@@ -23,21 +23,35 @@ exits with their own rules; see [package-caches.md](package-caches.md) and
 
 ## Configuring it
 
-In a template:
+`network.yaml`'s default is the `allowlist` section plus one section per preset (named
+host lists): `anthropic`, `github`, `npm`, `pypi`, `go`, `apt-ubuntu`, `apt-debian`,
+`docker-apt`, `docker-hub`, `ghcr`. Picks add to it, and `-name` drops a preset:
+
+```
+curral up dev -t prompt                  # on_deny: prompt
+curral up dev -t -docker-hub,-ghcr       # no Docker Hub or GHCR
+curral up dev -t offline                 # egress: none
+curral up dev -t open --allow-open       # egress: open
+```
+
+Hosts of your own go in a section of `~/.config/curral/templates/network.yaml`:
 
 ```yaml
-network:
-  egress: allowlist
-  presets: [go, npm]                   # named host lists
-  allow: [registry.example.com:443]
-  on_deny: log                         # log | prompt
+# ~/.config/curral/templates/network.yaml
+registry:
+  network:
+    allow: [registry.example.com:443]
+    on_deny: log                         # log | prompt
+```
+
+```
+curral up dev -t registry
 ```
 
 Entries are `host`, `host:port`, `*.example.com` (subdomains) or IP addresses. An entry
-without a port means ports 80 and 443.
-
-Presets: `anthropic`, `github`, `npm`, `pypi`, `go`, `apt-ubuntu`, `apt-debian`,
-`docker-apt`, `docker-hub`, `ghcr`.
+without a port means ports 80 and 443. A `default:` in your `network.yaml` replaces the
+built-in one, such as `default: [allowlist, anthropic, github, go]` for fewer presets on
+every VM.
 
 curral adds hosts the VM needs on its own: Claude Code's and Codex's API hosts, the API
 hosts of the agents' provider keys, remote MCP servers and the VM's forges.

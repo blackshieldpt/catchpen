@@ -3,8 +3,9 @@
 curral reads its settings from `~/.config/curral/config.yaml`. The file is optional: a
 missing or empty file means the defaults below. Unknown keys are errors. `curral init`
 writes a commented `config.yaml` and `secrets.env` listing the settings and secret
-names, and `templates/example.yaml` with the `default` template's settings; it keeps
-files that exist.
+names, and the commented [template](templates.md) category files; it keeps files that
+exist. What VMs contain (distro, size, software, network) is set in those category
+files, not here.
 
 ## Directories
 
@@ -19,7 +20,7 @@ files that exist.
   secrets.env                NAME=value secrets (must be 0600)
   forges.yaml                managed by curral forge add/rm
   ssh_config                 generated; curral setup-ssh includes it from ~/.ssh/config
-  templates/<name>.yaml      user templates
+  templates/<category>.yaml  your template sections (distros.yaml, runtimes.yaml, ...)
 ~/.local/share/curral/
   images/                    verified cloud images (+ .img.json: source URL and digest)
   bases/                     template bases, one file per generation, and build logs
@@ -39,12 +40,9 @@ curral creates these directories with mode 0700.
 
 ```yaml
 defaults:
-  distro: ubuntu-24.04          # for templates that don't set one
-  template: default             # for curral up without --template
-  resources: { cpus: 4, memory: 8G, disk: 40G }
   user: agent                   # the guest user; not root
 
-images:                         # custom apt-based cloud images, used as distros
+images:                         # custom apt-based cloud images; pick one with a distros.yaml section
   my-ubuntu:
     url: https://images.example.com/my-ubuntu.qcow2
     checksum_url: https://images.example.com/SHA256SUMS   # or sha256: / sha512: <hex>
@@ -63,8 +61,9 @@ tasks: { max_vms: 2, max_memory: 24G }   # budget for parallel tasks
 
 idle_stop: off                  # stop idle VMs: off, daily, weekly or a duration >= 1m
 rebuild: off                    # daemon rebuilds bases in use: off, daily, weekly or a duration >= 1m
-pool:                           # warm pool kept by the daemon
+pool:                           # warm pool kept by the daemon; template is a -t spec
   - { template: default, size: 2 }
+  - { template: "go-1.27,large", size: 1 }
 
 cache_max: 20G                  # package cache size
 canary_action: pause            # pause, stop or log
@@ -72,25 +71,25 @@ canary_action: pause            # pause, stop or log
 
 | Key | Default | Notes |
 |---|---|---|
-| `defaults.distro` | `ubuntu-24.04` | A built-in distro or a name from `images:`. |
-| `defaults.template` | `default` | |
-| `defaults.resources` | 4 CPUs, `8G`, `40G` | Templates override field by field. |
 | `defaults.user` | `agent` | Matches `^[a-z_][a-z0-9_-]{0,31}$`; `root` is refused. |
-| `images.<name>` | | `url` must be HTTPS, with exactly one of `checksum_url` (HTTPS), `sha256` or `sha512`. A custom name shadows a built-in distro. |
+| `images.<name>` | | `url` must be HTTPS, with exactly one of `checksum_url` (HTTPS), `sha256` or `sha512`. A custom name shadows a built-in distro. Use it with a section in `templates/distros.yaml`, e.g. `my-ubuntu: { distro: my-ubuntu }`, and `-t my-ubuntu`. |
 | `secrets.<NAME>` | | Exactly one of `command` (argv, 30 s timeout, trailing newline trimmed) or `env`. |
 | `record` | `true` | `false` turns session recording off. |
 | `notify` | no sinks | See [notifications.md](notifications.md). |
 | `tasks.max_vms` | `2` | All running curral VMs count against it. |
 | `tasks.max_memory` | no limit | A size such as `24G`. |
-| `idle_stop` | off | Templates can override it. See [deployment.md](deployment.md#idle-stop). |
+| `idle_stop` | off | A template can override it (`idle.yaml`). See [deployment.md](deployment.md#idle-stop). |
 | `rebuild` | off | Needs the daemon. |
-| `pool` | none | `template` is required, `size` is 0 to 32, `distro` defaults to the template's. Each template and distro pair may appear once. |
+| `pool` | none | `template` is a `-t` spec (default: every category's default), `size` is 0 to 32. Each template may appear once. |
 | `cache_max` | `20G` | Least recently used objects go first. |
 | `canary_action` | `pause` | See [canaries.md](canaries.md). |
 
 Sizes are a number followed by `M`, `G` or `T` (MiB, GiB, TiB).
 
 ## Distros
+
+The built-in distros, each picked with the `distros.yaml` section of the same name
+(`-t debian-13`):
 
 | Name | Image |
 |---|---|

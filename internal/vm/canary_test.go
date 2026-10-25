@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blackshieldpt/curral/internal/vmtest"
+
 	"github.com/blackshieldpt/curral/internal/canary"
 	"github.com/blackshieldpt/curral/internal/config"
 )
@@ -31,7 +33,7 @@ func TestCanariesPlantedAndScanned(t *testing.T) {
 	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	m := poolManager(t)
-	writeFile(t, filepath.Join(m.P.Templates(), "ag.yaml"), "extends: minimal\nruntimes: { node: \"24\" }\nagents:\n  claude: {}\nidle_stop: 2h\ncanaries: [git, env]\n")
+	vmtest.Template(t, m.P.Templates(), "ag", "", "runtimes: { node: \"24\" }\nagents:\n  claude: {}\nidle_stop: 2h\ncanaries: [git, env]\n")
 	s, err := m.Create(context.Background(), "c1", CreateOpts{Template: "ag"})
 	if err != nil {
 		t.Fatal(err)

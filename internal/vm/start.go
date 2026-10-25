@@ -232,6 +232,10 @@ func (m *Manager) refreshEnv(name string) error {
 	if s.Pool || s.Template == "" {
 		return nil
 	}
+	if !s.Picks {
+		m.logf("warning: %s was created with the old-style template %s; it keeps the env it was created with", name, s.Template)
+		return nil
+	}
 	t, err := m.Tpl.Load(s.Template)
 	if err != nil {
 		m.logf("warning: %v; %s keeps the env it was created with", err, name)

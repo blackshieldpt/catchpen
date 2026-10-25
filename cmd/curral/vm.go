@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/curral/internal/template"
 	"github.com/blackshieldpt/curral/internal/vm"
 )
 
@@ -43,7 +44,7 @@ with its deploy keys and tokens, when the session ends or curral is signalled.`,
 					return err
 				}
 			} else {
-				for _, fl := range []string{"template", "distro", "cpus", "mem", "disk", "rebuild", "allow-open", "claude-auth", "repo", "ro", "ssh-agent", "agent-key"} {
+				for _, fl := range []string{"template", "cpus", "mem", "disk", "rebuild", "allow-open", "claude-auth", "repo", "ro", "ssh-agent", "agent-key"} {
 					if cmd.Flags().Changed(fl) {
 						return fmt.Errorf("VM %s already exists; --%s only applies on creation", name, fl)
 					}
@@ -54,8 +55,7 @@ with its deploy keys and tokens, when the session ends or curral is signalled.`,
 		},
 	}
 	f := c.Flags()
-	f.StringVarP(&o.Template, "template", "t", "", "template (default from config)")
-	f.StringVar(&o.Distro, "distro", "", "guest distro (overrides template/config)")
+	f.StringVarP(&o.Template, "template", "t", "", templateFlagHelp)
 	f.IntVar(&o.CPUs, "cpus", 0, "vCPUs")
 	f.StringVar(&o.Memory, "mem", "", "memory, e.g. 8G")
 	f.StringVar(&o.Disk, "disk", "", "disk size, e.g. 40G")
@@ -203,7 +203,7 @@ func lsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			current := map[string]string{} // template+distro -> current base
+			current := map[string]string{} // template -> current base
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "NAME\tSTATE\tTEMPLATE\tDISTRO\tCPU\tMEM\tEGRESS\tSSH\tPORTS\tAGE")
 			for _, v := range vms {
@@ -223,11 +223,10 @@ func lsCmd() *cobra.Command {
 				if v.Task != "" {
 					state += ",task"
 				}
-				key := v.Template + "\x00" + v.Distro
-				if _, ok := current[key]; !ok {
-					current[key], _ = m.CurrentBase(v.Template, v.Distro)
+				if _, ok := current[v.Template]; !ok && v.Picks {
+					current[v.Template], _ = m.CurrentBase(v.Template)
 				}
-				if cur := current[key]; cur != "" && cur != v.Base {
+				if cur := current[v.Template]; cur != "" && cur != v.Base {
 					state += ",stale-base"
 				}
 				if v.Running {
@@ -320,50 +319,70 @@ func setupSSHCmd() *cobra.Command {
 	return c
 }
 
+// templateFlagHelp describes -t on every command that takes it.
+const templateFlagHelp = "picks from the category files, comma separated, e.g. go-1.27,large or -docker (curral template ls; default: every category's default)"
+
 func templateCmd() *cobra.Command {
-	c := &cobra.Command{Use: "template", Short: "Manage templates"}
+	c := &cobra.Command{Use: "template", Short: "List and build templates: picks from the category files"}
 	ls := &cobra.Command{
-		Use:   "ls",
-		Short: "List templates",
-		Args:  cobra.NoArgs,
+		Use:   "ls [category]",
+		Short: "List the sections of each category, marking the defaults",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()
 			if err != nil {
 				return err
 			}
-			all, err := m.Tpl.List()
+			lib, err := m.Tpl.Library()
 			if err != nil {
 				return err
 			}
-			names := make([]string, 0, len(all))
-			for n := range all {
-				names = append(names, n)
-			}
-			sort.Strings(names)
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "NAME\tSOURCE\tDESCRIPTION")
-			for _, n := range names {
-				desc := ""
-				if t, err := m.Tpl.Load(n); err == nil {
-					desc = t.Description
-				} else {
-					desc = "error: " + err.Error()
+			fmt.Fprintln(w, "CATEGORY\tSECTION\tDEFAULT\tDESCRIPTION\tSOURCE")
+			found := false
+			for _, cat := range template.Categories {
+				if len(args) > 0 && args[0] != cat.Name {
+					continue
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\n", n, all[n], desc)
+				found = true
+				secs, _ := lib.Sections(cat.Name)
+				def, err := lib.Default(cat.Name)
+				if err != nil {
+					return err
+				}
+				for _, s := range def {
+					if s.Name == "default" { // a default with settings of its own
+						fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", cat.Name, "default", "yes", s.Description, s.Source)
+					}
+				}
+				for _, s := range secs {
+					d := ""
+					if slices.Contains(def, s) {
+						d = "yes"
+					}
+					desc := s.Description
+					if s.Group != nil {
+						desc = "[" + strings.Join(s.Group, ", ") + "]"
+					}
+					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", cat.Name, s.Name, d, desc, s.Source)
+				}
+			}
+			if !found {
+				return fmt.Errorf("no category %q", args[0])
 			}
 			return w.Flush()
 		},
 	}
 	show := &cobra.Command{
-		Use:   "show <template>",
-		Short: "Print a template with its extends chain resolved",
-		Args:  cobra.ExactArgs(1),
+		Use:   "show [-t picks]",
+		Short: "Print the settings a -t spec gives, and the sections they come from",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()
 			if err != nil {
 				return err
 			}
-			r, err := m.Resolve(args[0], "")
+			r, err := m.Resolve(specArg(cmd, args))
 			if err != nil {
 				return err
 			}
@@ -371,22 +390,28 @@ func templateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("# source: %s\n# base: %s\n%s", r.T.Source, r.BasePath(m.P), b)
+			for _, p := range r.T.Parts {
+				d := ""
+				if p.Default {
+					d = " (default)"
+				}
+				fmt.Printf("# %-9s %s%s\n", p.Category+":", strings.Join(p.Sections, ", "), d)
+			}
+			fmt.Printf("# base: %s\n%s", r.BasePath(m.P), b)
 			return nil
 		},
 	}
-	var distro string
 	var rebuild bool
 	build := &cobra.Command{
-		Use:   "build <template>",
-		Short: "Build (or rebuild) a template base image",
-		Args:  cobra.ExactArgs(1),
+		Use:   "build [-t picks]",
+		Short: "Build (or rebuild) the base image for a -t spec",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()
 			if err != nil {
 				return err
 			}
-			r, err := m.Resolve(args[0], distro)
+			r, err := m.Resolve(specArg(cmd, args))
 			if err != nil {
 				return err
 			}
@@ -394,11 +419,10 @@ func templateCmd() *cobra.Command {
 			return err
 		},
 	}
-	build.Flags().StringVar(&distro, "distro", "", "guest distro")
 	build.Flags().BoolVar(&rebuild, "rebuild", false, "rebuild even if the base exists")
 	var all bool
 	rb := &cobra.Command{
-		Use:   "rebuild [<template>...] [--all]",
+		Use:   "rebuild [-t picks]... [--all]",
 		Short: "Build a new base generation with a fresh cloud image and current packages",
 		Long: `The cloud image is re-checked upstream (and re-downloaded if its checksum changed) and
 a new base generation is built. Existing VMs keep their base (curral ls marks them stale):
@@ -408,27 +432,41 @@ curral reset --latest moves one to the new base, curral gc removes unused old ba
 			if err != nil {
 				return err
 			}
-			var targets [][2]string
+			specs, _ := cmd.Flags().GetStringArray("template")
+			specs = append(specs, args...)
+			var targets []string
 			switch {
-			case all && (len(args) > 0 || distro != ""):
-				return errors.New("--all takes no template names or --distro")
+			case all && len(specs) > 0:
+				return errors.New("--all takes no -t")
 			case all:
 				if targets, err = m.RebuildTargets(); err != nil {
 					return err
 				}
-			case len(args) == 0:
-				return errors.New("give template names or --all")
+			case len(specs) == 0:
+				return errors.New("give -t picks (-t default for the defaults) or --all")
 			}
-			for _, a := range args {
-				targets = append(targets, [2]string{a, distro})
+			for _, sp := range specs {
+				targets = append(targets, template.NormalizeSpec(sp))
 			}
 			return m.Rebuild(cmd.Context(), targets)
 		},
 	}
 	rb.Flags().BoolVar(&all, "all", false, "every template with a base or a VM")
-	rb.Flags().StringVar(&distro, "distro", "", "guest distro")
+	rb.Flags().StringArrayP("template", "t", nil, templateFlagHelp+"; repeatable")
+	for _, sc := range []*cobra.Command{show, build} {
+		sc.Flags().StringP("template", "t", "", templateFlagHelp)
+	}
 	c.AddCommand(ls, show, build, rb)
 	return c
+}
+
+// specArg is the -t flag, or the positional spec.
+func specArg(cmd *cobra.Command, args []string) string {
+	t, _ := cmd.Flags().GetString("template")
+	if len(args) > 0 {
+		t = args[0]
+	}
+	return t
 }
 
 func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }

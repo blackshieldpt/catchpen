@@ -103,11 +103,11 @@ func TestClaimSlotCountsRunningTaskVMOnce(t *testing.T) {
 func TestCodexTaskNeedsAPIKey(t *testing.T) {
 	r := testRunner(t)
 	m := r.M
-	writeFile(t, filepath.Join(m.P.Templates(), "cg.yaml"), "extends: minimal\nruntimes: { node: \"24\" }\nagents: { codex: { auth: chatgpt } }\n")
-	if _, err := r.Submit(task.Spec{Template: "cg", Agent: "codex", Prompt: "x", Out: task.OutNone, Timeout: time.Hour}); err == nil || !strings.Contains(err.Error(), "auth: api-key") {
+	vmtest.Template(t, m.P.Templates(), "cg", "", "runtimes: { node: \"24\" }\nagents: { codex: { auth: chatgpt } }\n")
+	if _, err := r.Submit(task.Spec{Template: "cg", Agent: "codex", Prompt: "x", Out: task.OutNone, Timeout: time.Hour}); err == nil || !strings.Contains(err.Error(), "add codex-api-key") {
 		t.Errorf("chatgpt codex task: %v", err)
 	}
-	if _, err := r.Submit(task.Spec{Template: "default", Agent: "codex", Prompt: "x", Out: task.OutNone, Timeout: time.Hour}); err == nil || !strings.Contains(err.Error(), "it has none") {
+	if _, err := r.Submit(task.Spec{Template: "default", Agent: "codex", Prompt: "x", Out: task.OutNone, Timeout: time.Hour}); err == nil || !strings.Contains(err.Error(), "has auth none") {
 		t.Errorf("default template's codex task: %v", err)
 	}
 }

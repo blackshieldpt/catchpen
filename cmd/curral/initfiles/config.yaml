@@ -2,14 +2,14 @@
 ## or examples. Uncomment a line to change it. Unknown keys are errors.
 ## Reference: https://blackshieldpt.github.io/curral/configuration/
 
+## What VMs contain (distro, size, runtimes, agents, network...) is set in the category
+## files in templates/, not here: curral init writes them too.
+
 # defaults:
-#   distro: ubuntu-24.04          # for templates that don't set one: ubuntu-24.04, ubuntu-26.04, debian-13 or a name from images:
-#   template: default             # for curral up without --template
-#   resources: { cpus: 4, memory: 8G, disk: 40G }
 #   user: agent                   # the guest user; not root
 
-## Custom apt-based cloud images, used as distros. url is HTTPS, with exactly one of
-## checksum_url, sha256 or sha512.
+## Custom apt-based cloud images. url is HTTPS, with exactly one of checksum_url, sha256
+## or sha512. Use one with a section in templates/distros.yaml: my-ubuntu: { distro: my-ubuntu }
 # images:
 #   my-ubuntu:
 #     url: https://images.example.com/my-ubuntu.qcow2
@@ -37,9 +37,10 @@
 # idle_stop: off                  # stop idle VMs: off, daily, weekly or a duration >= 1m
 # rebuild: off                    # daemon rebuilds bases in use: off, daily, weekly or a duration >= 1m
 
-## Warm pool of booted, stopped VMs kept by the daemon (size 0-32).
+## Warm pool of booted, stopped VMs kept by the daemon (size 0-32); template is a -t spec.
 # pool:
 #   - { template: default, size: 2 }
+#   - { template: "go-1.27,large", size: 1 }
 
 # cache_max: 20G                  # package cache size
 # canary_action: pause            # pause, stop or log

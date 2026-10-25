@@ -1,0 +1,3 @@
+default: ssh-off
+ssh-off: { description: No ssh-agent in the VM, ssh: { agent: "off" } }
+ssh-host: { description: Forward your whole host ssh-agent (anything in the VM can use every key), ssh: { agent: host } }

@@ -1,0 +1,10 @@
+default: [docker, uv]
+docker: { description: Docker Engine, docker: true }
+uv: { description: uv (Python tooling), runtimes: { python: uv } }
+node-22: { description: Node.js 22, runtimes: { node: "22" } }
+node-24: { description: Node.js 24, runtimes: { node: "24" } }
+go-1.26: { description: Go 1.26 (latest patch), runtimes: { go: "1.26" } }
+go-1.27: { description: Go 1.27 (latest patch), runtimes: { go: "1.27" } }
+python-3.12: { description: Python 3.12 (with uv), runtimes: { python: "3.12" } }
+python-3.13: { description: Python 3.13 (with uv), runtimes: { python: "3.13" } }
+python-3.14: { description: Python 3.14 (with uv), runtimes: { python: "3.14" } }

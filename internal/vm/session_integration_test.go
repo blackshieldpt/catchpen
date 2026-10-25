@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blackshieldpt/curral/internal/vmtest"
+
 	"github.com/creack/pty"
 
 	"github.com/blackshieldpt/curral/internal/hosttmux"
@@ -113,7 +115,7 @@ func TestSessions(t *testing.T) {
 	tm := &hosttmux.Tmux{Socket: fmt.Sprintf("curral-it-%d", os.Getpid()), Bin: m.Bin}
 	m.Tmux = tm
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", tm.Socket, "kill-server").Run() })
-	os.WriteFile(filepath.Join(m.P.Templates(), "sess.yaml"), []byte("extends: minimal\nruntimes: { node: \"24\" }\nagents: { claude: {} }\n"), 0o600)
+	vmtest.Template(t, m.P.Templates(), "sess", "", "runtimes: { node: \"24\" }\nagents: { claude: {} }\n")
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 	defer cancel()
 	if _, err := m.Create(ctx, "se1", CreateOpts{Template: "sess"}); err != nil {

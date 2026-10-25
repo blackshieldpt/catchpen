@@ -84,7 +84,7 @@ func forgeTestManager(t *testing.T, api *fakeGitea) *Manager {
 	t.Setenv("ADMIN", "admin-token")
 	t.Setenv("PW", "pw")
 	t.Setenv("USERTOK", "user-token")
-	r, err := m.Resolve("minimal", "")
+	r, err := m.Resolve("minimal")
 	if err != nil {
 		t.Fatal(err)
 	}

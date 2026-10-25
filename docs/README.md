@@ -45,8 +45,9 @@ flowchart LR
 ```
 
 1. **A template** says what a VM contains: distro, CPUs and memory, packages, runtimes,
-   agents, network policy and repositories. curral ships a `default` template with
-   Docker, Node, uv, `gh` and the agents; you can write your own.
+   agents, network policy and repositories. You pick it with `-t`, from sections in
+   category files; by default a VM gets Docker, Node, uv, `gh` and the agents. You can
+   add your own sections.
 2. **A base** is built once per template: a cloud image with the template's software
    installed. Each VM is a copy-on-write overlay on its base, so creating one takes
    seconds.
@@ -72,7 +73,7 @@ binaries, building from source, optional packages and upgrades.
 ### Work with an agent interactively
 
 ```sh
-curral up dev                 # create and start a VM from the default template
+curral up dev                 # create and start a VM with the default template
 curral run dev claude         # start Claude Code in the VM's tmux session
                               # detach with Ctrl-a d; run it again to reattach
 curral ssh dev                # a shell in the VM
@@ -83,8 +84,9 @@ curral destroy dev
 ```
 
 `curral herdr` puts every running VM's agent in [herdr](herdr.md), which shows whether
-each is working, blocked or idle. `curral up -t <template>` picks another template, and `--cpus`, `--mem` and `--disk`
-size the VM. `curral up --ephemeral dev` gives you a VM that is destroyed when you
+each is working, blocked or idle. `curral up -t go-1.27,large` adds Go to the default
+template and picks a larger size, and `--cpus`, `--mem` and `--disk` size
+the VM. `curral up --ephemeral dev` gives you a VM that is destroyed when you
 leave it. See [Sessions](sessions.md) for recordings and the audit log.
 
 ### Work on a repository
@@ -162,7 +164,7 @@ hosts.
 
 ### Using curral
 
-- [Templates](templates.md): what a VM contains, `extends`, bases
+- [Templates](templates.md): what a VM contains, `-t` and its sections, bases
 - [Configuration](configuration.md): `config.yaml`, secrets, directories, distros
 - [Agents and credentials](agents.md): Claude Code, opencode, pi, omp, Codex, MCP, transcripts
 - [Forges, repos and SSH](forges.md): GitHub and Gitea, `pull` and `pr`, SSH agents,

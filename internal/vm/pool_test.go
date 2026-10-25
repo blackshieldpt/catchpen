@@ -5,10 +5,11 @@ import (
 	"context"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/blackshieldpt/curral/internal/vmtest"
 
 	"github.com/blackshieldpt/curral/internal/config"
 	"github.com/blackshieldpt/curral/internal/egress"
@@ -22,8 +23,8 @@ func poolManager(t *testing.T, ready ...string) *Manager {
 	t.Helper()
 	needQemuImg(t)
 	m := testManager(t)
-	writeFile(t, filepath.Join(m.P.Templates(), "ag.yaml"), "extends: minimal\nruntimes: { node: \"24\" }\nagents:\n  claude: {}\nidle_stop: 2h\n")
-	r, err := m.Resolve("ag", "")
+	vmtest.Template(t, m.P.Templates(), "ag", "", "runtimes: { node: \"24\" }\nagents:\n  claude: {}\nidle_stop: 2h\n")
+	r, err := m.Resolve("ag")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +154,7 @@ func TestRecyclePool(t *testing.T) {
 		t.Fatalf("after recycling: %+v", vms)
 	}
 	// The template changed: its pool VMs are on the old base.
-	writeFile(t, filepath.Join(m.P.Templates(), "ag.yaml"), "extends: minimal\nruntimes: { node: \"24\" }\nagents:\n  claude: {}\npackages: [zsh]\n")
+	vmtest.Template(t, m.P.Templates(), "ag", "", "runtimes: { node: \"24\" }\nagents:\n  claude: {}\npackages: [zsh]\n")
 	if wants, err = m.poolWants(); err != nil {
 		t.Fatal(err)
 	}
@@ -198,12 +199,12 @@ func TestTakeResume(t *testing.T) {
 
 func TestCachesAndThePool(t *testing.T) {
 	m := poolManager(t, "pool-a")
-	before, err := m.Resolve("ag", "")
+	before, err := m.Resolve("ag")
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(m.P.Templates(), "ag.yaml"), "extends: minimal\nruntimes: { node: \"24\" }\nagents:\n  claude: {}\nidle_stop: 2h\ncache: [npm, docker, apt]\n")
-	after, err := m.Resolve("ag", "")
+	vmtest.Template(t, m.P.Templates(), "ag", "", "runtimes: { node: \"24\" }\nagents:\n  claude: {}\nidle_stop: 2h\ncache: [npm, docker, apt]\n")
+	after, err := m.Resolve("ag")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +266,7 @@ func TestCanaryKinds(t *testing.T) {
 // A pool VM made before canaries: changed isn't handed out.
 func TestCanariesAndThePool(t *testing.T) {
 	m := poolManager(t, "pool-a")
-	writeFile(t, filepath.Join(m.P.Templates(), "ag.yaml"), "extends: minimal\nruntimes: { node: \"24\" }\nagents:\n  claude: {}\nidle_stop: 2h\ncanaries: [git]\n")
+	vmtest.Template(t, m.P.Templates(), "ag", "", "runtimes: { node: \"24\" }\nagents:\n  claude: {}\nidle_stop: 2h\ncanaries: [git]\n")
 	wants, err := m.poolWants()
 	if err != nil {
 		t.Fatal(err)

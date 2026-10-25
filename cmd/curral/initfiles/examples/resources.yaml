@@ -1,0 +1,1 @@
+huge: { resources: { cpus: 32, memory: 64G, disk: 300G } }

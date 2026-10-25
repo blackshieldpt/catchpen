@@ -75,7 +75,7 @@ sudo loginctl enable-linger $USER
 # config.yaml
 pool:
   - { template: default, size: 2 }
-  - { template: go, distro: debian-13, size: 1 }
+  - { template: "debian-13,go-1.27", size: 1 }   # a -t spec
 ```
 
 ```
@@ -84,8 +84,8 @@ curral pool ls | fill | drain
 
 Pool VMs go through first boot with their own keys, but no repos, agents' credentials or
 allowlist, and are then saved with their memory and stopped. They use disk, not RAM.
-`curral up` and `curral task run` claim one when the template, distro, resources, base
-and the rest of the VM's settings (egress mode, user, Docker, caches, canaries) match
+`curral up` and `curral task run` claim one when the `-t` spec, resources, base and the
+rest of the VM's settings (egress mode, user, Docker, caches, canaries) match
 (not with `--rebuild`): it is renamed, gets its allowlist, forges and
 credentials, and resumes in seconds with its new hostname. Each saved memory is resumed
 once.
@@ -97,7 +97,7 @@ a QEMU upgrade, a pool VM boots normally instead of resuming; `curral pool drain
 ### Idle stop
 
 ```yaml
-idle_stop: 30m          # config.yaml; templates can override it with idle_stop: 2h or off
+idle_stop: 30m          # config.yaml; -t idle-2h or -t idle-off overrides it per VM
 ```
 
 A VM is idle when nothing is connected to its SSH or forwarded ports (sessions, `run`,
