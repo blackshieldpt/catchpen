@@ -28,7 +28,7 @@ without reaching your host, your credentials or your network.
 ## Quick start
 
 From nothing to Claude Code in a VM, on Ubuntu or Debian. You need Linux on x86_64 with
-KVM, and Go 1.27 to build.
+KVM.
 
 1. Check the host has KVM:
 
@@ -42,13 +42,21 @@ KVM, and Go 1.27 to build.
    sudo apt install qemu-system-x86 qemu-utils openssh-client git
    ```
 
-3. Clone curral and build it to a stable path (QEMU and ssh call it back, so `go run`
-   won't work):
+3. Download the latest release binary, check it, and install it to a stable path (QEMU
+   and ssh call it back):
 
    ```sh
-   git clone git@github.com:blackshieldpt/curral.git && cd curral
-   go build -o ~/.local/bin/curral ./cmd/curral
+   v=0.1.0
+   f=curral_${v}_linux_amd64
+   curl -fLO https://github.com/blackshieldpt/curral/releases/download/v$v/$f
+   curl -fLO https://github.com/blackshieldpt/curral/releases/download/v$v/SHA256SUMS
+   sha256sum -c --ignore-missing SHA256SUMS
+   install -D -m 755 $f ~/.local/bin/curral
    ```
+
+   To also check its signature and build provenance, see
+   [docs/installation.md](docs/installation.md#install). To build it yourself, see
+   [Building from source](#building-from-source).
 
 4. Join the `kvm` group, then log out and back in, which also puts `~/.local/bin` on
    your `PATH`:
@@ -90,8 +98,21 @@ KVM, and Go 1.27 to build.
    curral run dev claude
    ```
 
-Signed release binaries, optional packages, upgrading and uninstalling are in
+Release verification, optional packages, upgrading and uninstalling are in
 [docs/installation.md](docs/installation.md).
+
+## Building from source
+
+With Go 1.27, build to a stable path instead of step 3 (QEMU and ssh call the binary
+back, so `go run` won't work):
+
+```sh
+git clone https://github.com/blackshieldpt/curral.git && cd curral
+go build -o ~/.local/bin/curral ./cmd/curral
+```
+
+See [docs/installation.md](docs/installation.md#building-from-source) for upgrading a
+source build, and [docs/development.md](docs/development.md) for tests.
 
 ## Usage
 
@@ -141,7 +162,7 @@ The `default` template has Docker, Node 24, uv, `gh`, Claude Code, opencode, pi 
 
 | Page | Covers |
 |---|---|
-| [Installation](docs/installation.md) | Requirements, install, release verification, first VM, upgrading |
+| [Installation](docs/installation.md) | Requirements, install, release verification, first VM, upgrading, building from source |
 | [CLI reference](docs/cli-reference.md) | Every command and flag |
 | [Templates](docs/templates.md), [configuration](docs/configuration.md) | What VMs contain; `config.yaml`, secrets, directories |
 | [Agents](docs/agents.md), [forges](docs/forges.md), [tasks](docs/tasks.md) | Credentials, repos, `pull`/`pr`, SSH agents, headless runs |

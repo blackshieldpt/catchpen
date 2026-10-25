@@ -7,7 +7,6 @@
 - QEMU (`qemu-system-x86_64`, `qemu-img`) built with seccomp sandbox support, as distro
   packages are.
 - OpenSSH client (`ssh`, `scp`) and `git`.
-- Go 1.27 to build.
 - Disk space for cloud images, bases and VM disks; see
   [deployment.md](deployment.md#host-sizing).
 
@@ -32,42 +31,35 @@ sudo usermod -aG kvm $USER          # then log out and back in
 sudo apt install libnotify-bin ssh-askpass tmux   # optional
 ```
 
-Then install a release binary, or build one (below). A release is a static
-linux/amd64 binary, also packaged as a `.tar.gz` with the license and changelog. Download
-the binary, its `.sigstore.json` and `SHA256SUMS` from the
-[releases page](https://github.com/blackshieldpt/curral/releases), then check it was built
-and signed by this repository's release workflow at that tag (needs
+Then install a release binary (or [build from source](#building-from-source)). A release
+is a static linux/amd64 binary, also packaged as a `.tar.gz` with the license and
+changelog, on the [releases page](https://github.com/blackshieldpt/curral/releases).
+Download the binary, its `.sigstore.json` and `SHA256SUMS`, then check it was built and
+signed by this repository's release workflow at that tag (needs
 [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) v3, and the `gh`
 CLI for the optional provenance check):
 
 ```
-v=0.1.0   # the release you downloaded
+v=0.1.0   # the release to install
 f=curral_${v}_linux_amd64
+u=https://github.com/blackshieldpt/curral/releases/download/v$v
+curl -fL -O $u/$f -O $u/$f.sigstore.json -O $u/SHA256SUMS
 sha256sum -c --ignore-missing SHA256SUMS
 cosign verify-blob --bundle $f.sigstore.json \
   --certificate-identity "https://github.com/blackshieldpt/curral/.github/workflows/release.yml@refs/tags/v$v" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com $f
 gh attestation verify $f --repo blackshieldpt/curral \
   --signer-workflow blackshieldpt/curral/.github/workflows/release.yml   # build provenance; optional
-install -m 755 $f ~/.local/bin/curral
-curral doctor
-```
-
-Releases are reproducible: building the tag with GoReleaser and the Go version
-`curral version` prints gives the same bytes.
-
-Or build and install the binary:
-
-```
-git clone git@github.com:blackshieldpt/curral.git
-cd curral
-go build -o ~/.local/bin/curral ./cmd/curral
+install -D -m 755 $f ~/.local/bin/curral
 curral doctor
 ```
 
 Install it somewhere stable (here `~/.local/bin`, which should be on your `PATH`). QEMU
 and ssh call the binary back for the egress proxy, package caches, notifications and SSH
-proxying, so `go run` won't work.
+proxying.
+
+Releases are reproducible: building the tag with GoReleaser and the Go version
+`curral version` prints gives the same bytes.
 
 `curral doctor` checks QEMU, ssh, `/dev/kvm` and curral's own setup, and prints a remedy
 for each failure; it doesn't check `git`, `scp` or QEMU's seccomp support. See
@@ -118,6 +110,33 @@ run agents unattended, see [tasks.md](tasks.md).
 
 ## Upgrading
 
+Download and verify the new release as in [Install](#install), install it over the old
+one, then restart the daemon if it is installed:
+
+```
+systemctl --user restart curral
+```
+
+`curral version` prints what you run. To upgrade a source build, see
+[Building from source](#building-from-source).
+
+Run `curral daemon install` again instead if the binary moved. Check the
+[changelog](https://github.com/blackshieldpt/curral/blob/master/CHANGELOG.md) for changes that need action.
+
+## Building from source
+
+Building needs Go 1.27. Build to the same stable path as a release binary; `go run`
+won't work, since QEMU and ssh call the binary back:
+
+```
+git clone https://github.com/blackshieldpt/curral.git
+cd curral
+go build -o ~/.local/bin/curral ./cmd/curral
+curral doctor
+```
+
+To upgrade:
+
 ```
 cd curral
 git pull
@@ -125,11 +144,7 @@ go build -o ~/.local/bin/curral ./cmd/curral
 systemctl --user restart curral      # if the daemon is installed
 ```
 
-With a release binary, download and verify the new one as in [Install](#install), then
-install it over the old one and restart the daemon. `curral version` prints what you run.
-
-Run `curral daemon install` again instead if the binary moved. Check the
-[changelog](https://github.com/blackshieldpt/curral/blob/master/CHANGELOG.md) for changes that need action.
+Tests and the release process are in [development.md](development.md).
 
 ## Uninstalling
 

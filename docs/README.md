@@ -67,7 +67,7 @@ of ready VMs, rebuilding bases on a schedule and relaying network prompts.
 Install curral and its dependencies, then store a token for your agent. The
 [quick start](https://github.com/blackshieldpt/curral#quick-start) takes you from
 nothing to Claude Code in a VM; [Installation](installation.md) covers signed release
-binaries, optional packages and upgrades.
+binaries, building from source, optional packages and upgrades.
 
 ### Work with an agent interactively
 
@@ -156,7 +156,7 @@ hosts.
 ### Getting started
 
 - [Installation](installation.md): requirements, install, release verification, first
-  VM, upgrading
+  VM, upgrading, building from source
 - [CLI reference](cli-reference.md): every command and flag
 
 ### Using curral
