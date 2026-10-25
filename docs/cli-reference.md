@@ -152,7 +152,9 @@ Add (or remove) an `Include` of curral's `ssh_config` in `~/.ssh/config`, so
 ### `curral creds push <name>... | --all`
 
 Push credentials, environment and agent config into running VMs. curral also does this
-at every start.
+at every start. `creds push` first takes the VM's `env:` from its template as the
+template is now, so variables added to the template after the VM was created reach it;
+it prints the names it adds (`+`), changes (`~`) and drops (`-`).
 
 ## Forges and exports
 

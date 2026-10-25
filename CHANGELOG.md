@@ -8,6 +8,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Changed
 
+- `curral creds push` takes the VM's `env:` from its template as the template is now, so
+  variables added to the template after the VM was created reach it.
 - A `--repo` whose host has no forge says that repos clone only from added forges, lists
   the configured ones, and prints a complete `curral forge add` command for the host.
 

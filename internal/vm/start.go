@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,6 +24,7 @@ import (
 	"github.com/blackshieldpt/curral/internal/hosttmux"
 	"github.com/blackshieldpt/curral/internal/qemu"
 	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/curral/internal/template"
 )
 
 func (m *Manager) Start(ctx context.Context, name string) (*Runtime, error) {
@@ -195,8 +198,12 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 	return rt, nil
 }
 
-// Push delivers credentials and agent config into a running VM.
+// Push delivers credentials and agent config into a running VM, after taking its
+// env: from its template as the template is now.
 func (m *Manager) Push(ctx context.Context, name string) error {
+	if err := m.refreshEnv(name); err != nil {
+		return err
+	}
 	g, s, err := m.DialGuest(ctx, name)
 	if err != nil {
 		return err
@@ -207,6 +214,54 @@ func (m *Manager) Push(ctx context.Context, name string) error {
 	}
 	m.logf("pushed credentials to %s", name)
 	return nil
+}
+
+// refreshEnv replaces the VM's saved env: with its template's, so names added to the
+// template after the VM was created reach it. A template that no longer loads keeps
+// the saved env, with a warning.
+func (m *Manager) refreshEnv(name string) error {
+	_, unlock, err := m.vm(name).lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	s, err := m.vm(name).load()
+	if err != nil {
+		return err
+	}
+	if s.Pool || s.Template == "" {
+		return nil
+	}
+	t, err := m.Tpl.Load(s.Template)
+	if err != nil {
+		m.logf("warning: %v; %s keeps the env it was created with", err, name)
+		return nil
+	}
+	// The VM's Claude auth can differ from the template's (curral up --claude-auth).
+	if c := s.Agents.Claude; c != nil && c.Auth != template.ClaudeAPIKey {
+		if _, ok := t.Env["ANTHROPIC_API_KEY"]; ok {
+			return fmt.Errorf("template %s: env.ANTHROPIC_API_KEY would override %s's Claude subscription token", s.Template, name)
+		}
+	}
+	if maps.Equal(s.Env, t.Env) {
+		return nil
+	}
+	var changes []string
+	for _, k := range slices.Sorted(maps.Keys(t.Env)) {
+		if old, ok := s.Env[k]; !ok {
+			changes = append(changes, "+"+k)
+		} else if old != t.Env[k] {
+			changes = append(changes, "~"+k)
+		}
+	}
+	for _, k := range slices.Sorted(maps.Keys(s.Env)) {
+		if _, ok := t.Env[k]; !ok {
+			changes = append(changes, "-"+k)
+		}
+	}
+	m.logf("%s: env from template %s: %s", name, s.Template, strings.Join(changes, " "))
+	s.Env = t.Env
+	return m.vm(name).save(s)
 }
 
 type sshRemote struct{ c *ssh.Client }
