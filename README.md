@@ -36,48 +36,41 @@ KVM.
    ls -l /dev/kvm
    ```
 
-2. Install the dependencies:
-
-   ```sh
-   sudo apt install qemu-system-x86 qemu-utils openssh-client git
-   ```
-
-3. Download the latest release binary, check it, and install it to a stable path (QEMU
-   and ssh call it back):
+2. Download the latest release's Debian package, check it, and install it. It puts
+   curral in `/usr/bin` and pulls in QEMU, `openssh-client` and `git`:
 
    ```sh
    v=0.1.1
-   f=curral_${v}_linux_amd64
+   f=curral_${v}_amd64.deb
    curl -fLO https://github.com/blackshieldpt/curral/releases/download/v$v/$f
    curl -fLO https://github.com/blackshieldpt/curral/releases/download/v$v/SHA256SUMS
    sha256sum -c --ignore-missing SHA256SUMS
-   install -D -m 755 $f ~/.local/bin/curral
+   sudo apt install ./$f
    ```
 
-   To also check its signature and build provenance, see
-   [docs/installation.md](docs/installation.md#install). To build it yourself, see
-   [Building from source](#building-from-source).
+   To also check its signature and build provenance, or to install the bare binary
+   instead, see [docs/installation.md](docs/installation.md#install). To build it
+   yourself, see [Building from source](#building-from-source).
 
-4. Join the `kvm` group, then log out and back in, which also puts `~/.local/bin` on
-   your `PATH`:
+3. Join the `kvm` group, then log out and back in:
 
    ```sh
    sudo usermod -aG kvm $USER
    ```
 
-5. Check the host, and fix anything it reports:
+4. Check the host, and fix anything it reports:
 
    ```sh
    curral doctor
    ```
 
-6. Get a Claude Code token, on a machine with Claude Code installed:
+5. Get a Claude Code token, on a machine with Claude Code installed:
 
    ```sh
    claude setup-token
    ```
 
-7. Store it where curral finds it. `curral init` writes a commented `config.yaml`,
+6. Store it where curral finds it. `curral init` writes a commented `config.yaml`,
    `secrets.env` and an example template, and keeps files that exist; uncomment
    `CLAUDE_CODE_OAUTH_TOKEN=` in `secrets.env` and paste the token after it:
 
@@ -86,14 +79,14 @@ KVM.
    $EDITOR ~/.config/curral/secrets.env
    ```
 
-8. Create and start a VM. The first one takes a few minutes to download the image and
+7. Create and start a VM. The first one takes a few minutes to download the image and
    build its base:
 
    ```sh
    curral up dev
    ```
 
-9. Start Claude Code in it. Detach with `Ctrl-a d`; the same command reattaches:
+8. Start Claude Code in it. Detach with `Ctrl-a d`; the same command reattaches:
 
    ```sh
    curral run dev claude
@@ -104,10 +97,11 @@ Release verification, optional packages, upgrading and uninstalling are in
 
 ## Building from source
 
-With Go 1.27, build to a stable path instead of step 3 (QEMU and ssh call the binary
-back, so `go run` won't work):
+With Go 1.27, install the dependencies and build to a stable path instead of step 2
+(QEMU and ssh call the binary back, so `go run` won't work):
 
 ```sh
+sudo apt install qemu-system-x86 qemu-utils openssh-client git
 git clone https://github.com/blackshieldpt/curral.git && cd curral
 go build -o ~/.local/bin/curral ./cmd/curral
 ```
