@@ -211,7 +211,7 @@ func TestFilesReject(t *testing.T) {
 }
 
 func TestCheckName(t *testing.T) {
-	for _, n := range []string{"", "/x", "a/../b", "./a", ".git/config", "a/.git", "a\nb", "a\x1bb", "a\x7fb"} {
+	for _, n := range []string{"", "/x", "a/../b", "./a", ".git/config", "a/.git", "a\nb", "a\x1bb", "a\x7fb", "a//b", "a/", ".GIT/config", "x/.Git"} {
 		if checkName(n) == nil {
 			t.Errorf("checkName(%q) accepted", n)
 		}

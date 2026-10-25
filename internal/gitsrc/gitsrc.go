@@ -326,10 +326,10 @@ func checkName(n string) error {
 		}
 	}
 	for _, e := range strings.Split(n, "/") {
-		switch e {
-		case ".", "..":
+		switch {
+		case e == "", e == ".", e == "..":
 			return fmt.Errorf("name %q has a %q element", n, e)
-		case ".git":
+		case strings.EqualFold(e, ".git"):
 			return fmt.Errorf("name %q has a .git element", n)
 		}
 	}
