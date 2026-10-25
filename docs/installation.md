@@ -40,7 +40,7 @@ signed by this repository's release workflow at that tag (needs
 CLI for the optional provenance check):
 
 ```
-v=0.1.0   # the release to install
+v=0.1.1   # the release to install
 f=curral_${v}_linux_amd64
 u=https://github.com/blackshieldpt/curral/releases/download/v$v
 curl -fL -O $u/$f -O $u/$f.sigstore.json -O $u/SHA256SUMS
@@ -63,12 +63,12 @@ Releases are reproducible: building the tag with GoReleaser and the Go version
 
 ### Debian package
 
-Releases after 0.1.0 also ship an amd64 `.deb`, signed like the binary. It installs
+From 0.1.1, releases also ship an amd64 `.deb`, signed like the binary. It installs
 `/usr/bin/curral` and pulls in QEMU, `openssh-client` and `git` (the optional packages
 are recommends):
 
 ```
-v=0.2.0   # the release to install
+v=0.1.1   # the release to install
 f=curral_${v}_amd64.deb
 u=https://github.com/blackshieldpt/curral/releases/download/v$v
 curl -fL -O $u/$f -O $u/$f.sigstore.json -O $u/SHA256SUMS

@@ -6,6 +6,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-25
+
 ### Added
 
 - `curral init` writes a commented `config.yaml` and `secrets.env` (mode 0600), listing

@@ -46,7 +46,7 @@ KVM.
    and ssh call it back):
 
    ```sh
-   v=0.1.0
+   v=0.1.1
    f=curral_${v}_linux_amd64
    curl -fLO https://github.com/blackshieldpt/curral/releases/download/v$v/$f
    curl -fLO https://github.com/blackshieldpt/curral/releases/download/v$v/SHA256SUMS
