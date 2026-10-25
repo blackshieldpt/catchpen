@@ -20,6 +20,7 @@ import (
 	"github.com/blackshieldpt/curral/internal/cache"
 	"github.com/blackshieldpt/curral/internal/cloudinit"
 	"github.com/blackshieldpt/curral/internal/forge"
+	"github.com/blackshieldpt/curral/internal/gitsrc"
 	"github.com/blackshieldpt/curral/internal/hostherdr"
 	"github.com/blackshieldpt/curral/internal/hosttmux"
 	"github.com/blackshieldpt/curral/internal/qemu"
@@ -216,9 +217,9 @@ func (m *Manager) Push(ctx context.Context, name string) error {
 	return nil
 }
 
-// refreshEnv replaces the VM's saved env: with its template's, so names added to the
-// template after the VM was created reach it. A template that no longer loads keeps
-// the saved env, with a warning.
+// refreshEnv replaces the VM's saved env:, skills: and plugins: with its template's, so
+// names added to the template after the VM was created reach it. A template that no
+// longer loads keeps the saved env, with a warning.
 func (m *Manager) refreshEnv(name string) error {
 	_, unlock, err := m.vm(name).lock()
 	if err != nil {
@@ -247,7 +248,15 @@ func (m *Manager) refreshEnv(name string) error {
 			return fmt.Errorf("template %s: env.ANTHROPIC_API_KEY would override %s's Claude subscription token", s.Template, name)
 		}
 	}
+	skillsChanged := !slices.Equal(s.Skills, t.Skills) || !slices.Equal(s.Plugins, t.Plugins)
+	if skillsChanged {
+		s.Skills, s.Plugins = t.Skills, t.Plugins
+		m.logf("%s: skills and plugins from template %s: %d skills, %d plugins", name, s.Template, len(s.Skills), len(s.Plugins))
+	}
 	if maps.Equal(s.Env, t.Env) {
+		if skillsChanged {
+			return m.vm(name).save(s)
+		}
 		return nil
 	}
 	var changes []string
@@ -286,6 +295,12 @@ func (m *Manager) push(ctx context.Context, g *Guest, s *State) error {
 		spec.GitName, spec.GitEmail = hostGit("user.name"), hostGit("user.email")
 	}
 	cloneCtx := ctx // clones can take longer than the config push
+	// A cold fetch can be slow; it must not eat the config push's time.
+	fctx, fcancel := context.WithTimeout(cloneCtx, 5*time.Minute)
+	spec.Skills, spec.Plugins = m.agentBundles(fctx, s)
+	fcancel()
+	spec.Home = "/home/" + s.User
+	spec.AgentFiles = true
 	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
 	gcreds, err := m.forgeCreds(ctx, s)
@@ -306,6 +321,45 @@ func (m *Manager) push(ctx context.Context, g *Guest, s *State) error {
 		return err
 	}
 	return m.pushForges(cloneCtx, sshRemote{g.Client}, s, gcreds)
+}
+
+// agentBundles fetches the VM's skills and plugins on the host. A failed fetch
+// is a warning, and its bundle is marked Failed so the guest keeps its copy.
+func (m *Manager) agentBundles(ctx context.Context, s *State) (skills, plugins []agents.Bundle) {
+	f := gitsrc.Fetcher{Dir: m.P.Sources()}
+	type fetched struct {
+		files []gitsrc.File
+		err   error
+	}
+	memo := map[string]fetched{}
+	fetch := func(kind, name, git, ref, dir string) agents.Bundle {
+		k := git + "\x00" + ref + "\x00" + dir
+		r, ok := memo[k]
+		if !ok {
+			r.files, r.err = f.Files(ctx, git, ref, dir)
+			memo[k] = r
+		}
+		if r.err != nil {
+			m.logf("warning: %s %s from %s: %v; the VM keeps its current copy", kind, name, git, r.err)
+			return agents.Bundle{Name: name, Failed: true}
+		}
+		return agents.Bundle{Name: name, Files: r.files}
+	}
+	for _, e := range s.Skills {
+		b := fetch("skill", e.DirName(), e.Git, e.Ref, e.Path)
+		b.Agent = e.Agent
+		skills = append(skills, b)
+	}
+	for _, e := range s.Plugins {
+		if e.Bundled != "" {
+			plugins = append(plugins, agents.Bundle{Agent: "pi", Name: e.DirName(), Bundled: e.Bundled})
+			continue
+		}
+		b := fetch("plugin", e.DirName(), e.Git, e.Ref, e.Path)
+		b.Agent = e.Agent
+		plugins = append(plugins, b)
+	}
+	return skills, plugins
 }
 
 func hostClaudeDir() string {

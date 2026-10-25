@@ -37,7 +37,7 @@ func postJS(agent, event string) string {
 
 func (p *pusher) hooks(s Spec) error {
 	if s.Agents.Claude != nil {
-		if err := p.claudeHooks(); err != nil {
+		if err := p.claudeHooks(s); err != nil {
 			return fmt.Errorf("claude hooks: %w", err)
 		}
 	}
@@ -86,8 +86,9 @@ func curlPost(data, query string) string {
 }
 
 // claudeHooks adds curral's Notification and Stop hooks to the guest's
-// settings.json, keeping any others.
-func (p *pusher) claudeHooks() error {
+// settings.json, keeping any others. Unless sync.claude_ai is on, it also
+// turns off the skill and plugin sync from claude.ai.
+func (p *pusher) claudeHooks(s Spec) error {
 	doc, err := p.getJSON(claudeSettings)
 	if err != nil {
 		return err
@@ -106,6 +107,12 @@ func (p *pusher) claudeHooks() error {
 			}
 		}
 		hooks[ev] = append(keep, map[string]any{"hooks": []any{map[string]any{"type": "command", "command": cmd}}})
+	}
+	if s.Sync.ClaudeAISync() {
+		delete(doc, "syncClaudeAiSkills") // Claude's own default applies
+		delete(doc, "syncClaudeAiPlugins")
+	} else {
+		doc["syncClaudeAiSkills"], doc["syncClaudeAiPlugins"] = false, false
 	}
 	doc["hooks"] = hooks
 	return p.putJSON(claudeSettings, doc)

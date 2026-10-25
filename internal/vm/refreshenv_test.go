@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -97,5 +98,27 @@ func TestOldTemplateNamesAreNotReinterpreted(t *testing.T) {
 	}
 	if got, _ := m.RebuildTargets(); len(got) != 0 {
 		t.Errorf("targets %v", got)
+	}
+}
+
+// Skills and plugins come from the template too, even when the env is the same.
+func TestRefreshTakesTheTemplatesSkills(t *testing.T) {
+	m := envVM(t, map[string]string{"TZ": "UTC"}, "env: { TZ: UTC }\n"+
+		"skills: [{ git: \"https://example.com/s.git\", ref: \"0123456789abcdef0123456789abcdef01234567\", path: skills/a }]\n")
+	var out strings.Builder
+	m.Out = &out
+	if err := m.refreshEnv("dev"); err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.Load("dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []template.Skill{{Git: "https://example.com/s.git", Ref: "0123456789abcdef0123456789abcdef01234567", Path: "skills/a"}}
+	if !slices.Equal(s.Skills, want) {
+		t.Fatalf("skills %v, want %v", s.Skills, want)
+	}
+	if !strings.Contains(out.String(), "1 skills, 0 plugins") {
+		t.Fatalf("output %q", out.String())
 	}
 }

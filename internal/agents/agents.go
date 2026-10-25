@@ -17,6 +17,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/blackshieldpt/curral/internal/cloudinit"
+	"github.com/blackshieldpt/curral/internal/gitsrc"
 	"github.com/blackshieldpt/curral/internal/sshx"
 	"github.com/blackshieldpt/curral/internal/template"
 )
@@ -41,6 +42,22 @@ type Spec struct {
 	GitName   string // host git identity, for sync.git_identity
 	GitEmail  string
 	ExtraEnv  map[string]string // already-resolved values (e.g. forge tokens for gh)
+
+	Home            string // the guest user's home, e.g. /home/agent
+	Skills, Plugins []Bundle
+	// AgentFiles makes Push manage skill and plugin folders: copy these and
+	// remove curral's folders that aren't listed. Callers that don't build
+	// the full list must leave it false.
+	AgentFiles bool
+}
+
+// Bundle is a skill or plugin folder fetched on the host.
+type Bundle struct {
+	Agent   string // "" for a skill every agent gets
+	Name    string // folder name in the guest (template DirName)
+	Files   []gitsrc.File
+	Bundled string // pi plugin: a path inside pi's installed package (no Files)
+	Failed  bool   // fetch failed: keep what the guest has from before
 }
 
 // Result reports what could not be delivered.
@@ -128,6 +145,9 @@ func (p *pusher) warn(format string, a ...any) {
 // git identity and Claude config.
 func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 	p := &pusher{ctx: ctx, r: r, sec: sec, missed: map[string]bool{}}
+	if err := p.checkAgentFiles(&s); err != nil {
+		return p.res, err
+	}
 	env := map[string]string{}
 	for _, k := range slices.Sorted(maps.Keys(s.Env)) {
 		v, ok, err := p.resolve(s.Env[k])
@@ -141,6 +161,9 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 	for k, v := range s.ExtraEnv {
 		env[k] = v
 	}
+	if s.Agents.OpenCode != nil && !s.Sync.SharedClaudeSkills() {
+		env["OPENCODE_DISABLE_CLAUDE_CODE_SKILLS"] = "1"
+	}
 	if c := s.Agents.Claude; c != nil {
 		name := claudeOAuthEnv
 		if c.Auth == template.ClaudeAPIKey {
@@ -150,7 +173,10 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 		if err != nil {
 			return p.res, err
 		}
-		claudeEnv := map[string]string{}
+		claudeEnv := map[string]string{"CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": "1"}
+		if dirs := claudePluginDirs(s); s.AgentFiles && dirs != "" {
+			claudeEnv["CLAUDE_CODE_PLUGIN_DIRS"] = dirs
+		}
 		if ok {
 			claudeEnv[name] = v
 			if name == anthropicKeyEnv {
@@ -189,6 +215,10 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 				return p.res, err
 			}
 		}
+	}
+	// Before the claude config sync, which brings the host's own skills.
+	if err := p.agentFiles(s); err != nil {
+		return p.res, err
 	}
 	if s.Sync.Git() && (s.GitName != "" || s.GitEmail != "") {
 		var cmds []string
@@ -519,6 +549,7 @@ func (p *pusher) codex(a *template.Agent, servers []template.MCP) error {
 	cfg["check_for_update_on_startup"] = false
 	cfg["cli_auth_credentials_store"] = "file"
 	obj(cfg, "analytics")["enabled"] = false
+	obj(cfg, "features")["remote_plugin"] = false
 	obj(cfg, "feedback")["enabled"] = false
 	obj(cfg, "otel")["metrics_exporter"] = "none"
 	// Codex's bubblewrap sandbox can't set up its network namespace in the

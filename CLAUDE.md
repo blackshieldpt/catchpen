@@ -23,7 +23,8 @@ Keep `-p 1`: `vm` and `runner` both boot VMs. Docs site: `mkdocs build --strict`
   checks `vm` and `runner`.
 - Guest output is `sshx.GuestOutput`: `Raw()` to parse, `%s` to show.
 - A VM's files, state and lock go through `m.vm(name)` (`internal/vm/vmdir.go`). Lock
-  order: pool fill lock, pool lock, then a VM's lock. Locks are flocks and not
+  order: pool fill lock, pool lock, then a VM's lock; a skill or plugin fetch holds its
+  repo's cache lock (internal/gitsrc), a leaf taken before the push. Locks are flocks and not
   re-entrant: code holding a VM's lock calls `stopLocked` / `takeResume`, never `Stop`,
   `Destroy`, `Restore` or `CanaryHit`.
 - `runner` imports `vm`, so `vm`'s tests can't import `runner`. Shared test helpers
