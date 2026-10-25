@@ -92,6 +92,47 @@ keys while you're connected. curral warns when you create such a VM, and `agent`
 forges require `restricted`, since start-time clones would otherwise forward your agent
 unattended.
 
+### GitHub with your own SSH key
+
+To clone and push as yourself, with a key already on your GitHub account (**Settings →
+SSH and GPG keys**; `ssh -T git@github.com` on the host should greet you):
+
+1. Add github.com as an `agent`-mode forge. It checks that GitHub supports host-bound
+   authentication. Add `--token-secret NAME` if you want `curral pr` to open pull
+   requests; cloning and pushing don't need a token.
+
+   ```
+   curral forge add github --type github --host github.com --mode agent
+   ```
+
+2. Turn on the restricted agent in a template, for example
+   `~/.config/curral/templates/gh.yaml`:
+
+   ```yaml
+   extends: default
+   ssh:
+     agent: restricted
+     agent_keys: [~/.ssh/id_ed25519]
+     confirm: false     # on a host with no display; true asks (ssh-askpass) on each use
+   ```
+
+3. Create the VM with the repo:
+
+   ```
+   curral up dev2 -t gh --repo github:owner/repo
+   ```
+
+   `curral start` loads the key into the VM's agent (`ssh-add` asks for its passphrase
+   if it has one) and clones the repo over SSH into `/workspace/repo`. The key file
+   stays on the host.
+
+4. Work in the VM with `curral run dev2 claude` or `curral ssh dev2`. These sessions
+   carry the restricted agent, so `git pull` and `git push` in `/workspace/repo` sign
+   with your key; it signs only for github.com, through this VM.
+
+Without the template, `curral up dev2 --repo github:owner/repo --ssh-agent restricted
+--agent-key ~/.ssh/id_ed25519` does the same, with `confirm` left at `true`.
+
 ## Port forwards
 
 ```
