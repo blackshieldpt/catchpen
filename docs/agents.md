@@ -126,7 +126,9 @@ env: { GH_TOKEN: "secret:GH_TOKEN", TZ: Europe/Lisbon }
 ```
 
 `env:` sets variables for every ssh session, as literal values or `secret:NAME`. `HOME`,
-`USER`, `PATH`, `SHELL` and `LOGNAME` can't be set.
+`USER`, `PATH`, `SHELL` and `LOGNAME` can't be set. A VM takes `env:` from its template
+when it is created, and again at each `curral creds push`; sessions opened after the push
+see the change. The [GitHub tutorial](github.md#part-2-token-for-gh) uses this for `gh`.
 
 ## MCP servers
 

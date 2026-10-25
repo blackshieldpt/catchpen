@@ -4,6 +4,8 @@ A forge is a GitHub or Gitea server that VMs clone from. curral gives each VM th
 narrowest access the forge supports, and gets work out through the host so the VM
 needs no push access.
 
+New to this? The [GitHub tutorial](github.md) walks through a GitHub setup step by step.
+
 ## Adding a forge
 
 ```
@@ -92,78 +94,8 @@ keys while you're connected. curral warns when you create such a VM, and `agent`
 forges require `restricted`, since start-time clones would otherwise forward your agent
 unattended.
 
-### GitHub with your own SSH key
-
-To clone and push as yourself, with a key already on your GitHub account (**Settings →
-SSH and GPG keys**; `ssh -T git@github.com` on the host should greet you):
-
-1. Add github.com as an `agent`-mode forge. It checks that GitHub supports host-bound
-   authentication. Add `--token-secret NAME` if you want `curral pr` to open pull
-   requests; cloning and pushing don't need a token.
-
-   ```
-   curral forge add github --type github --host github.com --mode agent
-   ```
-
-2. Turn on the restricted agent in a template, for example
-   `~/.config/curral/templates/gh.yaml`:
-
-   ```yaml
-   extends: default
-   ssh:
-     agent: restricted
-     agent_keys: [~/.ssh/id_ed25519]
-     confirm: false     # on a host with no display; true asks (ssh-askpass) on each use
-   ```
-
-3. Create the VM with the repo:
-
-   ```
-   curral up dev2 -t gh --repo github:owner/repo
-   ```
-
-   `curral start` loads the key into the VM's agent (`ssh-add` asks for its passphrase
-   if it has one) and clones the repo over SSH into `/workspace/repo`. The key file
-   stays on the host.
-
-4. Work in the VM with `curral run dev2 claude` or `curral ssh dev2`. These sessions
-   carry the restricted agent, so `git pull` and `git push` in `/workspace/repo` sign
-   with your key; it signs only for github.com, through this VM.
-
-Without the template, `curral up dev2 --repo github:owner/repo --ssh-agent restricted
---agent-key ~/.ssh/id_ed25519` does the same, with `confirm` left at `true`.
-
-### `gh` in the VM
-
-The SSH key covers git only. `gh` talks to GitHub's HTTPS API, so in `agent` and
-`deploy-key` mode it has no credentials. Either open pull requests from the host with
-`curral pr` (which needs `--token-secret` on the forge), or give the VM a token limited to
-the repo:
-
-1. On GitHub, open **Settings → Developer settings → Personal access tokens →
-   Fine-grained tokens → Generate new token**. Set **Resource owner** to the repo's
-   owner, **Repository access** to *Only select repositories* with the repo, and an
-   expiration. Under **Repository permissions**, give *Contents* and *Pull requests*
-   (and *Issues* if you use `gh issue`) **Read and write**. An organization may require
-   an owner to approve the token.
-
-2. Store it on the host, in `~/.config/curral/secrets.env`:
-
-   ```
-   GH_TOKEN=github_pat_...
-   ```
-
-3. Pass it to the VM's sessions in the template, before you create the VM:
-
-   ```yaml
-   env: { GH_TOKEN: "secret:GH_TOKEN" }
-   ```
-
-A VM's `env:` names are fixed when it is created, so adding this to the template doesn't
-reach existing VMs. For those, run `gh auth login --with-token` inside the VM and paste
-the token; it is stored in that VM only. The value of a `secret:` reference is read at
-every start, so after rotating the token, `curral creds push <vm>` updates running VMs.
-Anything in the VM, the agent included, can use the token, so keep it to the one repo.
+For a step-by-step setup of GitHub with your own SSH key, and a token for `gh` in the
+VM, see the [GitHub tutorial](github.md).
 
 ## Port forwards
 

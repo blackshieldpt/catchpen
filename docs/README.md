@@ -100,7 +100,8 @@ curral pull api --into ~/src/api            # fetch the agent's branch into your
 curral pr api --into ~/src/api              # or push it and open a pull request
 ```
 
-See [Forges](forges.md) for GitHub and Gitea, read-only keys and SSH agents.
+See the [GitHub tutorial](github.md) to clone and push with your SSH key and use `gh` in
+the VM, and [Forges](forges.md) for Gitea, read-only keys and SSH agents.
 
 ### Control the network
 
@@ -166,6 +167,7 @@ hosts.
 - [Agents and credentials](agents.md): Claude Code, opencode, pi, omp, Codex, MCP, transcripts
 - [Forges, repos and SSH](forges.md): GitHub and Gitea, `pull` and `pr`, SSH agents,
   port forwards
+- [GitHub tutorial](github.md): your SSH key for git, and a token for `gh`, step by step
 - [Sessions, recordings and audit](sessions.md)
 - [herdr](herdr.md): every VM's agent in herdr, with its state, resumed after restarts
 - [Headless tasks](tasks.md)

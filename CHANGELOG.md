@@ -6,6 +6,11 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ## [Unreleased]
 
+### Added
+
+- A [GitHub tutorial](docs/github.md): your SSH key for git, and a token for `gh`, step
+  by step.
+
 ### Changed
 
 - `curral creds push` takes the VM's `env:` from its template as the template is now, so

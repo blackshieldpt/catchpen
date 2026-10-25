@@ -42,6 +42,7 @@ nav:
       - Configuration: configuration.md
       - Agents and credentials: agents.md
       - Forges, repos and SSH: forges.md
+      - GitHub tutorial: github.md
       - Sessions, recordings and audit: sessions.md
       - herdr: herdr.md
       - Headless tasks: tasks.md

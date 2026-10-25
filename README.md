@@ -161,6 +161,7 @@ The `default` template has Docker, Node 24, uv, `gh`, Claude Code, opencode, pi 
 | [CLI reference](docs/cli-reference.md) | Every command and flag |
 | [Templates](docs/templates.md), [configuration](docs/configuration.md) | What VMs contain; `config.yaml`, secrets, directories |
 | [Agents](docs/agents.md), [forges](docs/forges.md), [tasks](docs/tasks.md) | Credentials, repos, `pull`/`pr`, SSH agents, headless runs |
+| [GitHub tutorial](docs/github.md) | Your SSH key for git and a token for `gh` in a VM, step by step |
 | [Sessions](docs/sessions.md), [notifications](docs/notifications.md), [snapshots](docs/snapshots.md) | Recordings and audit, alerts, snapshots and base updates |
 | [Security model](docs/security-model.md), [egress](docs/egress.md), [caches](docs/package-caches.md), [canaries](docs/canaries.md) | What curral protects, and its limits |
 | [Deployment](docs/deployment.md) | The daemon, warm pool, idle stop, rebuilds, headless hosts, backups |
