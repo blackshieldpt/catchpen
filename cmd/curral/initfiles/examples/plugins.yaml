@@ -1,2 +1,0 @@
-# An omp extension from your own repo (a folder with index.ts):
-omp-guard: { description: "Our omp guard extension", plugins: [{ agent: omp, git: "https://github.com/acme/omp-guard", ref: "0123456789abcdef0123456789abcdef01234567", path: . }] }

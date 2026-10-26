@@ -103,10 +103,13 @@ func TestDefaults(t *testing.T) {
 		}
 	}
 	claudeSkills := []string{"claude/skill-creator", "claude/mcp-builder", "claude/frontend-design"}
-	for spec, want := range map[string][]string{"": claudeSkills, "minimal": nil, "minimal,claude": claudeSkills} {
+	for spec, want := range map[string][]string{"": claudeSkills, "minimal": nil, "minimal,claude": claudeSkills, "-claude,claude-vanilla": nil} {
 		tp2, err := load(t, t.TempDir(), spec)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("%q: %v", spec, err)
+		}
+		if c := tp2.Agents.Claude; (spec != "minimal") != (c != nil) || c != nil && (c.Auth != ClaudeOAuth || tp2.Runtimes.Node != "24") {
+			t.Errorf("%q: claude %+v, runtimes %+v", spec, c, tp2.Runtimes)
 		}
 		var got []string
 		for _, s := range tp2.Skills {
@@ -638,6 +641,9 @@ const (
 	pinRef = "0123456789abcdef0123456789abcdef01234567"
 )
 
+// plainClaude replaces the built-in claude section with one without skills.
+const plainClaude = "claude: { agents: { claude: { auth: oauth-token } }, runtimes: { node: \"24\" } }\n"
+
 // pinned is a skill or plugin entry from the test pin, with more fields.
 func pinned(more string) string { return "{ git: " + pinGit + ", ref: " + pinRef + ", " + more + " }" }
 
@@ -655,13 +661,13 @@ func skillNames(tp *Template) []string {
 // installed agents.
 func TestSkillsMergeAndFilter(t *testing.T) {
 	dir := t.TempDir()
-	write(t, dir, "skills.yaml", "default: []\n"+
+	write(t, dir, "agents.yaml", plainClaude+
 		"sk-a: { skills: ["+pinned("agent: claude, path: skills/x")+"] }\n"+
 		"sk-a2: { skills: ["+pinned("agent: claude, path: skills/x")+"] }\n"+
 		"sk-b: { skills: ["+pinned("agent: codex, path: skills/y")+"] }\n"+
 		"sk-any: { skills: ["+pinned("path: skills/z")+"] }\n"+
-		"sk-clash: { skills: ["+pinned("path: skills/w")+", { agent: codex, git: "+pinGit+", ref: 1123456789abcdef0123456789abcdef01234567, path: other/w }] }\n")
-	write(t, dir, "plugins.yaml", "default: []\npl-cx: { plugins: ["+pinned("agent: codex, path: plugins/p")+"] }\n")
+		"sk-clash: { skills: ["+pinned("path: skills/w")+", { agent: codex, git: "+pinGit+", ref: 1123456789abcdef0123456789abcdef01234567, path: other/w }] }\n"+
+		"pl-cx: { plugins: ["+pinned("agent: codex, path: plugins/p")+"] }\n")
 	for spec, want := range map[string][]string{
 		"sk-a,sk-b":               {"x", "y"},
 		"sk-a,sk-a2":              {"x"},
@@ -681,21 +687,6 @@ func TestSkillsMergeAndFilter(t *testing.T) {
 	}
 	if tp, err := load(t, dir, "minimal,codex,pl-cx"); err != nil || len(tp.Plugins) != 1 {
 		t.Errorf("codex plugin with codex: %v %+v", err, tp)
-	}
-	hasPart := func(tp *Template, cat string) bool {
-		return slices.ContainsFunc(tp.Parts, func(p Part) bool { return p.Category == cat })
-	}
-	if tp, err := load(t, dir, "minimal,sk-a"); err != nil || hasPart(tp, "skills") {
-		t.Errorf("skills part with no skills left: %v %+v", err, tp)
-	}
-	if tp, err := load(t, dir, "minimal,claude,sk-a"); err != nil || !hasPart(tp, "skills") {
-		t.Errorf("no skills part: %v %+v", err, tp)
-	}
-	if tp, err := load(t, dir, "minimal,claude,pl-cx"); err != nil || hasPart(tp, "plugins") {
-		t.Errorf("plugins part with no plugins left: %v %+v", err, tp)
-	}
-	if tp, err := load(t, dir, "minimal,codex,pl-cx"); err != nil || !hasPart(tp, "plugins") {
-		t.Errorf("no plugins part: %v %+v", err, tp)
 	}
 }
 
@@ -729,9 +720,30 @@ func TestSkillsValidation(t *testing.T) {
 		{pinned("path: skills/z") + ", " + entry(pinGit, ref2, "path: other/z"), "minimal,claude,", `skills: two skills named "z" for claude`},
 	} {
 		dir := t.TempDir()
-		write(t, dir, "skills.yaml", "default: []\nbad: { skills: ["+c.entries+"] }\n")
+		write(t, dir, "agents.yaml", "bad: { skills: ["+c.entries+"] }\n")
 		if _, err := load(t, dir, c.spec+"bad"); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want %q", c.entries, err, c.want)
+		}
+	}
+}
+
+// Skills and plugins were categories of their own before they moved into agents.
+func TestSkillsAndPluginsFilesRefused(t *testing.T) {
+	for _, f := range []string{"skills.yaml", "plugins.yaml"} {
+		dir := t.TempDir()
+		write(t, dir, f, "x: {}\n")
+		if _, err := load(t, dir, ""); err == nil || !strings.Contains(err.Error(), "move the sections of "+f+" there") {
+			t.Errorf("%s: %v", f, err)
+		}
+	}
+	dir := t.TempDir() // all at once, with an old-style template
+	for _, f := range []string{"skills.yaml", "plugins.yaml", "default.yaml"} {
+		write(t, dir, f, "x: {}\n")
+	}
+	_, err := load(t, dir, "")
+	for _, want := range []string{"move the sections of plugins.yaml and skills.yaml there", "default.yaml: old-style templates"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("err %v lacks %q", err, want)
 		}
 	}
 }
@@ -770,13 +782,13 @@ func TestPluginsValidation(t *testing.T) {
 		{pinned("agent: pi, path: p/x") + ", { agent: pi, git: " + pinGit + ", ref: " + ref2 + ", path: q/x }", "minimal,pi,", `plugins: two pi plugins named "x"`},
 	} {
 		dir := t.TempDir()
-		write(t, dir, "plugins.yaml", "default: []\nbad: { plugins: ["+c.entries+"] }\n")
+		write(t, dir, "agents.yaml", "bad: { plugins: ["+c.entries+"] }\n")
 		if _, err := load(t, dir, c.spec+"bad"); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want %q", c.entries, err, c.want)
 		}
 	}
 	dir := t.TempDir()
-	write(t, dir, "plugins.yaml", "default: []\nplan: { plugins: [{ agent: pi, bundled: examples/extensions/plan-mode.ts }] }\n")
+	write(t, dir, "agents.yaml", "plan: { plugins: [{ agent: pi, bundled: examples/extensions/plan-mode.ts }] }\n")
 	tp, err := load(t, dir, "minimal,pi,plan")
 	if err != nil || len(tp.Plugins) != 1 || tp.Plugins[0].DirName() != "plan-mode" {
 		t.Errorf("bundled pi plugin: %v %+v", err, tp)

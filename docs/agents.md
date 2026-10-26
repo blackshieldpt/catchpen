@@ -14,8 +14,8 @@ credentials its template asks for.
 | `codex` (OpenAI Codex CLI) | npm (`@openai/codex`) | `runtimes.node` |
 
 Agents are sections of `agents.yaml`. The default installs `claude`, `opencode`, `pi` and
-`codex` (with `auth: none`). The other built-in sections are `claude-api-key`,
-`claude-yolo`, `omp`, `codex-api-key` and `codex-chatgpt`; picks add to the default, and
+`codex` (with `auth: none`). The other built-in sections are `claude-vanilla`,
+`claude-api-key`, `claude-yolo`, `omp`, `codex-api-key` and `codex-chatgpt`; picks add to the default, and
 `-name` drops one:
 
 ```
@@ -208,20 +208,21 @@ on.
 
 ## Skills and plugins
 
-curral copies skills and plugins into the agents at every start. By default, Claude Code
-gets three of Anthropic's skills: `claude-skill-creator`, `claude-mcp-builder` and
-`claude-frontend-design` (`skills.yaml`). Plugins are opt-in sections of `plugins.yaml`;
-[templates.md](templates.md#categories) lists them. Codex, opencode, pi and omp get no
-skills by default.
+curral copies skills and plugins into the agents at every start. They are set in
+`agents.yaml` sections, next to the agents. The built-in `claude` section gives Claude Code
+three of Anthropic's skills: `skill-creator`, `mcp-builder` and `frontend-design`;
+`claude-vanilla` is Claude Code without them. Codex, opencode, pi and omp get none, and
+no plugins are built in: the `agents.yaml` that `curral init` writes has examples to
+uncomment, among them Anthropic's plugins for Claude Code, OpenAI's superpowers for
+Codex, pi's bundled extensions and Blackshield's `improve` skill.
 
 ```
-curral up dev -t commit-commands          # add Anthropic's commit-commands plugin
-curral up dev -t -claude-mcp-builder      # drop a default skill
+curral up dev -t -claude,claude-vanilla   # Claude Code without skills
 curral up dev -t team-review              # a section of your own, below
 ```
 
 ```yaml
-# ~/.config/curral/templates/skills.yaml
+# ~/.config/curral/templates/agents.yaml
 team-review:
   description: "Our review checklist"
   skills:
@@ -229,7 +230,9 @@ team-review:
 ```
 
 A skill without `agent` goes to every agent the VM has; a plugin names its agent.
-`claude-webapp-testing` needs Playwright in the VM.
+Entries for agents the VM doesn't have are dropped. Claude's skills come with the `claude`
+section: with `-claude` and another Claude section (`-t -claude,claude-api-key`), or with
+your own `claude` section, Claude has only the skills those sections list.
 
 **Where they come from.** curral fetches each one on the host from an `https` git repo at
 a full 40-character commit, keeps the repos in `~/.cache/curral/sources/`, and copies the

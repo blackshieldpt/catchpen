@@ -302,17 +302,14 @@ func TestWithEnvScript(t *testing.T) {
 func TestSkillsDontChangeTheBase(t *testing.T) {
 	dir := t.TempDir()
 	pin := `git: https://github.com/example/skills, ref: "0123456789abcdef0123456789abcdef01234567"`
-	if err := os.WriteFile(filepath.Join(dir, "skills.yaml"), []byte("default: []\nsk: { skills: [{ agent: claude, "+pin+", path: skills/x }] }\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "agents.yaml"), []byte("sk: { skills: [{ agent: claude, "+pin+", path: skills/x }] }\npl: { plugins: [{ agent: claude, "+pin+", path: plugins/p }] }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "plugins.yaml"), []byte("default: []\npl: { plugins: [{ agent: claude, "+pin+", path: plugins/p }] }\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	tp, err := tpl.Loader{UserDir: dir}.Load("minimal,claude,sk,pl")
+	tp, err := tpl.Loader{UserDir: dir}.Load("minimal,claude-vanilla,sk,pl")
 	if err != nil || len(tp.Skills) != 1 || len(tp.Plugins) != 1 {
 		t.Fatalf("%v %+v", err, tp)
 	}
-	if with := mustB(BuildUserData(tp, "agent", nil)); string(with) != string(mustB(BuildUserData(load(t, "minimal,claude"), "agent", nil))) {
+	if with := mustB(BuildUserData(tp, "agent", nil)); string(with) != string(mustB(BuildUserData(load(t, "minimal,claude-vanilla"), "agent", nil))) {
 		t.Error("skills and plugins change the base")
 	}
 }

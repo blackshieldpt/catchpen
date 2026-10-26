@@ -5,7 +5,9 @@ package gitsrc_test
 import (
 	"context"
 	"maps"
+	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,20 +17,22 @@ import (
 	"github.com/blackshieldpt/curral/internal/template"
 )
 
-// Every pinned built-in skill and plugin is still fetchable, with its
-// manifest and a licence.
+// Every pinned skill and plugin, built in or in curral init's examples, is
+// still fetchable, with its manifest and a licence.
 func TestBuiltinSourcesFetch(t *testing.T) {
 	f := gitsrc.Fetcher{Dir: t.TempDir()}
 	manifest := map[string]string{"claude": ".claude-plugin/plugin.json", "codex": ".codex-plugin/plugin.json"}
-	for _, cat := range []string{"skills", "plugins"} {
+	examples, err := os.ReadFile("../../cmd/curral/initfiles/examples/agents.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fetched := 0
+	for _, file := range []string{template.BuiltinFile("agents"), string(examples)} {
 		var secs map[string]yaml.Node
-		if err := yaml.Unmarshal([]byte(template.BuiltinFile(cat)), &secs); err != nil {
+		if err := yaml.Unmarshal([]byte(file), &secs); err != nil {
 			t.Fatal(err)
 		}
 		delete(secs, "default")
-		if len(secs) == 0 {
-			t.Fatalf("no built-in %s", cat)
-		}
 		for _, name := range slices.Sorted(maps.Keys(secs)) {
 			node := secs[name]
 			var sec struct {
@@ -40,11 +44,14 @@ func TestBuiltinSourcesFetch(t *testing.T) {
 			}
 			type src struct{ git, ref, path, want string }
 			var srcs []src
+			placeholder := func(git string) bool { return strings.Contains(git, "/acme/") }
 			for _, s := range sec.Skills {
-				srcs = append(srcs, src{s.Git, s.Ref, s.Path, "SKILL.md"})
+				if !placeholder(s.Git) {
+					srcs = append(srcs, src{s.Git, s.Ref, s.Path, "SKILL.md"})
+				}
 			}
 			for _, p := range sec.Plugins {
-				if p.Git == "" {
+				if p.Git == "" || placeholder(p.Git) {
 					continue
 				}
 				if manifest[p.Agent] == "" {
@@ -55,6 +62,7 @@ func TestBuiltinSourcesFetch(t *testing.T) {
 			if len(srcs) == 0 {
 				continue
 			}
+			fetched += len(srcs)
 			t.Run(name, func(t *testing.T) {
 				for _, s := range srcs {
 					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -70,11 +78,18 @@ func TestBuiltinSourcesFetch(t *testing.T) {
 					if !slices.Contains(names, s.want) {
 						t.Errorf("%s: no %s in %v", s.path, s.want, names)
 					}
-					if !slices.ContainsFunc(names, func(n string) bool { return n == "LICENSE" || n == "LICENSE.txt" || n == "LICENSE.md" }) {
+					// A licence file, or a license: field in SKILL.md.
+					if !slices.ContainsFunc(names, func(n string) bool { return n == "LICENSE" || n == "LICENSE.txt" || n == "LICENSE.md" }) &&
+						!slices.ContainsFunc(files, func(fl gitsrc.File) bool {
+							return fl.Name == "SKILL.md" && strings.Contains(string(fl.Data), "\nlicense: ")
+						}) {
 						t.Errorf("%s: no licence in %v", s.path, names)
 					}
 				}
 			})
 		}
+	}
+	if fetched < 6 { // claude's three skills and the examples' pins
+		t.Errorf("fetched %d pins", fetched)
 	}
 }

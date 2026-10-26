@@ -62,15 +62,13 @@ section changes what those give for every VM that picked it.
 | `distros.yaml` | `distro` | `ubuntu-24.04` | `ubuntu-24.04`, `ubuntu-26.04`, `debian-13` |
 | `resources.yaml` | `resources` | `medium` | `small` (2 CPUs, 4G, 20G), `medium` (4, 8G, 40G), `large` (8, 16G, 80G), `xlarge` (16, 32G, 160G) |
 | `tools.yaml` | `packages`, `tools`, `scripts`, `files` | `core`, `build`, `gh` | `core` (git, curl, jq, tmux, ripgrep, ...), `build` (build-essential, make, python3, ...), `gh`, `tea` |
-| `agents.yaml` | `agents`, and the `runtimes` they need | `claude`, `opencode`, `pi`, `codex` | `claude`, `claude-api-key`, `claude-yolo`, `opencode`, `pi`, `omp`, `codex`, `codex-api-key`, `codex-chatgpt` |
+| `agents.yaml` | `agents`, the `runtimes` they need, and their `skills` and `plugins` | `claude`, `opencode`, `pi`, `codex` | `claude` (with Anthropic's `skill-creator`, `mcp-builder` and `frontend-design` skills), `claude-vanilla` (no skills), `claude-api-key`, `claude-yolo`, `opencode`, `pi`, `omp`, `codex`, `codex-api-key`, `codex-chatgpt` |
 | `runtimes.yaml` | `runtimes`, `docker` | `docker`, `uv` | `docker`, `uv`, `node-22`, `node-24`, `go-1.26`, `go-1.27`, `python-3.12`, `python-3.13`, `python-3.14` |
 | `network.yaml` | `network` | `allowlist` and the presets below | `allowlist`, `open`, `offline`, `prompt`; `anthropic`, `github`, `npm`, `pypi`, `go`, `apt-ubuntu`, `apt-debian`, `docker-apt`, `docker-hub`, `ghcr` (one per preset) |
 | `caches.yaml` | `cache` | all five | `apt-cache`, `go-cache`, `npm-cache`, `pypi-cache`, `docker-cache` |
 | `canaries.yaml` | `canaries` | all three | `aws-canary`, `env-canary`, `git-canary` |
 | `env.yaml` | `env` | none | none |
 | `mcp.yaml` | `mcp` | none | none |
-| `skills.yaml` | `skills` | `claude-skill-creator`, `claude-mcp-builder`, `claude-frontend-design` | those and `claude-webapp-testing` |
-| `plugins.yaml` | `plugins` | none | `commit-commands`, `code-review`, `pr-review-toolkit`, `feature-dev`, `code-simplifier`, `claude-md-management` (Claude Code); `codex-superpowers` (Codex); `pi-plan-mode`, `pi-permission-gate`, `pi-protected-paths`, `pi-git-checkpoint`, `pi-confirm-destructive`, `pi-dirty-repo-guard` (pi) |
 | `ssh.yaml` | `ssh` | `ssh-off` | `ssh-off`, `ssh-host` |
 | `sync.yaml` | `sync` | none (git identity is copied) | `claude-config`, `no-git-identity`, `claude-ai-sync`, `opencode-claude-skills` |
 | `repos.yaml` | `repos` | none | none |

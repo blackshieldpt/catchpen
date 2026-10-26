@@ -15,8 +15,14 @@ import (
 	"github.com/blackshieldpt/curral/internal/egress"
 )
 
-// TestSkillsAndPlugins creates a VM with built-in skills and plugins for
-// claude, codex and pi, and checks each agent gets its own, that Claude loads
+// testPlugins are agent sections with a plugin each, as a user's agents.yaml.
+const testPlugins = `commit-commands: { plugins: [{ agent: claude, git: "https://github.com/anthropics/claude-plugins-official", ref: "58267944f92187b7d6a1c822165c96c81c864806", path: plugins/commit-commands }] }
+codex-superpowers: { plugins: [{ agent: codex, git: "https://github.com/openai/plugins", ref: "0722921d5542fc593105c27bd52630babd8b8c2a", path: plugins/superpowers }] }
+pi-permission-gate: { plugins: [{ agent: pi, bundled: examples/extensions/permission-gate.ts }] }
+`
+
+// TestSkillsAndPlugins creates a VM with Claude's built-in skills and plugins
+// for claude, codex and pi, and checks each agent gets its own, that Claude loads
 // them, that Claude's marketplace isn't cloned although GitHub is reachable,
 // and that a restart replaces curral's folders and keeps the user's.
 func TestSkillsAndPlugins(t *testing.T) {
@@ -24,6 +30,12 @@ func TestSkillsAndPlugins(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 	defer cancel()
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-curral-integration-fake")
+	if err := os.MkdirAll(m.P.Templates(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(m.P.Templates(), "agents.yaml"), []byte(testPlugins), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	const tpl = "minimal,claude,codex,pi,network:github,commit-commands,codex-superpowers,pi-permission-gate"
 	if _, err := m.Create(ctx, "sk", CreateOpts{Template: tpl}); err != nil {
 		t.Fatal(err)

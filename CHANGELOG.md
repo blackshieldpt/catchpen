@@ -10,7 +10,7 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 - Templates are now [category files](docs/templates.md) of named sections: `distros`,
   `resources`, `tools`, `agents`, `runtimes`, `network`, `caches`, `canaries`, `env`,
-  `mcp`, `skills`, `plugins`, `ssh`, `sync`, `repos`, `ports`, `idle` and `profiles`,
+  `mcp`, `ssh`, `sync`, `repos`, `ports`, `idle` and `profiles`,
   each with a `default`.
   `-t` is a comma-separated list of picks, like `-t go-1.27,python-3.14` or
   `-t ubuntu-26.04,large,-docker`: categories not named keep their default, picks add to
@@ -46,9 +46,9 @@ before 0.1.0 describe work on `master` before the first tagged release.
 - `small`, `medium`, `large` and `xlarge` resource sections.
 - [Skills and plugins](docs/agents.md#skills-and-plugins) for every agent, fetched on the
   host from pinned git commits (pi's `bundled` plugins come from the pi package in the VM)
-  and copied in at each start. By default, Claude Code gets
-  three of Anthropic's skills (`skill-creator`, `mcp-builder`, `frontend-design`);
-  built-in plugin sections for Claude Code, Codex and pi are opt-in.
+  and copied in at each start. They are set in `agents.yaml` sections. The built-in `claude`
+  section gives Claude Code three of Anthropic's skills (`skill-creator`, `mcp-builder`,
+  `frontend-design`); `claude-vanilla` is Claude Code without them.
 
 ### Changed
 

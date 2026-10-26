@@ -1,6 +1,14 @@
 default: [claude, opencode, pi, codex]
 claude:
-  description: Claude Code, with your subscription token (CLAUDE_CODE_OAUTH_TOKEN)
+  description: Claude Code with your subscription token (CLAUDE_CODE_OAUTH_TOKEN) and three Anthropic skills
+  agents: { claude: { auth: oauth-token } }
+  runtimes: { node: "24" }
+  skills:
+    - { agent: claude, git: "https://github.com/anthropics/skills", ref: "dbd4588f9e1033efb41dad4bef2f7947c8993d44", path: skills/skill-creator }
+    - { agent: claude, git: "https://github.com/anthropics/skills", ref: "dbd4588f9e1033efb41dad4bef2f7947c8993d44", path: skills/mcp-builder }
+    - { agent: claude, git: "https://github.com/anthropics/skills", ref: "dbd4588f9e1033efb41dad4bef2f7947c8993d44", path: skills/frontend-design }
+claude-vanilla:
+  description: Claude Code without skills (with -claude, as in -t -claude,claude-vanilla)
   agents: { claude: { auth: oauth-token } }
   runtimes: { node: "24" }
 claude-api-key:

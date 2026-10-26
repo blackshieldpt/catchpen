@@ -34,15 +34,13 @@ var Categories = []Category{
 	{"distros", []string{"distro"}, true, "the guest distro"},
 	{"resources", []string{"resources"}, true, "CPUs, memory and disk"},
 	{"tools", []string{"packages", "tools", "scripts", "files"}, false, "apt packages, gh/tea, build scripts and files"},
-	{"agents", []string{"agents", "runtimes"}, false, "coding agents, with the runtimes they need"},
+	{"agents", []string{"agents", "runtimes", "skills", "plugins"}, false, "coding agents, with the runtimes they need and their skills and plugins"},
 	{"runtimes", []string{"runtimes", "docker"}, false, "Node, Go, Python and Docker"},
 	{"network", []string{"network"}, false, "egress mode and allowlist presets"},
 	{"caches", []string{"cache"}, false, "host package caches"},
 	{"canaries", []string{"canaries"}, false, "decoy credentials"},
 	{"env", []string{"env"}, false, "environment for ssh sessions"},
 	{"mcp", []string{"mcp"}, false, "MCP servers for all agents"},
-	{"skills", []string{"skills"}, false, "agent skills, from pinned git commits, copied in at each start"},
-	{"plugins", []string{"plugins"}, false, "agent plugins, from pinned git commits, copied in and enabled at each start"},
 	{"ssh", []string{"ssh"}, true, "ssh-agent forwarding"},
 	{"sync", []string{"sync"}, false, "host settings copied in"},
 	{"repos", []string{"repos"}, false, "repos cloned into /workspace"},
@@ -387,12 +385,6 @@ func (lib *Library) Load(spec string) (*Template, error) {
 		return (s.Agent == "" && !res.Agents.Any()) || (s.Agent != "" && res.Agents.Get(s.Agent) == nil)
 	})
 	res.Plugins = slices.DeleteFunc(res.Plugins, func(p Plugin) bool { return res.Agents.Get(p.Agent) == nil })
-	if len(res.Skills) == 0 {
-		res.Parts = slices.DeleteFunc(res.Parts, func(p Part) bool { return p.Category == "skills" })
-	}
-	if len(res.Plugins) == 0 {
-		res.Parts = slices.DeleteFunc(res.Parts, func(p Part) bool { return p.Category == "plugins" })
-	}
 	if r := res.Resources; r.CPUs == 0 || r.Memory == "" || r.Disk == "" {
 		return nil, fmt.Errorf("-t %s: resources need cpus, memory and disk (got %+v)", name, r)
 	}
@@ -524,19 +516,25 @@ func oldFiles(dir string) error {
 	if err != nil {
 		return nil // no templates dir: built-ins only
 	}
-	var old []string
+	var old, moved []string
 	for _, e := range ents {
 		if n, ok := strings.CutSuffix(e.Name(), ".yaml"); ok {
-			if _, cat := CategoryByName(n); !cat {
+			if n == "skills" || n == "plugins" {
+				moved = append(moved, e.Name())
+			} else if _, cat := CategoryByName(n); !cat {
 				old = append(old, e.Name())
 			}
 		}
 	}
-	if len(old) == 0 {
-		return nil
+	var errs []error
+	if len(moved) > 0 {
+		errs = append(errs, fmt.Errorf("%s: skills and plugins are now set in agents.yaml sections: move the sections of %s there, then remove it", dir, strings.Join(moved, " and ")))
 	}
-	return fmt.Errorf("%s: %s: old-style templates, which curral no longer reads. Move their settings into sections of the category files (curral init writes them; see https://blackshieldpt.github.io/curral/templates/), then remove or rename them",
-		dir, strings.Join(old, ", "))
+	if len(old) == 0 {
+		return errors.Join(errs...)
+	}
+	return errors.Join(append(errs, fmt.Errorf("%s: %s: old-style templates, which curral no longer reads. Move their settings into sections of the category files (curral init writes them; see https://blackshieldpt.github.io/curral/templates/), then remove or rename them",
+		dir, strings.Join(old, ", ")))...)
 }
 
 // Default is the sections a category's default expands to.

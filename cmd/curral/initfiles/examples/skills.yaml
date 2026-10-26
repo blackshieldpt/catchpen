@@ -1,2 +1,0 @@
-# A skill from your own repo, for every agent the VM has:
-team-review: { description: "Our review checklist", skills: [{ git: "https://github.com/acme/agent-skills", ref: "0123456789abcdef0123456789abcdef01234567", path: review }] }
