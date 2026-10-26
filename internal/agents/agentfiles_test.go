@@ -13,6 +13,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
+	"github.com/blackshieldpt/curral/internal/fsutil"
 	"github.com/blackshieldpt/curral/internal/gitsrc"
 	"github.com/blackshieldpt/curral/internal/template"
 )
@@ -428,10 +429,12 @@ func TestAgentFilesChecks(t *testing.T) {
 	home := t.TempDir()
 	s := filesSpec(template.Agents{Claude: &template.Agent{}})
 	s.Skills = []Bundle{{Name: "a b", Files: skillFiles("x")}, {Name: "curral-x", Files: skillFiles("x")}, {Agent: "nope", Name: "z", Files: skillFiles("x")}}
-	s.Plugins = []Bundle{{Agent: "codex", Name: "p", Files: skillFiles("x")}, {Name: "y", Files: skillFiles("x")}}
+	s.Plugins = []Bundle{{Agent: "codex", Name: "p", Files: skillFiles("x")}, {Name: "y", Files: skillFiles("x")},
+		{Agent: "pi", Name: "b1", Bundled: "../x"}, {Agent: "pi", Name: "b2", Bundled: "a//b"}}
 	res := pushFiles(t, home, s)
 	for _, w := range []string{`skill "a b": invalid name; skipped`, `skill "curral-x": invalid name; skipped`, "plugin p: codex isn't installed in this VM; skipped",
-		`skill z: unknown agent "nope"; skipped`, `plugin y: unknown agent ""; skipped`} {
+		`skill z: unknown agent "nope"; skipped`, `plugin y: unknown agent ""; skipped`,
+		`plugin b1: invalid bundled path "../x"; skipped`, `plugin b2: invalid bundled path "a//b"; skipped`} {
 		if !warned(res, w) {
 			t.Errorf("no warning %q in %v", w, res.Warnings)
 		}
@@ -637,7 +640,7 @@ func TestAgentFilesLeavesNonListsAlone(t *testing.T) {
 // decides the claude.ai sync keys.
 func TestClaudeAISyncKeepsSyncedSettings(t *testing.T) {
 	home, host := t.TempDir(), t.TempDir()
-	write(t, filepath.Join(host, "settings.json"), `{"syncClaudeAiSkills": false}`)
+	write(t, filepath.Join(host, "settings.json"), `{"syncClaudeAiSkills": true, "syncClaudeAiPlugins": true}`)
 	s := fullSpec()
 	tru := true
 	s.Sync = template.Sync{ClaudeAI: &tru, ClaudeConfig: &tru}
@@ -645,7 +648,51 @@ func TestClaudeAISyncKeepsSyncedSettings(t *testing.T) {
 	if _, err := Push(context.Background(), localRemote{home}, s, fakeSecrets{}); err != nil {
 		t.Fatal(err)
 	}
-	if st := readJSON(t, filepath.Join(home, claudeSettings)); st["syncClaudeAiSkills"] != false {
+	if st := readJSON(t, filepath.Join(home, claudeSettings)); st["syncClaudeAiSkills"] != true || st["syncClaudeAiPlugins"] != true {
 		t.Errorf("settings.json: %v", st)
+	}
+}
+
+func TestSetListSeesEveryChange(t *testing.T) {
+	doc := map[string]any{"k": []any{"a", "b"}}
+	changed, err := setList(doc, "k", func(string) bool { return true }, []any{"a b"})
+	if err != nil || !changed {
+		t.Errorf("setList = %v, %v; doc %v", changed, err, doc)
+	}
+}
+
+// Two pushes at once take turns at a root: they share its staging folder.
+func TestAgentFilesPushesTakeTurns(t *testing.T) {
+	home := t.TempDir()
+	lock := filepath.Join(home, ".local/share/curral/files.lock")
+	write(t, lock, "")
+	unlock, err := fsutil.Lock(lock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.AfterFunc(time.Second, unlock)
+	time.AfterFunc(500*time.Millisecond, func() {
+		if exists(filepath.Join(home, skillDirs["codex"], "a")) {
+			t.Error("copied while the other push held the lock")
+		}
+	})
+	// codex: the skill copy is the push's first guest script on files.
+	s := filesSpec(template.Agents{Codex: &template.Agent{Auth: template.CodexNone}})
+	s.Skills = []Bundle{{Name: "a", Files: skillFiles("A")}}
+	start := time.Now()
+	res := pushFiles(t, home, s)
+	if time.Since(start) < time.Second || readFile(t, filepath.Join(home, skillDirs["codex"], "a/SKILL.md")) != "A" {
+		t.Errorf("the push didn't wait for the other one: %v, warnings %v", time.Since(start), res.Warnings)
+	}
+	// A push with nothing to copy only cleans up, and waits too.
+	if unlock, err = fsutil.Lock(lock); err != nil {
+		t.Fatal(err)
+	}
+	time.AfterFunc(time.Second, unlock)
+	s.Skills = nil
+	start = time.Now()
+	res = pushFiles(t, home, s)
+	if time.Since(start) < time.Second || exists(filepath.Join(home, skillDirs["codex"], "a")) {
+		t.Errorf("the cleanup didn't wait for the other push: %v, warnings %v", time.Since(start), res.Warnings)
 	}
 }

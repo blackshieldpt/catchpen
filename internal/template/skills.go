@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/blackshieldpt/curral/internal/gitsrc"
 )
 
 // Skill is a folder with a SKILL.md, copied into an agent's skills directory
@@ -18,7 +20,7 @@ type Skill struct {
 	Git   string `yaml:"git" json:"git"`                         // https URL of the repo
 	Ref   string `yaml:"ref" json:"ref"`                         // full 40-hex commit
 	Path  string `yaml:"path" json:"path"`                       // folder in the repo; "." for its root
-	Name  string `yaml:"name,omitempty" json:"name,omitempty"`   // folder name in the guest; default: the last element of path
+	Name  string `yaml:"name,omitempty" json:"name,omitempty"`   // folder name in the guest; default: the last element of path, or the repo's name for "."
 }
 
 // Plugin is an agent plugin: a folder from a pinned commit, or for pi a file
@@ -64,12 +66,8 @@ func srcName(git, p string) string {
 	return strings.TrimSuffix(path.Base(u.Path), ".git")
 }
 
-var (
-	refRe     = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	srcPathRe = regexp.MustCompile(`^[A-Za-z0-9._][A-Za-z0-9._/-]*$`)
-	// DirNameRe is what a skill's or plugin's name in the guest must match.
-	DirNameRe = regexp.MustCompile("^[a-z0-9][a-z0-9_.-]{0,63}$")
-)
+// DirNameRe is what a skill's or plugin's name in the guest must match.
+var DirNameRe = regexp.MustCompile("^[a-z0-9][a-z0-9_.-]{0,63}$")
 
 func validSource(git, ref, p string) error {
 	u, err := url.Parse(git)
@@ -82,7 +80,7 @@ func validSource(git, ref, p string) error {
 	if u.RawQuery != "" || u.Fragment != "" {
 		return fmt.Errorf("git must have no query or fragment, got %q", git)
 	}
-	if !refRe.MatchString(ref) {
+	if !gitsrc.IsCommit(ref) {
 		return fmt.Errorf("ref must be a full 40-character commit id, got %q", ref)
 	}
 	if p == "." {
@@ -91,16 +89,10 @@ func validSource(git, ref, p string) error {
 	return validPath("path", p)
 }
 
-// validPath checks a path inside a repo or package; plan 002 passes it to git.
+// validPath checks a path inside a repo or package, which goes to git.
 func validPath(field, p string) error {
-	if !srcPathRe.MatchString(p) {
-		return fmt.Errorf("%s must be letters, digits, . _ - and /, not starting with - or /, got %q", field, p)
-	}
-	if path.Clean(p) != p {
-		return fmt.Errorf("%s must be a clean path, got %q", field, p)
-	}
-	if slices.Contains(strings.Split(p, "/"), "..") {
-		return fmt.Errorf("%s must not contain .., got %q", field, p)
+	if err := gitsrc.CheckPath(p); err != nil {
+		return fmt.Errorf("%s %v, got %q", field, err, p)
 	}
 	return nil
 }

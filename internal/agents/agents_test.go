@@ -376,6 +376,22 @@ func TestPushRefusesHugeGuestJSON(t *testing.T) {
 	}
 }
 
+// A guest that lies about the size still can't make the host parse more.
+func TestPushRefusesHugeGuestJSONPastAGuestCheck(t *testing.T) {
+	bin := t.TempDir()
+	write(t, filepath.Join(bin, "stat"), "#!/bin/sh\necho 1\n")
+	if err := os.Chmod(filepath.Join(bin, "stat"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+	home := t.TempDir()
+	write(t, filepath.Join(home, ".claude.json"), "{"+strings.Repeat(" ", maxGuestDoc+1)+"}")
+	_, err := Push(context.Background(), localRemote{home}, Spec{Agents: template.Agents{Claude: &template.Agent{}}}, fakeSecrets{})
+	if err == nil || !strings.Contains(err.Error(), "~/.claude.json is over 4 MiB") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestPushReplacesSymlinkedGuestFile(t *testing.T) {
 	home := t.TempDir()
 	target := filepath.Join(t.TempDir(), "elsewhere.json")

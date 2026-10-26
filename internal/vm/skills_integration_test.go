@@ -58,10 +58,13 @@ func TestSkillsAndPlugins(t *testing.T) {
 	}
 
 	// Claude sees the skill and the plugin. GitHub is allowed, so the
-	// marketplace clone could happen: check the egress log after.
+	// marketplace clone could happen: check the egress log after. claude runs
+	// to the end so a background clone isn't cut short. (Without the setting
+	// that stops it, no clone was seen either: this check guards, but was
+	// never seen failing.)
 	logFile := filepath.Join(m.Dir("sk"), egress.LogFile)
 	before := len(logLines(t, logFile))
-	initEvent := guest("timeout 90 claude -p hi --output-format stream-json --verbose 2>/dev/null | head -1 || true")
+	initEvent := guest("timeout 90 claude -p hi --output-format stream-json --verbose >/tmp/claude.jsonl 2>/dev/null; head -1 /tmp/claude.jsonl")
 	var ev map[string]any
 	if err := json.Unmarshal([]byte(initEvent), &ev); err != nil || ev["type"] != "system" || ev["subtype"] != "init" {
 		t.Errorf("claude's first event isn't system/init (%v): %s", err, initEvent)
@@ -69,7 +72,7 @@ func TestSkillsAndPlugins(t *testing.T) {
 	plugins := names(ev["plugins"])
 	hasPlugin := slices.ContainsFunc(plugins, func(n string) bool { return n == "commit-commands" || strings.HasPrefix(n, "commit-commands@") })
 	if _, ok := ev["plugins"]; !ok {
-		out := guest("claude plugin list 2>&1 || true")
+		out := guest("claude plugin list 2>/dev/null || true")
 		hasPlugin = strings.Contains(out, "commit-commands")
 		t.Logf("init event has no plugins field; claude plugin list:\n%s", out)
 	}
@@ -83,7 +86,7 @@ func TestSkillsAndPlugins(t *testing.T) {
 
 	// No marketplace clone, before any codex command (codex may reach GitHub
 	// on its own).
-	if got := guest("test -e ~/.claude/plugins/marketplaces/claude-plugins-official && echo y || true"); got != "" {
+	if got := guest("for i in 1 2 3 4 5; do test -e ~/.claude/plugins/marketplaces/claude-plugins-official && echo y && break; sleep 1; done"); got != "" {
 		t.Error("claude cloned its official marketplace")
 	}
 	after := logLines(t, logFile)
@@ -91,7 +94,7 @@ func TestSkillsAndPlugins(t *testing.T) {
 		before = 0
 	}
 	for _, l := range after[before:] {
-		if strings.Contains(l, "github.com") {
+		if strings.Contains(l, "github") { // github.com and githubusercontent.com
 			t.Errorf("egress to GitHub during claude -p: %s", l)
 		}
 	}
@@ -99,7 +102,7 @@ func TestSkillsAndPlugins(t *testing.T) {
 	// Codex loads its plugin's skills: debug prompt-input prints the prompt a
 	// session would send, without a model call. (plugin list shows only
 	// marketplace catalogs, not plugins enabled from the cache.)
-	if out := guest("timeout 60 codex debug prompt-input hi 2>&1 | grep -c 'superpowers:brainstorming' || true"); out == "" || out == "0" {
+	if out := guest("timeout 60 codex debug prompt-input hi 2>/dev/null | grep -c 'superpowers:brainstorming' || true"); out == "" || out == "0" {
 		t.Errorf("codex debug prompt-input doesn't list superpowers' skills: %q", out)
 	}
 

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -61,7 +63,7 @@ func TestRefreshEnvKeepsTheSavedEnvWithoutTheTemplate(t *testing.T) {
 	if s, _ := m.Load("dev"); s.Env["TZ"] != "UTC" {
 		t.Fatalf("env %v", s.Env)
 	}
-	if !strings.Contains(out.String(), "keeps the env it was created with") {
+	if !strings.Contains(out.String(), "keeps the env, skills and plugins it was created with") {
 		t.Fatalf("output %q", out.String())
 	}
 }
@@ -128,6 +130,25 @@ func TestRefreshTakesTheTemplatesSkills(t *testing.T) {
 	}
 }
 
+func TestRefreshTakesTheTemplatesPlugins(t *testing.T) {
+	m := envVM(t, map[string]string{"TZ": "UTC"}, "env: { TZ: UTC }\n")
+	if err := m.refreshEnv("dev"); err != nil { // the skills now match
+		t.Fatal(err)
+	}
+	vmtest.Template(t, m.P.Templates(), "envtpl", "default", "env: { TZ: UTC }\n"+
+		"plugins: [{ agent: claude, git: \"https://example.com/p.git\", ref: \"0123456789abcdef0123456789abcdef01234567\", path: p }]\n")
+	if err := m.refreshEnv("dev"); err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.Load("dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Plugins) != 1 || s.Plugins[0].Path != "p" {
+		t.Fatalf("plugins %v", s.Plugins)
+	}
+}
+
 // A failed fetch marks its bundle Failed (the guest keeps its copy), and
 // entries for agents the VM doesn't have aren't fetched.
 func TestAgentBundles(t *testing.T) {
@@ -150,5 +171,56 @@ func TestAgentBundles(t *testing.T) {
 	}
 	if ents, _ := os.ReadDir(m.P.Sources()); len(ents) > 2 { // one repo and its lock
 		t.Errorf("fetched for an agent the VM doesn't have: %v", ents)
+	}
+}
+
+func TestAgentBundlesFetch(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	fetchProtocols = []string{"file"}
+	t.Cleanup(func() { fetchProtocols = nil })
+	repo := t.TempDir()
+	gitRun(t, repo, "init", "-q")
+	for _, f := range []string{"skills/a/SKILL.md", "plugins/p/.claude-plugin/plugin.json"} {
+		if err := os.MkdirAll(filepath.Join(repo, filepath.Dir(f)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(repo, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitRun(t, repo, "add", "-A")
+	gitRun(t, repo, "commit", "-q", "-m", "c")
+	out, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	url, ref := "file://"+repo, strings.TrimSpace(string(out))
+	m := testManager(t)
+	var log strings.Builder
+	m.Out = &log
+	bad := strings.Repeat("0", 40)
+	s := &State{
+		Agents: template.Agents{Claude: &template.Agent{}, Pi: &template.Agent{}},
+		Skills: []template.Skill{
+			{Git: url, Ref: ref, Path: "skills/a"},
+			{Agent: "claude", Name: "b", Git: url, Ref: bad, Path: "skills/a"},
+			{Agent: "pi", Name: "c", Git: url, Ref: bad, Path: "skills/a"}, // the same failed source: one warning
+		},
+		Plugins: []template.Plugin{
+			{Agent: "claude", Git: url, Ref: ref, Path: "plugins/p"},
+			{Agent: "pi", Name: "plan-mode", Bundled: "examples/extensions/plan-mode.ts"},
+		},
+	}
+	skills, plugins := m.agentBundles(context.Background(), s)
+	if len(skills) != 3 || skills[0].Name != "a" || skills[0].Failed || len(skills[0].Files) != 1 || !skills[1].Failed || !skills[2].Failed {
+		t.Errorf("skills = %+v", skills)
+	}
+	if len(plugins) != 2 || plugins[0].Name != "p" || plugins[0].Agent != "claude" || len(plugins[0].Files) != 1 ||
+		plugins[1].Agent != "pi" || plugins[1].Bundled != "examples/extensions/plan-mode.ts" {
+		t.Errorf("plugins = %+v", plugins)
+	}
+	if n := strings.Count(log.String(), "warning:"); n != 1 {
+		t.Errorf("%d warnings for one failed source:\n%s", n, log.String())
 	}
 }

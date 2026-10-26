@@ -71,7 +71,7 @@ type Sync struct {
 func (s Sync) Claude() bool       { return s.ClaudeConfig != nil && *s.ClaudeConfig }
 func (s Sync) Git() bool          { return s.GitIdentity == nil || *s.GitIdentity }
 func (s Sync) ClaudeAISync() bool { return s.ClaudeAI != nil && *s.ClaudeAI }
-func (s Sync) SharedClaudeSkills() bool {
+func (s Sync) OpenCodeReadsClaudeSkills() bool {
 	return s.OpenCodeClaudeSkills != nil && *s.OpenCodeClaudeSkills
 }
 

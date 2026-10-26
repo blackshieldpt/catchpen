@@ -1,6 +1,6 @@
 //go:build integration
 
-package gitsrc
+package gitsrc_test
 
 import (
 	"context"
@@ -11,13 +11,14 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/blackshieldpt/curral/internal/gitsrc"
 	"github.com/blackshieldpt/curral/internal/template"
 )
 
 // Every pinned built-in skill and plugin is still fetchable, with its
 // manifest and a licence.
 func TestBuiltinSourcesFetch(t *testing.T) {
-	f := Fetcher{Dir: t.TempDir()}
+	f := gitsrc.Fetcher{Dir: t.TempDir()}
 	manifest := map[string]string{"claude": ".claude-plugin/plugin.json", "codex": ".codex-plugin/plugin.json"}
 	for _, cat := range []string{"skills", "plugins"} {
 		var secs map[string]yaml.Node

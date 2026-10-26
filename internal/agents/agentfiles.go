@@ -4,9 +4,9 @@ import (
 	"archive/tar"
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -37,7 +37,10 @@ var pluginDirs = map[string]string{
 }
 
 // piPackage is pi's installed npm package in bases (Node lives in /usr/local).
-var piPackage = "/usr/local/lib/node_modules/@earendil-works/pi-coding-agent"
+var piPackage = func() string {
+	d, _ := template.AgentDefByName("pi")
+	return "/usr/local/lib/node_modules/" + d.Package
+}()
 
 // curralMark, holding the folder's own name, marks a folder curral copied in;
 // only folders whose mark matches are replaced or removed.
@@ -48,9 +51,6 @@ const piSettings = ".pi/agent/settings.json"
 // piBundled lists the paths curral added to pi's extensions, so it removes
 // only those, never the user's own entries under pi's package.
 const piBundled = ".local/share/curral/pi-bundled.json"
-
-// bundledRe is a path inside pi's package (vm.json isn't re-validated).
-var bundledRe = regexp.MustCompile(`^[A-Za-z0-9._][A-Za-z0-9._/-]*$`)
 
 var homeRe = regexp.MustCompile(`^/home/[a-z_][a-z0-9_-]{0,31}$`)
 
@@ -86,7 +86,7 @@ func (p *pusher) validBundles(kind string, bs []Bundle, anyAgent bool) []Bundle 
 			p.warn("%s %s: unknown agent %q; skipped", kind, b.Name, b.Agent)
 			continue
 		}
-		if b.Bundled != "" && (!bundledRe.MatchString(b.Bundled) || slices.Contains(strings.Split(b.Bundled, "/"), "..")) {
+		if b.Bundled != "" && gitsrc.CheckPath(b.Bundled) != nil { // vm.json isn't re-validated
 			p.warn("%s %s: invalid bundled path %q; skipped", kind, b.Name, b.Bundled)
 			continue
 		}
@@ -119,9 +119,9 @@ type entry struct {
 // agentFiles copies skills and plugins into each installed agent, removes
 // curral's folders that are no longer wanted, and turns the plugins on.
 // Failures are warnings. s has passed checkAgentFiles.
-func (p *pusher) agentFiles(s Spec) error {
+func (p *pusher) agentFiles(s Spec) {
 	if !s.AgentFiles {
-		return nil
+		return
 	}
 	for _, b := range s.Plugins {
 		if d, _ := template.AgentDefByName(b.Agent); *d.Get(&s.Agents) == nil {
@@ -137,7 +137,6 @@ func (p *pusher) agentFiles(s Spec) error {
 			p.agentPlugins(s, d.Name)
 		}
 	}
-	return nil
 }
 
 func (p *pusher) agentSkills(s Spec, agent string) {
@@ -246,6 +245,10 @@ func (p *pusher) enablePlugins(s Spec, agent string, wanted, failed, bundled []s
 		if err != nil {
 			return err
 		}
+		was, err := toml.Marshal(cfg)
+		if err != nil {
+			return err
+		}
 		plugins := obj(cfg, "plugins")
 		for k := range plugins {
 			if n, ok := strings.CutSuffix(k, "@curral"); ok && !slices.Contains(wanted, n) && !slices.Contains(failed, n) {
@@ -259,7 +262,7 @@ func (p *pusher) enablePlugins(s Spec, agent string, wanted, failed, bundled []s
 			delete(cfg, "plugins")
 		}
 		b, err := toml.Marshal(cfg)
-		if err != nil {
+		if err != nil || bytes.Equal(b, was) {
 			return err
 		}
 		return p.put(codexConfig, b)
@@ -268,7 +271,7 @@ func (p *pusher) enablePlugins(s Spec, agent string, wanted, failed, bundled []s
 		if err != nil {
 			return err
 		}
-		if _, err := setList(cfg, "plugin", isCurrals(prefix, failed), paths(wanted)); err != nil {
+		if changed, err := setList(cfg, "plugin", isCurrals(prefix, failed), paths(wanted)); err != nil || !changed {
 			return err
 		}
 		return p.putJSON(opencodeConfig, cfg)
@@ -349,7 +352,7 @@ func setList(doc map[string]any, key string, drop func(string) bool, add []any) 
 		out = []any{}
 	}
 	doc[key] = out
-	return fmt.Sprint(old) != fmt.Sprint(out), nil
+	return !reflect.DeepEqual(old, out), nil
 }
 
 func checkRoot(root string) error {
@@ -387,32 +390,16 @@ func (p *pusher) copyIn(root string, entries []entry) error {
 		if e.sub != "" {
 			dir += "/" + e.sub
 		}
-		b, err := gitsrc.Tar(dir, e.files)
-		if err != nil {
+		if err := gitsrc.WriteTar(tw, dir, e.files); err != nil {
 			return fmt.Errorf("%s: %w", e.name, err)
-		}
-		tr := tar.NewReader(bytes.NewReader(b))
-		for {
-			h, err := tr.Next()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				return err
-			}
-			if err := tw.WriteHeader(h); err != nil {
-				return err
-			}
-			if _, err := io.Copy(tw, tr); err != nil {
-				return err
-			}
 		}
 	}
 	if err := tw.Close(); err != nil {
 		return err
 	}
 	// .curral-new and .old can't clash: names start with a letter or digit.
-	cmd := fmt.Sprintf(`r="$HOME/%s"; t="$r/.curral-new"
+	cmd := fmt.Sprintf(lockFiles+`
+r="$HOME/%s"; t="$r/.curral-new"
 (umask 077; mkdir -p "$r") || exit 1
 `+tidy+`
 mkdir "$t" "$t/.old" || exit 1
@@ -452,6 +439,11 @@ func runErr(err error, cmd string) string {
 	return strings.TrimPrefix(err.Error(), cmd+": ")
 }
 
+// lockFiles starts copyIn's and cleanup's scripts: two pushes at once (a
+// start and a creds push) would share a root's staging folder.
+const lockFiles = `(umask 077; mkdir -p "$HOME/.local/share/curral") && exec 9>>"$HOME/.local/share/curral/files.lock" &&
+  { flock -w 10 9 || { echo "another push holds ~/.local/share/curral/files.lock" >&2; exit 1; }; } || exit 1`
+
 // tidy is the guest script copyIn and cleanup start and end with, for root
 // "$r" and its staging folder "$t". It moves back a folder an interrupted
 // copy left aside, then removes "$t" (an agent may have made its folders
@@ -477,7 +469,8 @@ func (p *pusher) cleanup(root string, keep []string) (ours []string, err error) 
 	if err := checkRoot(root); err != nil {
 		return nil, err
 	}
-	cmd := fmt.Sprintf(`r="$HOME/%s"; t="$r/.curral-new"; cd "$r" 2>/dev/null || exit 0
+	cmd := fmt.Sprintf(lockFiles+`
+r="$HOME/%s"; t="$r/.curral-new"; cd "$r" 2>/dev/null || exit 0
 `+tidy+`
 for n in */; do n=${n%%/}; [ %s = "$n" ] || continue
   case " %s " in *" $n "*) echo "ours $n";; *)

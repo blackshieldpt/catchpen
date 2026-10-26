@@ -8,13 +8,13 @@ package gitsrc
 import (
 	"archive/tar"
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -38,14 +38,35 @@ type Fetcher struct {
 }
 
 var (
-	maxBytes int64 = 64 << 20 // per folder
-	maxFiles       = 20000    // regular files per folder
+	maxBytes int64 = 64 << 20  // per folder
+	maxFiles       = 20000     // regular files per folder
+	maxRepo  int64 = 512 << 20 // what one fetch may add on disk; over it, git is stopped and the repo dropped
+	// how often a fetch's size on disk is checked
+	sizeEvery = time.Second
 )
 
 var (
 	refRe = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	dirRe = regexp.MustCompile(`^[A-Za-z0-9._][A-Za-z0-9._/-]*$`)
 )
+
+// IsCommit reports whether ref is a full lower-case commit SHA.
+func IsCommit(ref string) bool { return refRe.MatchString(ref) }
+
+// CheckPath checks that p is a clean relative path inside a repo or package,
+// safe to pass to git or a shell.
+func CheckPath(p string) error {
+	if !dirRe.MatchString(p) {
+		return errors.New("must be letters, digits, . _ - and /, not starting with - or /")
+	}
+	if path.Clean(p) != p {
+		return errors.New("must be a clean path")
+	}
+	if slices.Contains(strings.Split(p, "/"), "..") {
+		return errors.New("must not contain ..")
+	}
+	return nil
+}
 
 // passEnv are the host variables git gets, if set, so proxies and custom CAs work.
 var passEnv = []string{"https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY", "no_proxy", "NO_PROXY", "all_proxy", "ALL_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR"}
@@ -92,13 +113,32 @@ func (f Fetcher) git(ctx context.Context, gitDir string, args ...string) *exec.C
 			cmd.Env = append(cmd.Env, k+"="+v)
 		}
 	}
-	cmd.Stderr = &bytes.Buffer{}
+	cmd.Stderr = &tail{}
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	// curral watches a fetch's size: git doesn't outlive it.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 	cmd.WaitDelay = 10 * time.Second
 	return cmd
 }
 
 func run(cmd *exec.Cmd) error { return gitErr(cmd, cmd.Run()) }
+
+// tail keeps the end of what git writes to stderr, which a server can fill.
+type tail struct{ b []byte }
+
+const tailSize = 4096
+
+func (t *tail) Write(p []byte) (int, error) {
+	n := len(p)
+	if len(p) > tailSize {
+		p = p[len(p)-tailSize:]
+	}
+	t.b = append(t.b, p...)
+	if len(t.b) > tailSize {
+		t.b = append(t.b[:0], t.b[len(t.b)-tailSize:]...)
+	}
+	return n, nil
+}
 
 // gitErr names the git subcommand and adds the end of its stderr to err.
 func gitErr(cmd *exec.Cmd, err error) error {
@@ -115,11 +155,11 @@ func gitErr(cmd *exec.Cmd, err error) error {
 			sub = a
 		}
 	}
-	tail := cmd.Stderr.(*bytes.Buffer).Bytes()
-	if len(tail) > 500 {
-		tail = tail[len(tail)-500:]
+	end := cmd.Stderr.(*tail).b
+	if len(end) > 500 {
+		end = end[len(end)-500:]
 	}
-	return fmt.Errorf("git %s: %w: %s", sub, err, strings.TrimSpace(sshx.Printable(string(tail))))
+	return fmt.Errorf("git %s: %w: %s", sub, err, strings.TrimSpace(sshx.Printable(string(end))))
 }
 
 // File is one regular file of a fetched folder; Name is relative to it.
@@ -143,10 +183,10 @@ type listed struct {
 
 // Files returns the regular files under dir at commit ref of the repo at url.
 func (f Fetcher) Files(ctx context.Context, url, ref, dir string) ([]File, error) {
-	if !refRe.MatchString(ref) {
+	if !IsCommit(ref) {
 		return nil, fmt.Errorf("ref %q is not a full lower-case commit SHA", ref)
 	}
-	if dir != "." && (!dirRe.MatchString(dir) || path.Clean(dir) != dir || slices.Contains(strings.Split(dir, "/"), "..")) {
+	if dir != "." && CheckPath(dir) != nil {
 		return nil, fmt.Errorf("dir %q is not a clean relative folder path", dir)
 	}
 	scheme, _, ok := strings.Cut(url, "://")
@@ -158,31 +198,37 @@ func (f Fetcher) Files(ctx context.Context, url, ref, dir string) ([]File, error
 		return nil, err
 	}
 	repo := f.repoDir(url)
-	unlock, err := fsutil.Lock(repo + ".lock")
+	unlock, err := lockCtx(ctx, repo+".lock")
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
-	// A git killed mid-fetch leaves lock files that fail every later fetch.
-	// Holding the flock, no other curral git runs in repo.
-	ents, err := os.ReadDir(repo)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	for _, e := range ents {
-		if strings.HasSuffix(e.Name(), ".lock") {
-			if err := os.Remove(filepath.Join(repo, e.Name())); err != nil {
-				return nil, err
+	// A git killed mid-fetch leaves lock files that fail every later fetch,
+	// and unfinished packs. Holding the flock, no other curral git runs in repo.
+	err = filepath.WalkDir(repo, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
 			}
+			return err
 		}
-	}
-	if err := run(f.git(ctx, "", "init", "--bare", "-q", repo)); err != nil {
+		if d.Type().IsRegular() && (strings.HasSuffix(d.Name(), ".lock") || strings.HasPrefix(d.Name(), "tmp_")) {
+			return os.Remove(p)
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
+	}
+	if _, err := os.Stat(filepath.Join(repo, "HEAD")); err != nil { // new, or a half-made one
+		if err := run(f.git(ctx, "", "init", "--bare", "-q", repo)); err != nil {
+			return nil, err
+		}
 	}
 
 	has := func() bool { return run(f.git(ctx, repo, "cat-file", "-e", ref+"^{commit}")) == nil }
 	if !has() {
-		ferr := run(f.git(ctx, repo, "fetch", "--depth=1", "--no-tags", "-q", "--", url, ref+":refs/pins/"+ref))
+		ferr := f.fetch(ctx, repo, url, ref)
 		if !has() {
 			if ferr != nil {
 				return nil, fmt.Errorf("%q has no commit %s: %w", url, ref, ferr)
@@ -211,6 +257,73 @@ func (f Fetcher) Files(ctx context.Context, url, ref, dir string) ([]File, error
 	}
 	sort.Slice(res, func(i, j int) bool { return res[i].Name < res[j].Name })
 	return res, nil
+}
+
+// lockCtx takes the exclusive flock on path, giving up when ctx is done.
+func lockCtx(ctx context.Context, path string) (func(), error) {
+	for {
+		unlock, ok, err := fsutil.TryLock(path)
+		if err != nil || ok {
+			return unlock, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("waiting for %s: %w", path, ctx.Err())
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+// fetch fetches ref into repo, stopping git and dropping the repo once the
+// fetch adds more than maxRepo on disk: a server can send any amount.
+func (f Fetcher) fetch(ctx context.Context, repo, url, ref string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	limit := size(repo) + maxRepo
+	cmd := f.git(ctx, repo, "fetch", "--depth=1", "--no-tags", "-q", "--", url, ref+":refs/pins/"+ref)
+	if err := cmd.Start(); err != nil {
+		return gitErr(cmd, err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	tick := time.NewTicker(sizeEvery)
+	defer tick.Stop()
+	for {
+		select {
+		case err := <-done:
+			if size(repo) > limit {
+				return dropRepo(url, repo)
+			}
+			return gitErr(cmd, err)
+		case <-tick.C:
+			if size(repo) > limit {
+				cancel()
+				<-done
+				return dropRepo(url, repo)
+			}
+		}
+	}
+}
+
+func dropRepo(url, repo string) error {
+	if err := os.RemoveAll(repo); err != nil {
+		return err
+	}
+	return fmt.Errorf("%q sent over %d MiB; not kept", url, maxRepo>>20)
+}
+
+// size is the bytes of the regular files under dir.
+func size(dir string) int64 {
+	var n int64
+	filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if fi, err := d.Info(); err == nil {
+				n += fi.Size()
+			}
+		}
+		return nil
+	})
+	return n
 }
 
 // maxRecord bounds one ls-tree record: a path Linux can open plus the fields.
@@ -379,11 +492,11 @@ func checkName(n string) error {
 	return nil
 }
 
-// Tar packs files under root (a clean relative path such as "x" or
-// "x/local"), creating directories as needed.
-func Tar(root string, files []File) ([]byte, error) {
+// WriteTar writes files to tw under root (a clean relative path such as "x"
+// or "x/local"), creating directories as needed.
+func WriteTar(tw *tar.Writer, root string, files []File) error {
 	if err := checkName(root); err != nil {
-		return nil, fmt.Errorf("tar root: %w", err)
+		return fmt.Errorf("tar root: %w", err)
 	}
 	var dirs []string
 	seen := map[string]bool{}
@@ -401,16 +514,14 @@ func Tar(root string, files []File) ([]byte, error) {
 	need(root)
 	for _, f := range files {
 		if err := checkName(f.Name); err != nil {
-			return nil, fmt.Errorf("tar: %w", err)
+			return fmt.Errorf("tar: %w", err)
 		}
 		need(path.Dir(root + "/" + f.Name))
 	}
 
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
 	for _, d := range dirs {
 		if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: d + "/", Mode: 0o755}); err != nil {
-			return nil, err
+			return err
 		}
 	}
 	for _, f := range files {
@@ -419,14 +530,11 @@ func Tar(root string, files []File) ([]byte, error) {
 			mode = 0o755
 		}
 		if err := tw.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: root + "/" + f.Name, Mode: mode, Size: int64(len(f.Data))}); err != nil {
-			return nil, err
+			return err
 		}
 		if _, err := tw.Write(f.Data); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	if err := tw.Close(); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return nil
 }

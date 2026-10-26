@@ -141,8 +141,8 @@ func (p *pusher) warn(format string, a ...any) {
 	p.res.Warnings = append(p.res.Warnings, fmt.Sprintf(format, a...))
 }
 
-// Push writes the VM's environment, agent auth and MCP config, and optional
-// git identity and Claude config.
+// Push writes the VM's environment, agent auth and MCP config, skills and
+// plugins, and optional git identity and Claude config.
 func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 	p := &pusher{ctx: ctx, r: r, sec: sec, missed: map[string]bool{}}
 	if err := p.checkAgentFiles(&s); err != nil {
@@ -161,7 +161,7 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 	for k, v := range s.ExtraEnv {
 		env[k] = v
 	}
-	if s.Agents.OpenCode != nil && !s.Sync.SharedClaudeSkills() {
+	if s.Agents.OpenCode != nil && !s.Sync.OpenCodeReadsClaudeSkills() {
 		env["OPENCODE_DISABLE_CLAUDE_CODE_SKILLS"] = "1"
 	}
 	if c := s.Agents.Claude; c != nil {
@@ -219,9 +219,7 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 		}
 	}
 	// Before the claude config sync, which brings the host's own skills.
-	if err := p.agentFiles(s); err != nil {
-		return p.res, err
-	}
+	p.agentFiles(s)
 	if s.Sync.Git() && (s.GitName != "" || s.GitEmail != "") {
 		var cmds []string
 		if s.GitName != "" {
@@ -632,6 +630,9 @@ func (p *pusher) getDoc(rel, format string, unmarshal func([]byte, any) error) (
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read ~/%s: %w", rel, err)
+	}
+	if len(out.Raw()) > maxGuestDoc { // the guest's own size check is the guest's
+		return nil, fmt.Errorf("~/%s is over %d MiB, so curral won't read it back: move it aside in the VM and push again", rel, maxGuestDoc>>20)
 	}
 	doc := map[string]any{}
 	if strings.TrimSpace(string(out.Raw())) == "" {

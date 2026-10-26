@@ -5,14 +5,19 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/blackshieldpt/curral/internal/fsutil"
 )
 
 func gitIn(t *testing.T, dir string, args ...string) string {
@@ -158,13 +163,47 @@ func TestFilesRecoverFromAStaleLock(t *testing.T) {
 	_, sha2 := repo(t, strings.TrimPrefix(url, "file://"), map[string]string{"skills/a/SKILL.md": "two"})
 	f := fetcher(t)
 	mustFiles(t, f, url, sha1, "skills/a")
-	if err := os.WriteFile(filepath.Join(f.repoDir(url), "shallow.lock"), nil, 0o600); err != nil {
-		t.Fatal(err)
+	for _, p := range []string{"shallow.lock", "refs/pins/" + sha2 + ".lock", "objects/pack/tmp_pack_x"} {
+		if err := os.WriteFile(filepath.Join(f.repoDir(url), p), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	fs := mustFiles(t, f, url, sha2, "skills/a")
 	if len(fs) != 1 || string(fs[0].Data) != "two" {
 		t.Errorf("files = %+v", fs)
 	}
+	if _, err := os.Stat(filepath.Join(f.repoDir(url), "objects/pack/tmp_pack_x")); !os.IsNotExist(err) {
+		t.Errorf("unfinished pack kept: %v", err)
+	}
+}
+
+// A repo whose init was cut short is made again.
+func TestFilesRecoverFromAHalfMadeRepo(t *testing.T) {
+	url, sha := repo(t, "", map[string]string{"skills/a/SKILL.md": "a"})
+	f := fetcher(t)
+	if err := os.MkdirAll(filepath.Join(f.repoDir(url), "objects"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mustFiles(t, f, url, sha, "skills/a")
+}
+
+// The size limit is on what one fetch adds, not on every pin kept.
+func TestFetchSizeLimitIsPerFetch(t *testing.T) {
+	blob := func() string {
+		b := make([]byte, 200<<10)
+		if _, err := rand.Read(b); err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	url, sha1 := repo(t, "", map[string]string{"skills/a/x": blob()})
+	_, sha2 := repo(t, strings.TrimPrefix(url, "file://"), map[string]string{"skills/a/x": blob()})
+	m := maxRepo
+	t.Cleanup(func() { maxRepo = m })
+	maxRepo = 300 << 10 // one pin fits, both don't
+	f := fetcher(t)
+	mustFiles(t, f, url, sha1, "skills/a")
+	mustFiles(t, f, url, sha2, "skills/a")
 }
 
 func TestFilesReject(t *testing.T) {
@@ -226,9 +265,19 @@ func TestCheckName(t *testing.T) {
 	}
 }
 
+func tarOf(root string, files []File) ([]byte, error) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	if err := WriteTar(tw, root, files); err != nil {
+		return nil, err
+	}
+	err := tw.Close()
+	return buf.Bytes(), err
+}
+
 func TestTarRoots(t *testing.T) {
 	files := []File{{Name: "SKILL.md", Data: []byte("s")}, {Name: "scripts/run.sh", Exec: true, Data: []byte("r")}}
-	b, err := Tar("x/local", files)
+	b, err := tarOf("x/local", files)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,12 +299,12 @@ func TestTarRoots(t *testing.T) {
 	}
 
 	for _, root := range []string{"../x", "."} {
-		if _, err := Tar(root, files); err == nil {
+		if _, err := tarOf(root, files); err == nil {
 			t.Errorf("Tar(%q) worked", root)
 		}
 	}
 	for _, n := range []string{"../evil", "a/../../evil", "/evil"} {
-		if _, err := Tar("x", []File{{Name: n}}); err == nil {
+		if _, err := tarOf("x", []File{{Name: n}}); err == nil {
 			t.Errorf("Tar of %q worked", n)
 		}
 	}
@@ -266,6 +315,90 @@ func TestFilesRefuseOtherProtocols(t *testing.T) {
 	f := Fetcher{Dir: t.TempDir()}
 	if _, err := f.Files(context.Background(), url, sha, "skills/a"); err == nil {
 		t.Error("an https-only fetcher fetched over file://")
+	}
+	// git itself refuses too, past the check in Files.
+	ctx := context.Background()
+	bare := filepath.Join(t.TempDir(), "r.git")
+	if err := run(f.git(ctx, "", "init", "--bare", "-q", bare)); err != nil {
+		t.Fatal(err)
+	}
+	// Each of git's two layers refuses on its own: the config, without the
+	// environment variable,
+	cmd := f.git(ctx, bare, "fetch", "-q", "--", url, sha)
+	cmd.Env = slices.DeleteFunc(cmd.Env, func(v string) bool { return strings.HasPrefix(v, "GIT_ALLOW_PROTOCOL=") })
+	if err := run(cmd); err == nil {
+		t.Error("git fetched over file:// with protocol.allow=never")
+	}
+	// and the environment variable, with the config allowing file.
+	if err := run(f.git(ctx, bare, "-c", "protocol.file.allow=always", "fetch", "-q", "--", url, sha)); err == nil {
+		t.Error("git fetched over file:// with GIT_ALLOW_PROTOCOL=https")
+	}
+}
+
+// Paths reach git as literal paths, never pathspec magic.
+func TestGitLiteralPathspecs(t *testing.T) {
+	url, sha := repo(t, "", map[string]string{"skills/a/SKILL.md": "a"})
+	f := fetcher(t)
+	mustFiles(t, f, url, sha, "skills/a")
+	var out bytes.Buffer
+	ls := f.git(context.Background(), f.repoDir(url), "ls-tree", "-r", "--full-tree", sha, "--", ":(glob)skills/*")
+	ls.Stdout = &out
+	if err := run(ls); err != nil || out.Len() != 0 {
+		t.Errorf("ls-tree of a magic pathspec: %v, %q", err, out.String())
+	}
+}
+
+func TestGitPassesOnlyProxyAndCAVariables(t *testing.T) {
+	t.Setenv("https_proxy", "http://proxy:3128")
+	t.Setenv("SSL_CERT_FILE", "/ca.pem")
+	t.Setenv("GIT_DIR", "/elsewhere")
+	env := fetcher(t).git(context.Background(), "", "version").Env
+	for _, want := range []string{"https_proxy=http://proxy:3128", "SSL_CERT_FILE=/ca.pem"} {
+		if !slices.Contains(env, want) {
+			t.Errorf("env lacks %s: %v", want, env)
+		}
+	}
+	if slices.ContainsFunc(env, func(v string) bool { return strings.HasPrefix(v, "GIT_DIR=") }) {
+		t.Errorf("env has GIT_DIR: %v", env)
+	}
+}
+
+func TestFetchSizeLimit(t *testing.T) {
+	m := maxRepo
+	t.Cleanup(func() { maxRepo = m })
+	maxRepo = 1
+	url, sha := repo(t, "", map[string]string{"skills/a/SKILL.md": "a"})
+	f := fetcher(t)
+	if _, err := f.Files(context.Background(), url, sha, "skills/a"); err == nil || !strings.Contains(err.Error(), "sent over") {
+		t.Errorf("Files = %v; want not kept", err)
+	}
+	if _, err := os.Stat(f.repoDir(url)); !os.IsNotExist(err) {
+		t.Errorf("the repo over the limit was kept: %v", err)
+	}
+}
+
+func TestFilesGiveUpWaitingForTheCache(t *testing.T) {
+	url, sha := repo(t, "", map[string]string{"skills/a/SKILL.md": "a"})
+	f := fetcher(t)
+	if err := os.MkdirAll(f.Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := fsutil.Lock(f.repoDir(url) + ".lock") // another fetch of the repo
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	res := make(chan error, 1)
+	go func() { _, err := f.Files(ctx, url, sha, "skills/a"); res <- err }()
+	select {
+	case err := <-res:
+		if err == nil || !strings.Contains(err.Error(), "waiting for") {
+			t.Errorf("Files = %v; want waiting for", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Files kept waiting past its context")
 	}
 }
 
@@ -292,7 +425,11 @@ func TestFilesSizeLimit(t *testing.T) {
 	maxFiles = 1
 	url, sha := repo(t, "", map[string]string{"skills/a/one": "1", "skills/a/two": "2"})
 	if _, err := fetcher(t).Files(context.Background(), url, sha, "skills/a"); err == nil || !strings.Contains(err.Error(), "is over") {
-		t.Errorf("Files = %v; want is over", err)
+		t.Errorf("Files = %v; want is over (files)", err)
+	}
+	maxFiles, maxBytes = mf, 1
+	if _, err := fetcher(t).Files(context.Background(), url, sha, "skills/a"); err == nil || !strings.Contains(err.Error(), "is over") {
+		t.Errorf("Files = %v; want is over (bytes)", err)
 	}
 }
 
@@ -333,5 +470,15 @@ func TestParseListRejectsOddRecords(t *testing.T) {
 		if _, err := parseList(r, "u", "r", "."); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: parseList = %v; want %q", c.name, err, c.want)
 		}
+	}
+}
+
+func TestStderrKeepsTheEnd(t *testing.T) {
+	var tl tail
+	for i := 0; i < 100; i++ {
+		fmt.Fprintf(&tl, "%0100d\n", i)
+	}
+	if len(tl.b) != tailSize || !strings.HasSuffix(string(tl.b), fmt.Sprintf("%0100d\n", 99)) {
+		t.Errorf("kept %d bytes ending %q", len(tl.b), string(tl.b[len(tl.b)-20:]))
 	}
 }

@@ -298,7 +298,6 @@ func TestWithEnvScript(t *testing.T) {
 	}
 }
 
-// Picking a default section again reorders packages, not the base.
 // Skills and plugins are pushed at each start, not baked into the base.
 func TestSkillsDontChangeTheBase(t *testing.T) {
 	dir := t.TempDir()
@@ -318,6 +317,7 @@ func TestSkillsDontChangeTheBase(t *testing.T) {
 	}
 }
 
+// Picking a default section again reorders packages, not the base.
 func TestBuildUserDataIgnoresPackageOrder(t *testing.T) {
 	def := mustB(BuildUserData(load(t, ""), "agent", nil))
 	if again := mustB(BuildUserData(load(t, "core"), "agent", nil)); string(again) != string(def) {

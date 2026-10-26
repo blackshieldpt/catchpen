@@ -682,14 +682,20 @@ func TestSkillsMergeAndFilter(t *testing.T) {
 	if tp, err := load(t, dir, "minimal,codex,pl-cx"); err != nil || len(tp.Plugins) != 1 {
 		t.Errorf("codex plugin with codex: %v %+v", err, tp)
 	}
-	hasPart := func(tp *Template) bool {
-		return slices.ContainsFunc(tp.Parts, func(p Part) bool { return p.Category == "skills" })
+	hasPart := func(tp *Template, cat string) bool {
+		return slices.ContainsFunc(tp.Parts, func(p Part) bool { return p.Category == cat })
 	}
-	if tp, err := load(t, dir, "minimal,sk-a"); err != nil || hasPart(tp) {
+	if tp, err := load(t, dir, "minimal,sk-a"); err != nil || hasPart(tp, "skills") {
 		t.Errorf("skills part with no skills left: %v %+v", err, tp)
 	}
-	if tp, err := load(t, dir, "minimal,claude,sk-a"); err != nil || !hasPart(tp) {
+	if tp, err := load(t, dir, "minimal,claude,sk-a"); err != nil || !hasPart(tp, "skills") {
 		t.Errorf("no skills part: %v %+v", err, tp)
+	}
+	if tp, err := load(t, dir, "minimal,claude,pl-cx"); err != nil || hasPart(tp, "plugins") {
+		t.Errorf("plugins part with no plugins left: %v %+v", err, tp)
+	}
+	if tp, err := load(t, dir, "minimal,codex,pl-cx"); err != nil || !hasPart(tp, "plugins") {
+		t.Errorf("no plugins part: %v %+v", err, tp)
 	}
 }
 
@@ -786,7 +792,7 @@ func TestSyncSkillSources(t *testing.T) {
 		"src-on,src-off-ai": {false, true},
 	} {
 		tp, err := load(t, dir, spec)
-		if err != nil || [2]bool{tp.Sync.ClaudeAISync(), tp.Sync.SharedClaudeSkills()} != want {
+		if err != nil || [2]bool{tp.Sync.ClaudeAISync(), tp.Sync.OpenCodeReadsClaudeSkills()} != want {
 			t.Errorf("%q: %v %+v, want %v", spec, err, tp, want)
 		}
 	}

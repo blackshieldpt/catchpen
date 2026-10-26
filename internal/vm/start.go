@@ -199,8 +199,8 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 	return rt, nil
 }
 
-// Push delivers credentials and agent config into a running VM, after taking its
-// env: from its template as the template is now.
+// Push delivers credentials, agent config, skills and plugins into a running VM,
+// after taking its env:, skills: and plugins: from its template as it is now.
 func (m *Manager) Push(ctx context.Context, name string) error {
 	if err := m.refreshEnv(name); err != nil {
 		return err
@@ -219,7 +219,7 @@ func (m *Manager) Push(ctx context.Context, name string) error {
 
 // refreshEnv replaces the VM's saved env:, skills: and plugins: with its template's, so
 // names added to the template after the VM was created reach it. A template that no
-// longer loads keeps the saved env, with a warning.
+// longer loads keeps the saved ones, with a warning.
 func (m *Manager) refreshEnv(name string) error {
 	_, unlock, err := m.vm(name).lock()
 	if err != nil {
@@ -234,12 +234,12 @@ func (m *Manager) refreshEnv(name string) error {
 		return nil
 	}
 	if !s.Picks {
-		m.logf("warning: %s was created with the old-style template %s; it keeps the env it was created with", name, s.Template)
+		m.logf("warning: %s was created with the old-style template %s; it keeps the env, skills and plugins it was created with", name, s.Template)
 		return nil
 	}
 	t, err := m.Tpl.Load(s.Template)
 	if err != nil {
-		m.logf("warning: %v; %s keeps the env it was created with", err, name)
+		m.logf("warning: %v; %s keeps the env, skills and plugins it was created with", err, name)
 		return nil
 	}
 	// The VM's Claude auth can differ from the template's (curral up --claude-auth).
@@ -323,10 +323,14 @@ func (m *Manager) push(ctx context.Context, g *Guest, s *State) error {
 	return m.pushForges(cloneCtx, sshRemote{g.Client}, s, gcreds)
 }
 
+// fetchProtocols are the git protocols skills and plugins may use; nil is
+// https only. Tests use "file".
+var fetchProtocols []string
+
 // agentBundles fetches the VM's skills and plugins on the host. A failed fetch
 // is a warning, and its bundle is marked Failed so the guest keeps its copy.
 func (m *Manager) agentBundles(ctx context.Context, s *State) (skills, plugins []agents.Bundle) {
-	f := gitsrc.Fetcher{Dir: m.P.Sources()}
+	f := gitsrc.Fetcher{Dir: m.P.Sources(), Protocols: fetchProtocols}
 	type fetched struct {
 		files []gitsrc.File
 		err   error
