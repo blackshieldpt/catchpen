@@ -11,7 +11,7 @@ dedicated build box you reach over SSH.
 |---|---|
 | CPU | Each VM's `resources.cpus` (default 4); base builds use up to 4. |
 | Memory | Each running VM's `resources.memory` (default 8G); base builds use 4 GiB. Stopped and pool VMs use none. |
-| Disk | Cloud images (a few hundred MiB each); bases (built on a 20 GiB disk, usually a few GiB used); VM overlays (grow up to `resources.disk`, default 40G); memory snapshots and pool VMs (their guest memory, saved to disk); package caches (`cache_max`, default 20G); recordings, transcripts and task output, which are never trimmed. |
+| Disk | Cloud images (a few hundred MiB each); bases (built on a 20 GiB disk, usually a few GiB used); VM overlays (grow up to `resources.disk`, default 40G); memory snapshots and pool VMs (their guest memory, saved to disk); package caches (`cache_max`, default 20G); the git repos of skills and plugins (`~/.cache/curral/sources/`, never trimmed; safe to delete, the next start fetches them again); recordings, transcripts and task output, which are never trimmed. |
 
 Keep `tasks.max_vms` and `tasks.max_memory` in config.yaml within what the host can run
 at once; all running curral VMs count against them, not just tasks. curral doesn't check

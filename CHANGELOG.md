@@ -26,6 +26,10 @@ before 0.1.0 describe work on `master` before the first tagged release.
   scripts and config with `curral template show -t <name>`. VMs made before keep
   running, but `reset --latest` and `rebase` refuse them and `creds push` leaves their
   env alone.
+- opencode no longer reads `~/.claude/skills` in VMs, unless
+  `sync: { opencode_claude_skills: true }` (`-t opencode-claude-skills`).
+- Claude Code's skill and plugin sync from claude.ai is off in VMs, unless
+  `sync: { claude_ai: true }` (`-t claude-ai-sync`).
 - Bases are named after the distro and a hash of their content
   (`ubuntu-24.04-<hash>.qcow2`), so `-t` lists that give the same software share one.
 - `curral init` writes every category file, commented, with curral's built-in sections
@@ -41,7 +45,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
   `python`.
 - `small`, `medium`, `large` and `xlarge` resource sections.
 - [Skills and plugins](docs/agents.md#skills-and-plugins) for every agent, fetched on the
-  host from pinned git commits and copied in at each start. By default, Claude Code gets
+  host from pinned git commits (pi's `bundled` plugins come from the pi package in the VM)
+  and copied in at each start. By default, Claude Code gets
   three of Anthropic's skills (`skill-creator`, `mcp-builder`, `frontend-design`);
   built-in plugin sections for Claude Code, Codex and pi are opt-in.
 
@@ -50,11 +55,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
 - `curral creds push` takes the VM's `env:` from its template as the template is now, so
   variables added to the template after the VM was created reach it. It also refreshes
   the VM's skills and plugins from the template.
-- opencode no longer reads `~/.claude/skills` in VMs, unless
-  `sync: { opencode_claude_skills: true }` (`-t opencode-claude-skills`).
-- Claude Code's skill and plugin sync from claude.ai is off in VMs, unless
-  `sync: { claude_ai: true }` (`-t claude-ai-sync`), and so is its clone of the official
-  plugin marketplace.
+- Claude Code no longer clones its official plugin marketplace in VMs; no setting turns
+  it back on.
 - Codex's remote plugins are off.
 - A `--repo` whose host has no forge says that repos clone only from added forges, lists
   the configured ones, and prints a complete `curral forge add` command for the host.

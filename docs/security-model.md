@@ -115,8 +115,10 @@ the agent user has passwordless sudo inside it.
   signatures, the Go checksum database, lockfile hashes).
 - Skills and plugins are fetched on the host by `git`, over `https` only, at a pinned
   full commit, with a scrubbed environment and config (no hooks, no credential helpers,
-  `fsckObjects` on). Symlinks, submodules, `.git` and other odd names are refused. The
-  fetched files go only into the guest; nothing from them runs on the host. A pin fixes
+  `fsckObjects` on); pi's `bundled` plugins are files of the pi package in the VM
+  instead. Symlinks, submodules, `.git` and other odd names are refused. A fetch is
+  stopped once it has added 512 MiB, and a folder over 64 MiB or 20000 files is refused
+  while git lists it, before any file is read. The fetched files go only into the guest; nothing from them runs on the host. A pin fixes
   the bytes, not who wrote them: on GitHub, a commit from a fork can be fetched through
   the parent repo's URL, so pin commits you have read. See
   [agents.md](agents.md#skills-and-plugins).

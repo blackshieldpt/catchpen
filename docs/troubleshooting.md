@@ -66,7 +66,8 @@ or `packages:` at the top) or **`... doesn't belong in X.yaml`** (for one such a
 `resources:`).
 
 **`... created with the old-style template X`**: the VM predates category files.
-`reset --latest` and `rebase` refuse it and `creds push` keeps its env; create a new VM
+`reset --latest` and `rebase` refuse it and `creds push` keeps its env, skills and
+plugins; create a new VM
 with `-t` picks.
 
 **`defaults.distro, defaults.template, defaults.resources and pool distro are gone`**:

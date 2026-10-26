@@ -29,7 +29,8 @@ Docker).
 | `internal/cache/` | The package caches. |
 | `internal/canary/` | Decoy generation and scanning. |
 | `internal/forge/` | GitHub and Gitea APIs, host keys, repo resolution. |
-| `internal/agents/`, `internal/creds/` | Agent config and credentials pushed into guests. |
+| `internal/agents/`, `internal/creds/` | Agent config, credentials, skills and plugins pushed into guests. |
+| `internal/gitsrc/` | Fetching pinned folders of git repos on the host, for skills and plugins. |
 | `internal/sshx/`, `internal/sshagent/` | SSH clients, ssh_config and restricted agents. |
 | `internal/task/` | Task specs, batch files and storage. |
 | `internal/daemon/` | The daemon's jobs and systemd unit. |
@@ -77,7 +78,8 @@ Check the release locally with `goreleaser release --snapshot --clean --skip=pub
    provider keys.
 5. Add its skills and plugin folders to `skillDirs` and `pluginDirs` in
    `internal/agents/agentfiles.go`; `TestAgentFilesEveryAgentHasFolders` fails until you
-   do.
+   do. If its plugins need checks (`agentPlugins`) or turning on in its config
+   (`enablePlugins`), add a case to each; no test catches a missing one.
 6. Document it in `docs/agents.md`.
 
 Tests fail while the registry, `Agents`, `pushers`, the hook or the task command are

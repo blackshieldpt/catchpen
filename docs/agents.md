@@ -111,10 +111,10 @@ All of these files are mode 0600:
 | What | File |
 |---|---|
 | `env:` | `~/.ssh/environment` |
-| Claude Code's token or key | `~/.config/curral/claude.env` |
-| Claude Code's settings and MCP servers | `~/.claude.json` |
+| Claude Code's token or key, and its plugin folders | `~/.config/curral/claude.env` |
+| Claude Code's settings and MCP servers | `~/.claude.json`, `~/.claude/settings.json` (curral's hooks, the claude.ai sync keys) |
 | opencode | `~/.local/share/opencode/auth.json`, `~/.config/opencode/opencode.json` |
-| pi | `~/.pi/agent/auth.json`, `~/.pi/agent/mcp.json` |
+| pi | `~/.pi/agent/auth.json`, `~/.pi/agent/mcp.json`, `~/.pi/agent/settings.json` (plugins), `~/.local/share/curral/pi-bundled.json` (the `bundled` plugins curral added) |
 | omp | `~/.omp/agent/.env`, `~/.omp/agent/mcp.json` |
 | Codex | `~/.codex/auth.json` (written by `codex login`), `~/.codex/config.toml` |
 
@@ -134,7 +134,9 @@ sandbox.
 curral merges its settings into Codex's `config.toml` at every push and keeps the rest:
 update checks, analytics, feedback and metrics off, credentials in `auth.json` rather
 than a keyring, the notification hook (replacing a `notify` of your own, with a
-warning), and the template's MCP servers. Comments in the file aren't kept. curral parses
+warning), the template's MCP servers, remote plugins off (`features.remote_plugin =
+false`) and a `[plugins."<name>@curral"]` entry per plugin. Comments in the file aren't
+kept. curral parses
 the file on the host, so one that isn't valid TOML, is over 256 KiB or nests more than 64
 levels is saved as `config.toml.curral-bak` and replaced, with a warning saying which.
 curral doesn't read back any agent config file over 4 MiB: the push fails until you move
@@ -200,7 +202,9 @@ curral up dev -t opencode-claude-skills   # opencode_claude_skills: true
 ```
 
 With `claude_config`, the guest's `~/.claude/settings.json` is replaced on every push,
-minus `env`, hooks, credential helpers, the status line and plugins.
+minus `env`, hooks, credential helpers, the status line and plugins; its
+`syncClaudeAiSkills` and `syncClaudeAiPlugins` are set to `false` unless `claude_ai` is
+on.
 
 ## Skills and plugins
 
