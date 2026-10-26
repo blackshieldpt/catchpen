@@ -6,6 +6,7 @@ go vet ./...
 go test -race ./...                                           # unit tests
 go test -p 1 -tags integration -timeout 60m ./internal/vm/ ./internal/runner/   # boots real VMs (KVM and network)
 go test -tags integration -timeout 30m -run '^TestCanaries$' ./internal/vm/   # one integration test
+go test -tags integration ./internal/gitsrc/                  # fetches every built-in skill and plugin pin (network, no VMs)
 ```
 
 The integration tests need everything a real host does (see

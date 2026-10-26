@@ -34,3 +34,6 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils openssh-client genisoimage tmux
       - run: go build -o "$HOME/.local/bin/curral" ./cmd/curral && "$HOME/.local/bin/curral" doctor
       - run: go test -p 1 -tags integration -timeout 100m ./internal/vm/ ./internal/runner/
+      - name: Fetch every built-in skill and plugin pin
+        if: ${{ !cancelled() }}
+        run: go test -tags integration ./internal/gitsrc/
