@@ -3,6 +3,7 @@ package agents
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -51,6 +52,16 @@ func readFile(t *testing.T, path string) string {
 	return string(b)
 }
 
+// staging lists what's left of curral's staging folders in dir.
+func staging(t *testing.T, dir string) []string {
+	t.Helper()
+	m, err := filepath.Glob(filepath.Join(dir, ".curral-new*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
 func warned(res Result, sub string) bool {
 	return strings.Contains(strings.Join(res.Warnings, "\n"), sub)
 }
@@ -83,8 +94,9 @@ func TestAgentFilesKeepsTheUsers(t *testing.T) {
 	write(t, filepath.Join(dir, "old", curralMark), "old")
 	write(t, filepath.Join(dir, "a/SKILL.md"), "the user's a")
 	write(t, filepath.Join(dir, "copy", curralMark), "old") // a mark copied from elsewhere
+	write(t, filepath.Join(dir, "copied", curralMark), "old")
 	s := filesSpec(template.Agents{Claude: &template.Agent{}})
-	s.Skills = []Bundle{{Name: "a", Files: skillFiles("curral's a")}}
+	s.Skills = []Bundle{{Name: "a", Files: skillFiles("curral's a")}, {Name: "copied", Files: skillFiles("curral's copied")}}
 	res := pushFiles(t, home, s)
 	if !exists(filepath.Join(dir, "mine/SKILL.md")) {
 		t.Error("the user's mine was removed")
@@ -103,6 +115,119 @@ func TestAgentFilesKeepsTheUsers(t *testing.T) {
 	}
 	if !warned(res, "~/.claude/skills/a is yours") {
 		t.Errorf("warnings %v", res.Warnings)
+	}
+	if got := readFile(t, filepath.Join(dir, "copied", curralMark)); got != "old" || exists(filepath.Join(dir, "copied/SKILL.md")) {
+		t.Errorf("copied, whose mark isn't its own name, was replaced: mark %q", got)
+	}
+	if !warned(res, "~/.claude/skills/copied is yours") {
+		t.Errorf("warnings %v", res.Warnings)
+	}
+}
+
+// An agent can make part of a folder read-only; curral still replaces and
+// removes its own folder whole.
+func TestAgentFilesReadOnlyFolders(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores folder permissions")
+	}
+	home := t.TempDir()
+	t.Cleanup(func() { exec.Command("chmod", "-R", "u+w", home).Run() })
+	dir := filepath.Join(home, ".claude/skills")
+	s := filesSpec(template.Agents{Claude: &template.Agent{}})
+	s.Skills = []Bundle{{Name: "a", Files: skillFiles("A")}}
+	pushFiles(t, home, s)
+	readOnly := func() {
+		write(t, filepath.Join(dir, "a/cache/f"), "f")
+		for _, d := range []string{"a/cache", "a"} {
+			if err := os.Chmod(filepath.Join(dir, d), 0o555); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	readOnly()
+	s.Skills = []Bundle{{Name: "a", Files: skillFiles("A2")}}
+	res := pushFiles(t, home, s)
+	if got := readFile(t, filepath.Join(dir, "a/SKILL.md")); got != "A2" || exists(filepath.Join(dir, "a/cache")) {
+		t.Errorf("a not replaced whole: SKILL.md %q, warnings %v", got, res.Warnings)
+	}
+	if left := staging(t, dir); len(left) != 0 || warned(res, "can't remove") {
+		t.Errorf("the old copy wasn't removed: %v, warnings %v", left, res.Warnings)
+	}
+	if got := readFile(t, filepath.Join(dir, "a", curralMark)); got != "a" {
+		t.Errorf("a's mark = %q", got)
+	}
+	readOnly()
+	s.Skills = nil
+	res = pushFiles(t, home, s)
+	if left := staging(t, dir); exists(filepath.Join(dir, "a")) || len(left) != 0 || warned(res, "failed") || warned(res, "can't remove") {
+		t.Errorf("a %v, staging %v, warnings %v", exists(filepath.Join(dir, "a")), left, res.Warnings)
+	}
+}
+
+// Files the user can't delete (an agent may make them with sudo) are parked
+// with a warning and never block a later copy.
+func TestAgentFilesLeftoversDontBlock(t *testing.T) {
+	rm, err := exec.LookPath("rm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir() // an rm that can't remove a tree holding a file named stuck
+	write(t, filepath.Join(bin, "rm"), `#!/bin/sh
+for a; do [ -e "$a" ] && find "$a" -name stuck 2>/dev/null | grep -q . && exit 1; done
+exec `+rm+` "$@"
+`)
+	if err := os.Chmod(filepath.Join(bin, "rm"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := os.Getenv("PATH")
+	t.Setenv("PATH", bin+":"+path)
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude/skills")
+	s := filesSpec(template.Agents{Claude: &template.Agent{}})
+	for i, want := range []string{"A", "A2", "A3"} {
+		s.Skills = []Bundle{{Name: "a", Files: skillFiles(want)}}
+		res := pushFiles(t, home, s)
+		if got := readFile(t, filepath.Join(dir, "a/SKILL.md")); got != want {
+			t.Errorf("push %d: a/SKILL.md = %q; warnings %v", i, got, res.Warnings)
+		}
+		if i > 0 && !warned(res, "can't remove its old copies") {
+			t.Errorf("push %d: no leftover warning: %v", i, res.Warnings)
+		}
+		write(t, filepath.Join(dir, "a/stuck"), "")
+	}
+	if exists(filepath.Join(dir, ".curral-new")) {
+		t.Error(".curral-new is left in place, where the next copy needs it")
+	}
+	t.Setenv("PATH", path) // the files can be removed again: the next push does
+	if res := pushFiles(t, home, s); len(staging(t, dir)) != 0 || warned(res, "can't remove") {
+		t.Errorf("leftovers kept: %v, warnings %v", staging(t, dir), res.Warnings)
+	}
+}
+
+// A copy interrupted between its two moves leaves the old folder aside; the
+// next push puts it back.
+func TestAgentFilesRestoresAnInterruptedCopy(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude/skills")
+	write(t, filepath.Join(dir, ".curral-new/.old/a", curralMark), "a")
+	write(t, filepath.Join(dir, ".curral-new/.old/a/SKILL.md"), "A")
+	s := filesSpec(template.Agents{Claude: &template.Agent{}})
+	s.Skills = []Bundle{{Name: "a", Failed: true}}
+	pushFiles(t, home, s)
+	if !exists(filepath.Join(dir, "a/SKILL.md")) || len(staging(t, dir)) != 0 {
+		t.Errorf("a restored %v, staging left %v", exists(filepath.Join(dir, "a/SKILL.md")), staging(t, dir))
+	}
+	// And when the next push copies.
+	write(t, filepath.Join(dir, ".curral-new/.old/b", curralMark), "b")
+	s.Skills = []Bundle{{Name: "a", Files: skillFiles("A2")}, {Name: "b", Files: skillFiles("B2")}}
+	res := pushFiles(t, home, s)
+	for n, want := range map[string]string{"a": "A2", "b": "B2"} {
+		if got := readFile(t, filepath.Join(dir, n, "SKILL.md")); got != want {
+			t.Errorf("%s/SKILL.md = %q; warnings %v", n, got, res.Warnings)
+		}
+	}
+	if left := staging(t, dir); len(left) != 0 {
+		t.Errorf("staging left: %v", left)
 	}
 }
 
@@ -421,15 +546,23 @@ func TestAgentFilesPiKeepsTheUsersExtensions(t *testing.T) {
 	t.Cleanup(func() { piPackage = old })
 	piPackage = t.TempDir()
 	write(t, filepath.Join(piPackage, "examples/extensions/plan-mode.ts"), "x")
+	write(t, filepath.Join(piPackage, "examples/extensions/other.ts"), "x")
 	home := t.TempDir()
 	mine := piPackage + "/examples/extensions/mine.ts"
-	write(t, filepath.Join(home, piSettings), `{"extensions": ["`+mine+`"]}`)
+	planMode := piPackage + "/examples/extensions/plan-mode.ts" // listed by the user too
+	write(t, filepath.Join(home, piSettings), `{"extensions": ["`+mine+`", "`+planMode+`"]}`)
 	s := filesSpec(template.Agents{Pi: &template.Agent{}})
-	s.Plugins = []Bundle{{Agent: "pi", Name: "plan-mode", Bundled: "examples/extensions/plan-mode.ts"}}
+	s.Plugins = []Bundle{
+		{Agent: "pi", Name: "plan-mode", Bundled: "examples/extensions/plan-mode.ts"},
+		{Agent: "pi", Name: "other", Bundled: "examples/extensions/other.ts"},
+	}
 	pushFiles(t, home, s)
+	if doc := readJSON(t, filepath.Join(home, piSettings)); len(stringList(doc["extensions"])) != 3 {
+		t.Errorf("extensions after adding = %v", doc["extensions"])
+	}
 	s.Plugins = nil
 	pushFiles(t, home, s)
-	if doc := readJSON(t, filepath.Join(home, piSettings)); !reflect.DeepEqual(doc["extensions"], []any{mine}) {
+	if doc := readJSON(t, filepath.Join(home, piSettings)); !reflect.DeepEqual(doc["extensions"], []any{mine, planMode}) {
 		t.Errorf("extensions = %v", doc["extensions"])
 	}
 }
@@ -437,6 +570,11 @@ func TestAgentFilesPiKeepsTheUsersExtensions(t *testing.T) {
 // What the guest put there is the user's: a dangling symlink, a FIFO for a
 // mark (which must not block the push), a folder curral's plugin would use.
 func TestAgentFilesLeavesOddFoldersAlone(t *testing.T) {
+	real := claudeReal
+	t.Cleanup(func() { claudeReal = real })
+	claudeReal = filepath.Join(t.TempDir(), "claude")
+	write(t, claudeReal, "")
+
 	home := t.TempDir()
 	skills := filepath.Join(home, ".claude/skills")
 	if err := os.MkdirAll(filepath.Join(skills, "f"), 0o700); err != nil {
@@ -449,9 +587,17 @@ func TestAgentFilesLeavesOddFoldersAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(home, pluginDirs["codex"], "p/local/x"), "mine")
+	write(t, filepath.Join(home, pluginDirs["claude"], "q/x"), "mine")
+	write(t, filepath.Join(home, pluginDirs["claude"], "v/x"), "mine")
+	write(t, filepath.Join(home, pluginDirs["claude"], "k", curralMark), "k")
 	s := filesSpec(template.Agents{Claude: &template.Agent{}, Codex: &template.Agent{Auth: template.CodexNone}})
 	s.Skills = []Bundle{{Name: "a", Files: skillFiles("A")}, {Name: "f", Files: skillFiles("F")}}
-	s.Plugins = []Bundle{{Agent: "codex", Name: "p", Files: []gitsrc.File{{Name: "x", Data: []byte("curral")}}}}
+	x := []gitsrc.File{{Name: "x", Data: []byte("curral")}}
+	s.Plugins = []Bundle{
+		{Agent: "codex", Name: "p", Files: x}, {Agent: "claude", Name: "q", Files: x}, {Agent: "claude", Name: "r", Files: x},
+		// Failed fetches: curral's old copy k stays loaded; the user's v and a missing w aren't.
+		{Agent: "claude", Name: "k", Failed: true}, {Agent: "claude", Name: "v", Failed: true}, {Agent: "claude", Name: "w", Failed: true},
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	res, err := Push(ctx, localRemote{home}, s, fakeSecrets{})
@@ -469,6 +615,9 @@ func TestAgentFilesLeavesOddFoldersAlone(t *testing.T) {
 	}
 	if cfg := readFile(t, filepath.Join(home, codexConfig)); strings.Contains(cfg, "p@curral") {
 		t.Errorf("the user's folder was turned on as curral's plugin:\n%s", cfg)
+	}
+	if ce := readFile(t, filepath.Join(home, claudeEnvFile)); !strings.Contains(ce, "CLAUDE_CODE_PLUGIN_DIRS=/home/agent/.local/share/curral/plugins/claude/r:/home/agent/.local/share/curral/plugins/claude/k\n") {
+		t.Errorf("claude should load curral's r and k only:\n%s", ce)
 	}
 }
 

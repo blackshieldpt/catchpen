@@ -14,6 +14,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/blackshieldpt/curral/internal/gitsrc"
+	"github.com/blackshieldpt/curral/internal/sshx"
 	"github.com/blackshieldpt/curral/internal/template"
 )
 
@@ -98,11 +99,11 @@ func (p *pusher) validBundles(kind string, bs []Bundle, anyAgent bool) []Bundle 
 	return out
 }
 
-// claudePluginDirs is CLAUDE_CODE_PLUGIN_DIRS for s's claude plugins.
-func claudePluginDirs(s Spec) string {
+// claudePluginDirs is CLAUDE_CODE_PLUGIN_DIRS for s's claude plugins in on.
+func claudePluginDirs(s Spec, on []string) string {
 	var dirs []string
 	for _, b := range s.Plugins {
-		if b.Agent == "claude" {
+		if b.Agent == "claude" && slices.Contains(on, b.Name) {
 			dirs = append(dirs, s.Home+"/"+pluginDirs["claude"]+"/"+b.Name)
 		}
 	}
@@ -132,7 +133,9 @@ func (p *pusher) agentFiles(s Spec) error {
 			continue
 		}
 		p.agentSkills(s, d.Name)
-		p.agentPlugins(s, d.Name)
+		if d.Name != "claude" { // Push did claude's, before its env file names them
+			p.agentPlugins(s, d.Name)
+		}
 	}
 	return nil
 }
@@ -156,10 +159,10 @@ func (p *pusher) agentSkills(s Spec, agent string) {
 			put = append(put, entry{name: b.Name, files: b.Files})
 		}
 	}
-	if _, err := p.copyIn(root, put); err != nil {
+	if err := p.copyIn(root, put); err != nil {
 		p.warn("skills: %v", err)
 	}
-	if err := p.cleanup(root, keep); err != nil {
+	if _, err := p.cleanup(root, keep); err != nil {
 		p.warn("skills: %v", err)
 	}
 }
@@ -168,7 +171,9 @@ func hasFile(fs []gitsrc.File, names ...string) bool {
 	return slices.ContainsFunc(fs, func(f gitsrc.File) bool { return slices.Contains(names, f.Name) })
 }
 
-func (p *pusher) agentPlugins(s Spec, agent string) {
+// agentPlugins copies agent's plugins in and returns the ones it should load:
+// folders with curral's mark, including failed ones that keep their old copy.
+func (p *pusher) agentPlugins(s Spec, agent string) []string {
 	root := pluginDirs[agent]
 	var put []entry
 	var keep, wanted, failed, bundled []string
@@ -207,18 +212,21 @@ func (p *pusher) agentPlugins(s Spec, agent string) {
 		keep, wanted = append(keep, b.Name), append(wanted, b.Name)
 		put = append(put, e)
 	}
-	yours, err := p.copyIn(root, put)
+	if err := p.copyIn(root, put); err != nil {
+		p.warn("plugins: %v", err)
+	}
+	ours, err := p.cleanup(root, keep)
 	if err != nil {
 		p.warn("plugins: %v", err)
 	}
-	// A folder of the user's with a plugin's name isn't curral's to turn on.
-	wanted = slices.DeleteFunc(wanted, func(n string) bool { return slices.Contains(yours, n) })
-	if err := p.cleanup(root, keep); err != nil {
-		p.warn("plugins: %v", err)
-	}
+	// Only folders with curral's mark are turned on, never a folder of the
+	// user's with a plugin's name.
+	notOurs := func(n string) bool { return !slices.Contains(ours, n) }
+	wanted, failed = slices.DeleteFunc(wanted, notOurs), slices.DeleteFunc(failed, notOurs)
 	if err := p.enablePlugins(s, agent, wanted, failed, bundled); err != nil {
 		p.warn("plugins: %v", err)
 	}
+	return append(wanted, failed...)
 }
 
 // enablePlugins edits agent's config so it loads wanted (and pi's bundled
@@ -274,9 +282,15 @@ func (p *pusher) enablePlugins(s Spec, agent string, wanted, failed, bundled []s
 			return err
 		}
 		before := stringList(rec["paths"]) // what curral added last time
+		// A path the user listed themselves stays theirs.
+		users := slices.DeleteFunc(stringList(doc["extensions"]), func(v string) bool { return slices.Contains(before, v) })
 		var add []any
+		var ours []string
 		for _, b := range bundled {
 			add = append(add, b)
+			if !slices.Contains(users, b) {
+				ours = append(ours, b)
+			}
 		}
 		c1, err := setList(doc, "packages", isCurrals(prefix, failed), paths(wanted))
 		if err != nil {
@@ -291,8 +305,8 @@ func (p *pusher) enablePlugins(s Spec, agent string, wanted, failed, bundled []s
 				return err
 			}
 		}
-		if !slices.Equal(before, bundled) {
-			return p.putJSON(piBundled, map[string]any{"paths": add})
+		if !slices.Equal(before, ours) {
+			return p.putJSON(piBundled, map[string]any{"paths": ours})
 		}
 	}
 	return nil
@@ -350,16 +364,17 @@ func checkRoot(root string) error {
 const markOf = `"$( [ -f "$r/$n/` + curralMark + `" ] && head -c 64 "$r/$n/` + curralMark + `" 2>/dev/null)"`
 
 // copyIn copies entries into ~/root, replacing only folders that carry
-// curral's mark; folders without it are the user's, left alone and returned.
-// It is one guest command: the files are unpacked next to the root, marked,
-// then each folder is moved into place, so an interrupted copy never leaves
-// an unmarked folder of curral's behind.
-func (p *pusher) copyIn(root string, entries []entry) (yours []string, err error) {
+// curral's mark; folders without it are the user's, left alone with a warning.
+// It is one guest command: the files are unpacked next to the root and
+// marked, then each old folder is moved aside and the new one moved into
+// place. Only renames touch the root, so a failed or interrupted copy never
+// leaves an unmarked part of a folder of curral's behind.
+func (p *pusher) copyIn(root string, entries []entry) error {
 	if err := checkRoot(root); err != nil {
-		return nil, err
+		return err
 	}
 	if len(entries) == 0 {
-		return nil, nil
+		return nil
 	}
 	var names []string
 	for _, e := range entries {
@@ -374,7 +389,7 @@ func (p *pusher) copyIn(root string, entries []entry) (yours []string, err error
 		}
 		b, err := gitsrc.Tar(dir, e.files)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", e.name, err)
+			return fmt.Errorf("%s: %w", e.name, err)
 		}
 		tr := tar.NewReader(bytes.NewReader(b))
 		for {
@@ -383,43 +398,53 @@ func (p *pusher) copyIn(root string, entries []entry) (yours []string, err error
 				break
 			}
 			if err != nil {
-				return nil, err
+				return err
 			}
 			if err := tw.WriteHeader(h); err != nil {
-				return nil, err
+				return err
 			}
 			if _, err := io.Copy(tw, tr); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
 	if err := tw.Close(); err != nil {
-		return nil, err
+		return err
 	}
-	// .curral-new can't clash: names start with a letter or digit.
+	// .curral-new and .old can't clash: names start with a letter or digit.
 	cmd := fmt.Sprintf(`r="$HOME/%s"; t="$r/.curral-new"
-(umask 077; mkdir -p "$r") && rm -rf -- "$t" && mkdir "$t" || exit 1
+(umask 077; mkdir -p "$r") || exit 1
+`+tidy+`
+mkdir "$t" "$t/.old" || exit 1
 tar -xf - --no-same-owner -C "$t" || { rm -rf -- "$t"; exit 1; }
 for n in %s; do
   if { [ -e "$r/$n" ] || [ -L "$r/$n" ]; } && [ %s != "$n" ]; then echo "yours $n"; continue; fi
-  printf %%s "$n" > "$t/$n/%s" && rm -rf -- "$r/$n" && mv -- "$t/$n" "$r/$n" || echo "failed $n"
+  printf %%s "$n" > "$t/$n/%s" || { echo "failed $n"; continue; }
+  if [ -e "$r/$n" ] || [ -L "$r/$n" ]; then
+    [ -L "$r/$n" ] || chmod u+w -- "$r/$n" 2>/dev/null
+    mv -T -- "$r/$n" "$t/.old/$n" || { echo "failed $n"; continue; }
+  fi
+  mv -T -- "$t/$n" "$r/$n" || { mv -T -- "$t/.old/$n" "$r/$n"; echo "failed $n"; }
 done
-rm -rf -- "$t"`, root, strings.Join(names, " "), markOf, curralMark)
+`+tidy+`
+exit 0`, root, strings.Join(names, " "), markOf, curralMark)
 	out, err := p.r.Run(p.ctx, cmd, buf.Bytes())
 	if err != nil {
-		return nil, fmt.Errorf("copying into ~/%s failed (%s)", root, runErr(err, cmd))
+		return fmt.Errorf("copying into ~/%s failed (%s)", root, runErr(err, cmd))
 	}
-	// The output is guest-controlled: only exact names we sent count.
+	// The output is guest-controlled: only exact names we sent count, once.
+	var seen []string
 	for _, l := range strings.Split(string(out.Raw()), "\n") {
-		if n, ok := strings.CutPrefix(l, "yours "); ok && slices.Contains(names, n) && !slices.Contains(yours, n) {
+		if n, ok := strings.CutPrefix(l, "yours "); ok && slices.Contains(names, n) && !slices.Contains(seen, l) {
 			p.warn("%s: ~/%s/%s is yours (no curral mark); not replaced", n, root, n)
-			yours = append(yours, n)
+			seen = append(seen, l)
 		}
-		if n, ok := strings.CutPrefix(l, "failed "); ok && slices.Contains(names, n) {
+		if n, ok := strings.CutPrefix(l, "failed "); ok && slices.Contains(names, n) && !slices.Contains(seen, l) {
 			p.warn("%s: copying it into ~/%s failed", n, root)
+			seen = append(seen, l)
 		}
 	}
-	return yours, nil
+	return nil
 }
 
 // runErr is a guest command's error without the command, a whole script here.
@@ -427,18 +452,59 @@ func runErr(err error, cmd string) string {
 	return strings.TrimPrefix(err.Error(), cmd+": ")
 }
 
+// tidy is the guest script copyIn and cleanup start and end with, for root
+// "$r" and its staging folder "$t". It moves back a folder an interrupted
+// copy left aside, then removes "$t" (an agent may have made its folders
+// read-only). What it can't remove, e.g. files made with sudo, is parked in
+// a "$t.*" folder so it never blocks a copy, and reported.
+const tidy = `[ -L "$t" ] || [ -L "$t/.old" ] || for o in "$t"/.old/*; do n=${o##*/}; [ -e "$r/$n" ] || [ -L "$r/$n" ] || mv -T -- "$o" "$r/$n"; done 2>/dev/null
+for o in "$t" "$t".*; do { [ -e "$o" ] || [ -L "$o" ]; } || continue
+  [ -L "$o" ] || chmod -R u+w -- "$o" 2>/dev/null; rm -rf -- "$o" 2>/dev/null
+done
+{ [ -e "$t" ] || [ -L "$t" ]; } && { o=$(mktemp -d "$t.XXXXXXXX") && mv -T -- "$t" "$o/d"; } 2>/dev/null
+for o in "$t" "$t".*; do if [ -e "$o" ] || [ -L "$o" ]; then echo leftover; break; fi; done`
+
+func (p *pusher) warnLeftover(root string, out sshx.GuestOutput) {
+	if slices.Contains(strings.Split(string(out.Raw()), "\n"), "leftover") {
+		p.warn("~/%s/.curral-new*: curral can't remove its old copies there (files made with sudo?); remove them with sudo rm -rf", root)
+	}
+}
+
 // cleanup removes the folders in ~/root that carry curral's mark and aren't
-// in keep.
-func (p *pusher) cleanup(root string, keep []string) error {
+// in keep, and returns those in keep that carry it. Each is first moved
+// aside whole, so a failed removal leaves nothing in the root.
+func (p *pusher) cleanup(root string, keep []string) (ours []string, err error) {
 	if err := checkRoot(root); err != nil {
-		return err
+		return nil, err
 	}
-	cmd := fmt.Sprintf(`r="$HOME/%s"; cd "$r" 2>/dev/null || exit 0
+	cmd := fmt.Sprintf(`r="$HOME/%s"; t="$r/.curral-new"; cd "$r" 2>/dev/null || exit 0
+`+tidy+`
 for n in */; do n=${n%%/}; [ %s = "$n" ] || continue
-  case " %s " in *" $n "*) ;; *) rm -rf -- "$n";; esac
-done`, root, markOf, strings.Join(keep, " "))
-	if _, err := p.r.Run(p.ctx, cmd, nil); err != nil {
-		return fmt.Errorf("cleaning up ~/%s failed (%s)", root, runErr(err, cmd))
+  case " %s " in *" $n "*) echo "ours $n";; *)
+    [ -L "$n" ] || chmod u+w -- "$n" 2>/dev/null
+    { mkdir -p "$t" && mv -T -- "$n" "$t/$n"; } || echo "failed $n";; esac
+done
+`+tidy+`
+exit 0`, root, markOf, strings.Join(keep, " "))
+	out, err := p.r.Run(p.ctx, cmd, nil)
+	if err != nil {
+		return nil, fmt.Errorf("cleaning up ~/%s failed (%s)", root, runErr(err, cmd))
 	}
-	return nil
+	p.warnLeftover(root, out)
+	// The output is guest-controlled: only names curral could have marked
+	// count, and only the first few are named.
+	named := 0
+	for _, l := range strings.Split(string(out.Raw()), "\n") {
+		if n, ok := strings.CutPrefix(l, "ours "); ok && slices.Contains(keep, n) && !slices.Contains(ours, n) {
+			ours = append(ours, n)
+		}
+		if n, ok := strings.CutPrefix(l, "failed "); ok && template.DirNameRe.MatchString(n) {
+			if named++; named <= 10 {
+				p.warn("%s: removing curral's ~/%s/%s failed", n, root, n)
+			} else if named == 11 {
+				p.warn("removing more of curral's folders in ~/%s failed", root)
+			}
+		}
+	}
+	return ours, nil
 }

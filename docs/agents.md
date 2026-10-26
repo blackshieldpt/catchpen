@@ -250,7 +250,9 @@ fork can be fetched through the parent repo's URL, so pin commits you have read.
 
 **Your own folders.** curral marks the folders it copies with a `.curral` file holding the
 folder's name, and only replaces or removes marked folders. A folder of the same name
-without the mark is yours: curral leaves it and warns. A skill of the same name in
+without the mark is yours: curral leaves it, doesn't turn it on as a plugin, and warns.
+When curral can't delete part of its old copy (files made with `sudo`, say), it leaves
+it in a `.curral-new.*` folder next to it and warns you to remove that with `sudo rm -rf`. A skill of the same name in
 your host `~/.claude/skills`, synced with `claude_config` (`-t claude-config`), is used
 instead of curral's.
 

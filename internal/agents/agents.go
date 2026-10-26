@@ -174,8 +174,10 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 			return p.res, err
 		}
 		claudeEnv := map[string]string{"CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": "1"}
-		if dirs := claudePluginDirs(s); s.AgentFiles && dirs != "" {
-			claudeEnv["CLAUDE_CODE_PLUGIN_DIRS"] = dirs
+		if s.AgentFiles { // copied first, so the env file names only what went in
+			if dirs := claudePluginDirs(s, p.agentPlugins(s, "claude")); dirs != "" {
+				claudeEnv["CLAUDE_CODE_PLUGIN_DIRS"] = dirs
+			}
 		}
 		if ok {
 			claudeEnv[name] = v
