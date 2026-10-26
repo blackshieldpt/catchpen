@@ -2,8 +2,11 @@ package gitsrc
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -290,5 +293,45 @@ func TestFilesSizeLimit(t *testing.T) {
 	url, sha := repo(t, "", map[string]string{"skills/a/one": "1", "skills/a/two": "2"})
 	if _, err := fetcher(t).Files(context.Background(), url, sha, "skills/a"); err == nil || !strings.Contains(err.Error(), "is over") {
 		t.Errorf("Files = %v; want is over", err)
+	}
+}
+
+// errReader fails the test's parse if it reads past what the limit allows.
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) { return 0, errors.New("read past the limit") }
+
+func TestParseListStopsAtTheLimit(t *testing.T) {
+	mb, mf := maxBytes, maxFiles
+	t.Cleanup(func() { maxBytes, maxFiles = mb, mf })
+	rec := func(name string, size int) string {
+		return fmt.Sprintf("100644 blob %s %7d\t%s\x00", strings.Repeat("a", 40), size, name)
+	}
+	for _, c := range []struct {
+		name, list string
+		files      int
+		bytes      int64
+	}{
+		{"files", rec("a", 1) + rec("b", 1) + rec("c", 1), 2, 1 << 20},
+		{"bytes", rec("a", 600) + rec("b", 600), 10, 1000},
+	} {
+		maxFiles, maxBytes = c.files, c.bytes
+		r := bufio.NewReaderSize(io.MultiReader(strings.NewReader(c.list), errReader{}), maxRecord)
+		if _, err := parseList(r, "u", "r", "."); err == nil || !strings.Contains(err.Error(), "is over") {
+			t.Errorf("%s: parseList = %v; want is over, without reading on", c.name, err)
+		}
+	}
+}
+
+func TestParseListRejectsOddRecords(t *testing.T) {
+	long := "100644 blob " + strings.Repeat("a", 40) + "       1\t" + strings.Repeat("n", maxRecord) + "\x00"
+	for _, c := range []struct{ name, list, want string }{
+		{"long", long, "record over"},
+		{"truncated", "100644 blob " + strings.Repeat("a", 40) + "       1\ta", "truncated"},
+	} {
+		r := bufio.NewReaderSize(strings.NewReader(c.list), maxRecord)
+		if _, err := parseList(r, "u", "r", "."); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: parseList = %v; want %q", c.name, err, c.want)
+		}
 	}
 }

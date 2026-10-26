@@ -194,19 +194,75 @@ func (f Fetcher) Files(ctx context.Context, url, ref, dir string) ([]File, error
 		}
 	}
 
+	files, err := f.list(ctx, repo, url, ref, dir)
+	if err != nil {
+		return nil, err
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("%q at %s has no folder %q", url, ref, dir)
+	}
+
+	if err := f.read(ctx, repo, files); err != nil {
+		return nil, fmt.Errorf("%q at %s: %w", url, ref, err)
+	}
+	res := make([]File, len(files))
+	for i, fl := range files {
+		res[i] = fl.File
+	}
+	sort.Slice(res, func(i, j int) bool { return res[i].Name < res[j].Name })
+	return res, nil
+}
+
+// maxRecord bounds one ls-tree record: a path Linux can open plus the fields.
+const maxRecord = 4096 + 256
+
+// list runs ls-tree on dir and parses its output as it comes, stopping git
+// once the folder is over the limits: a tree that reuses subtrees lists far
+// more files than its objects take on disk.
+func (f Fetcher) list(ctx context.Context, repo, url, ref, dir string) ([]listed, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	args := []string{"ls-tree", "-r", "-z", "-l", "--full-tree", ref}
 	if dir != "." {
 		args = append(args, "--", dir)
 	}
-	var out bytes.Buffer
-	ls := f.git(ctx, repo, args...)
-	ls.Stdout = &out
-	if err := run(ls); err != nil {
+	cmd := f.git(ctx, repo, args...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
 		return nil, err
 	}
+	if err := cmd.Start(); err != nil {
+		return nil, gitErr(cmd, err)
+	}
+	files, err := parseList(bufio.NewReaderSize(stdout, maxRecord), url, ref, dir)
+	if err != nil {
+		cancel()
+		cmd.Wait()
+		return nil, err
+	}
+	return files, gitErr(cmd, cmd.Wait())
+}
+
+// parseList reads ls-tree -r -z -l records from r, failing as soon as the
+// folder is over maxFiles or maxBytes, before reading the rest.
+func parseList(r *bufio.Reader, url, ref, dir string) ([]listed, error) {
 	var files []listed
 	var total int64
-	for _, rec := range strings.Split(out.String(), "\x00") {
+	for {
+		b, err := r.ReadSlice(0)
+		if errors.Is(err, bufio.ErrBufferFull) {
+			return nil, fmt.Errorf("%q at %s: ls-tree record over %d bytes", url, ref, maxRecord)
+		}
+		if err == io.EOF {
+			if len(b) != 0 {
+				return nil, fmt.Errorf("%q at %s: truncated ls-tree record %q", url, ref, b)
+			}
+			return files, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		rec := string(b[:len(b)-1])
 		if rec == "" {
 			continue
 		}
@@ -244,23 +300,10 @@ func (f Fetcher) Files(ctx context.Context, url, ref, dir string) ([]File, error
 		fl.Name, fl.id, fl.size = name, fields[2], size
 		total += size
 		files = append(files, fl)
+		if total > maxBytes || len(files) > maxFiles {
+			return nil, fmt.Errorf("%q at %s: %s is over %d MiB or %d files", url, ref, dir, maxBytes>>20, maxFiles)
+		}
 	}
-	if total > maxBytes || len(files) > maxFiles {
-		return nil, fmt.Errorf("%q at %s: %s is over %d MiB or %d files", url, ref, dir, maxBytes>>20, maxFiles)
-	}
-	if len(files) == 0 {
-		return nil, fmt.Errorf("%q at %s has no folder %q", url, ref, dir)
-	}
-
-	if err := f.read(ctx, repo, files); err != nil {
-		return nil, fmt.Errorf("%q at %s: %w", url, ref, err)
-	}
-	res := make([]File, len(files))
-	for i, fl := range files {
-		res[i] = fl.File
-	}
-	sort.Slice(res, func(i, j int) bool { return res[i].Name < res[j].Name })
-	return res, nil
 }
 
 // read fills in each file's Data from cat-file --batch, checking every
