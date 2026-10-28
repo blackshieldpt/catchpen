@@ -9,11 +9,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -480,5 +484,119 @@ func TestStderrKeepsTheEnd(t *testing.T) {
 	}
 	if len(tl.b) != tailSize || !strings.HasSuffix(string(tl.b), fmt.Sprintf("%0100d\n", 99)) {
 		t.Errorf("kept %d bytes ending %q", len(tl.b), string(tl.b[len(tl.b)-20:]))
+	}
+}
+
+// TestFetchStopsGitsChildren: git's helpers (git remote-https) don't die with
+// git, so stopping a fetch must stop all of them.
+func TestFetchStopsGitsChildren(t *testing.T) {
+	m, e := maxRepo, sizeEvery
+	t.Cleanup(func() { maxRepo, sizeEvery = m, e })
+	maxRepo, sizeEvery = 1<<10, 100*time.Millisecond
+	url, sha := repo(t, "", map[string]string{"skills/a/SKILL.md": "a"})
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	pidFile := filepath.Join(bin, "pid")
+	// A fetch whose great-grandchild, like git-remote-https (git, git
+	// remote-https, git-remote-https), keeps going without git.
+	fake := `#!/bin/sh
+for a; do
+	case $a in
+	--git-dir=*) d=${a#--git-dir=} ;;
+	fetch)
+		( (
+			(while :; do head -c 4096 /dev/zero; sleep 0.05; done >"$d/objects/x" 2>/dev/null </dev/null) &
+			echo $! >` + pidFile + `
+			wait
+		) & wait ) &
+		wait
+		exit 1 ;;
+	esac
+done
+exec ` + real + ` "$@"
+`
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	f := fetcher(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	start := time.Now()
+	if _, err := f.Files(ctx, url, sha, "skills/a"); err == nil || !strings.Contains(err.Error(), "sent over") {
+		t.Fatalf("Files = %v; want sent over", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("the fetch took %v to stop; the size check stops it within seconds", d)
+	}
+	b, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { syscall.Kill(pid, syscall.SIGKILL) })
+	for end := time.Now().Add(2 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		st, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil || strings.Contains(string(st), ") Z ") {
+			return
+		}
+		if time.Now().After(end) {
+			t.Fatalf("git's child %d still runs after the fetch was stopped", pid)
+		}
+	}
+}
+
+// A server that never stops sending makes git remote-https buffer it all in
+// memory, which the size check (on disk) doesn't see: maxMem stops it.
+func TestFetchMemoryLimit(t *testing.T) {
+	m := maxMem
+	t.Cleanup(func() { maxMem = m })
+	maxMem = 64 << 20
+	for _, k := range passEnv { // a host proxy would answer instead of srv
+		t.Setenv(k, "")
+		os.Unsetenv(k)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		b := bytes.Repeat([]byte("a"), 1<<20)
+		for range 1000 { // 1000 MiB at most, about 100 MiB/s
+			if _, err := w.Write(b); err != nil {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	f := Fetcher{Dir: filepath.Join(t.TempDir(), "cache"), Protocols: []string{"http"}}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err := f.Files(ctx, srv.URL+"/x.git", strings.Repeat("a", 40), "skills/a")
+	if err == nil || ctx.Err() != nil || !strings.Contains(err.Error(), "git fetch:") || !strings.Contains(err.Error(), "memory") {
+		t.Fatalf("Files = %v after %v; want git fetch to fail on its memory limit, well before the 8 s context", err, time.Since(start))
+	}
+}
+
+// A git in the current directory, found through an empty PATH entry, never runs.
+func TestFetchNotGitFromCwd(t *testing.T) {
+	url, sha := repo(t, "", map[string]string{"skills/a/SKILL.md": "a"})
+	dir := t.TempDir()
+	ran := filepath.Join(dir, "ran")
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte("#!/bin/sh\ntouch "+ran+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	t.Setenv("PATH", string(os.PathListSeparator)+os.Getenv("PATH"))
+	if _, err := fetcher(t).Files(context.Background(), url, sha, "skills/a"); !errors.Is(err, exec.ErrDot) {
+		t.Errorf("Files = %v; want %v", err, exec.ErrDot)
+	}
+	if _, err := os.Stat(ran); err == nil {
+		t.Error("ran the git in the current directory")
 	}
 }

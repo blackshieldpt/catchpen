@@ -8,6 +8,7 @@ package gitsrc
 import (
 	"archive/tar"
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -41,6 +42,9 @@ var (
 	maxBytes int64 = 64 << 20  // per folder
 	maxFiles       = 20000     // regular files per folder
 	maxRepo  int64 = 512 << 20 // what one fetch may add on disk; over it, git is stopped and the repo dropped
+	// the memory (RLIMIT_DATA) each git process of a fetch may use: a server
+	// can make git remote-https buffer any amount
+	maxMem int64 = 1 << 30
 	// how often a fetch's size on disk is checked
 	sizeEvery = time.Second
 )
@@ -95,8 +99,17 @@ func (f Fetcher) git(ctx context.Context, gitDir string, args ...string) *exec.C
 		"-c", "gc.auto=0",
 		"-c", "maintenance.auto=false",
 		"-c", "http.lowSpeedLimit=1000",
-		"-c", "http.lowSpeedTime=30")
-	cmd := exec.CommandContext(ctx, "git", append(argv, args...)...)
+		"-c", "http.lowSpeedTime=30",
+		// index-pack's memory grows with its threads (half the CPUs by default)
+		"-c", "pack.threads=2")
+	// sh -c <limit> <git> <argv>: git and its helpers get the limit. A lower
+	// soft limit is kept; the hard limit is left alone.
+	limit := fmt.Sprintf(`s=$(ulimit -S -d); if [ "$s" = unlimited ] || [ "$s" -gt %d ]; then ulimit -S -d %d || exit 1; fi; exec "$0" "$@"`, maxMem>>10, maxMem>>10)
+	git, err := exec.LookPath("git") // as exec.Command would: never git from the current directory
+	cmd := exec.CommandContext(ctx, "/bin/sh", append([]string{"-c", limit, git}, append(argv, args...)...)...)
+	if err != nil {
+		cmd.Err = err
+	}
 	cmd.Env = []string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + f.Dir,
@@ -114,7 +127,7 @@ func (f Fetcher) git(ctx context.Context, gitDir string, args ...string) *exec.C
 		}
 	}
 	cmd.Stderr = &tail{}
-	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.Cancel = func() error { return killTree(cmd.Process) }
 	// catchpen watches a fetch's size: git doesn't outlive it.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 	cmd.WaitDelay = 10 * time.Second
@@ -122,6 +135,53 @@ func (f Fetcher) git(ctx context.Context, gitDir string, args ...string) *exec.C
 }
 
 func run(cmd *exec.Cmd) error { return gitErr(cmd, cmd.Run()) }
+
+// killTree kills git and every process under it: git's helpers (git
+// remote-https, index-pack) don't die with git. Each is stopped first, so
+// none can fork or be reaped (and its pid reused) while the tree is walked.
+func killTree(p *os.Process) error {
+	if err := p.Signal(syscall.SIGSTOP); err != nil {
+		return err // os.ErrProcessDone: git is gone
+	}
+	tree := map[int]bool{p.Pid: true}
+	for n := 0; n != len(tree); {
+		n = len(tree)
+		for pid, ppid := range parents() {
+			if tree[ppid] && !tree[pid] {
+				_ = syscall.Kill(pid, syscall.SIGSTOP)
+				tree[pid] = true
+			}
+		}
+	}
+	for pid := range tree {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+	}
+	return nil
+}
+
+// parents maps each process to its parent, from /proc/<pid>/stat.
+func parents() map[int]int {
+	m := map[int]int{}
+	ents, _ := os.ReadDir("/proc")
+	for _, e := range ents {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil {
+			continue
+		}
+		b, err := os.ReadFile("/proc/" + e.Name() + "/stat")
+		if err != nil {
+			continue
+		}
+		// "pid (comm) state ppid ...": comm may hold spaces and parentheses.
+		f := strings.Fields(string(b[bytes.LastIndexByte(b, ')')+1:]))
+		if len(f) > 1 {
+			if ppid, err := strconv.Atoi(f[1]); err == nil {
+				m[pid] = ppid
+			}
+		}
+	}
+	return m
+}
 
 // tail keeps the end of what git writes to stderr, which a server can fill.
 type tail struct{ b []byte }
@@ -146,7 +206,7 @@ func gitErr(cmd *exec.Cmd, err error) error {
 		return nil
 	}
 	sub := ""
-	for i := 1; i < len(cmd.Args) && sub == ""; i++ {
+	for i := 4; i < len(cmd.Args) && sub == ""; i++ { // after sh -c <limit> <git>
 		switch a := cmd.Args[i]; {
 		case a == "-c":
 			i++

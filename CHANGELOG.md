@@ -76,6 +76,12 @@ before 0.1.0 describe work on `master` before the first tagged release.
 - The warm pool works for templates whose `env` sets an `AWS_*` variable. Their pool
   VMs never matched, so the daemon kept creating and discarding them.
 
+### Security
+
+- Stopping a skill or plugin fetch now kills the helpers git started, not just git. Each
+  git process a fetch runs may use at most 1 GiB of memory: a server that never stops
+  sending used to fill git's memory, which the 512 MiB disk check doesn't see.
+
 ## [0.1.1] - 2026-10-25
 
 ### Added
