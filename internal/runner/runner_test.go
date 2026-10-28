@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -120,14 +119,4 @@ func testRunner(t *testing.T) *Runner {
 		t.Fatal(err)
 	}
 	return &Runner{M: &vm.Manager{P: p, Cfg: config.Default(), Tpl: template.Loader{UserDir: p.Templates()}, Bin: "/usr/local/bin/catchpen"}}
-}
-
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
 }

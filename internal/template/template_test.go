@@ -702,7 +702,7 @@ func TestSkillsValidation(t *testing.T) {
 		{entry(`"`+pinGit+`?a=b"`, pinRef, "path: skills/x"), "", "git must have no query or fragment"},
 		{entry(pinGit, "abc123", "path: skills/x"), "", `ref must be a full 40-character commit id, got "abc123"`},
 		{entry(pinGit, "0123456789ABCDEF0123456789abcdef01234567", "path: skills/x"), "", `got "0123456789ABCDEF`},
-		{entry(pinGit, pinRef, "path: ../x"), "", `path must not contain .., got "../x"`},
+		{entry(pinGit, pinRef, "path: ../x"), "", `path must not contain "..", got "../x"`},
 		{entry(pinGit, pinRef, "path: /x"), "", `not starting with - or /, got "/x"`},
 		{entry(pinGit, pinRef, "path: a//b"), "", `path must be a clean path, got "a//b"`},
 		// minimal installs no agents, so the filter alone would drop it.
@@ -776,7 +776,7 @@ func TestPluginsValidation(t *testing.T) {
 		{"{ agent: pi, name: nb }", "minimal,pi,", "plugins nb: set git or bundled"},
 		{"{ agent: pi, git: " + pinGit + ", ref: abc, path: p/x }", "minimal,pi,", `plugins x: ref must be a full 40-character commit id, got "abc"`},
 		{"{ agent: claude, bundled: examples/extensions/plan-mode.ts }", "minimal,claude,", "plugins plan-mode: bundled is only for pi"},
-		{"{ agent: pi, bundled: ../x }", "minimal,pi,", `bundled must not contain .., got "../x"`},
+		{"{ agent: pi, bundled: ../x }", "minimal,pi,", `bundled must not contain "..", got "../x"`},
 		{`{ agent: pi, bundled: ".", name: dot }`, "minimal,pi,", `plugins dot: bundled must name a file in the pi package, got "."`},
 		{pinned("agent: pi, path: p/x, name: Bad"), "minimal,pi,", `plugins p/x: name "Bad" must be`},
 		{pinned("agent: pi, path: p/x") + ", { agent: pi, git: " + pinGit + ", ref: " + ref2 + ", path: q/x }", "minimal,pi,", `plugins: two pi plugins named "x"`},

@@ -63,7 +63,7 @@ func CheckPath(p string) error {
 		return errors.New("must be a clean path")
 	}
 	if slices.Contains(strings.Split(p, "/"), "..") {
-		return errors.New("must not contain ..")
+		return errors.New(`must not contain ".."`)
 	}
 	return nil
 }
