@@ -18,7 +18,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/blackshieldpt/curral/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/canary"
 )
 
 type secrets map[string]string
@@ -180,7 +180,7 @@ func TestServeGuest(t *testing.T) {
 	if s := do(req); !strings.HasPrefix(s, "429") {
 		t.Errorf("rate limit: %s", s)
 	}
-	if len(sent) != 2 || sent[0].Kind != AgentWaiting || sent[0].Title != "curral vm1: claude is waiting" || strings.ContainsAny(sent[0].Message, "\x1b\x07") {
+	if len(sent) != 2 || sent[0].Kind != AgentWaiting || sent[0].Title != "catchpen vm1: claude is waiting" || strings.ContainsAny(sent[0].Message, "\x1b\x07") {
 		t.Fatalf("sent %+v", sent)
 	}
 	if strings.Contains(sent[1].Message, v[10:]) || !strings.Contains(sent[1].Message, "decoy credentials") || len(hits) != 1 {

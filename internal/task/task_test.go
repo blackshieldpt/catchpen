@@ -1,7 +1,7 @@
 package task
 
 import (
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/template"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,16 +107,16 @@ func TestStore(t *testing.T) {
 
 func TestCommand(t *testing.T) {
 	c := Command(Spec{Agent: "claude", MaxBudgetUSD: 2.5})
-	if c != `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --max-budget-usd 2.5 <"$HOME/.curral/task-prompt.md"` {
+	if c != `claude -p --output-format stream-json --verbose --dangerously-skip-permissions --max-budget-usd 2.5 <"$HOME/.catchpen/task-prompt.md"` {
 		t.Errorf("claude: %s", c)
 	}
 	if c := Command(Spec{Agent: "opencode"}); !strings.Contains(c, `--auto -- "$(cat`) {
 		t.Errorf("opencode: %s", c)
 	}
-	if c := Command(Spec{Agent: "codex"}); c != `codex exec --json --yolo --skip-git-repo-check - <"$HOME/.curral/task-prompt.md"` {
+	if c := Command(Spec{Agent: "codex"}); c != `codex exec --json --yolo --skip-git-repo-check - <"$HOME/.catchpen/task-prompt.md"` {
 		t.Errorf("codex: %s", c)
 	}
-	if c := Command(Spec{Agent: "cmd", Cmd: "echo 'hi'"}); !strings.Contains(c, `sh -c 'echo '\''hi'\'''`) || !strings.Contains(c, `<"$HOME/.curral/task-prompt.md"`) {
+	if c := Command(Spec{Agent: "cmd", Cmd: "echo 'hi'"}); !strings.Contains(c, `sh -c 'echo '\''hi'\'''`) || !strings.Contains(c, `<"$HOME/.catchpen/task-prompt.md"`) {
 		t.Errorf("cmd: %s", c)
 	}
 }
@@ -194,7 +194,7 @@ func TestSummarize(t *testing.T) {
 	if s := Summarize("omp", strings.NewReader(`{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"429"}}`)); s.Error != "omp: 429" {
 		t.Errorf("omp error: %+v", s)
 	}
-	if c := Command(Spec{Agent: "omp"}); c != `omp -p --mode json <"$HOME/.curral/task-prompt.md"` {
+	if c := Command(Spec{Agent: "omp"}); c != `omp -p --mode json <"$HOME/.catchpen/task-prompt.md"` {
 		t.Errorf("omp command %q", c)
 	}
 	retried := `{"type":"result","is_error":true,"subtype":"error_during_execution"}` + "\n" + `{"type":"result","is_error":false,"subtype":"success","result":"ok"}`
@@ -245,7 +245,7 @@ func TestRender(t *testing.T) {
 func TestEveryAgentHasTaskCommand(t *testing.T) {
 	cmd := Command(Spec{Agent: "cmd", Cmd: "x"})
 	for _, d := range template.AgentDefs {
-		if c := Command(Spec{Agent: d.Name, Cmd: "x"}); c == cmd || strings.HasPrefix(c, "CURRAL_PROMPT_FILE=") {
+		if c := Command(Spec{Agent: d.Name, Cmd: "x"}); c == cmd || strings.HasPrefix(c, "CATCHPEN_PROMPT_FILE=") {
 			t.Errorf("%s runs as cmd: %s", d.Name, c)
 		}
 	}

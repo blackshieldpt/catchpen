@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
 )
 
 // Spec describes a cloud image. Exactly one of ChecksumURL, SHA256, SHA512 must be set.
@@ -215,13 +215,13 @@ func Ensure(ctx context.Context, dir string, s Spec, progress io.Writer) (string
 	}
 	defer unlock()
 	if d, ok, err := cached(dst, s); err != nil || ok {
-		return dst, d, err // fetched by a concurrent curral
+		return dst, d, err // fetched by a concurrent catchpen
 	}
 	want, err := s.Expected(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("checksum for %s: %w", s.Name, err)
 	}
-	// image present but unrecorded (fetched manually, or by an older curral)
+	// image present but unrecorded (fetched manually, or by an older catchpen)
 	if ok, _ := fileMatches(dst, want); !ok {
 		if err := download(ctx, s.URL, dst, want, progress); err != nil {
 			return "", "", err

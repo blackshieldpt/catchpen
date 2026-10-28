@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/blackshieldpt/curral/internal/gitsrc"
+	"github.com/blackshieldpt/catchpen/internal/gitsrc"
 )
 
 // Skill is a folder with a SKILL.md, copied into an agent's skills directory
@@ -101,8 +101,8 @@ func validDirName(n string) error {
 	if !DirNameRe.MatchString(n) {
 		return fmt.Errorf("name %q must be lower case letters, digits, . _ -, starting with a letter or digit, at most 64 characters", n)
 	}
-	if strings.HasPrefix(n, "curral") {
-		return fmt.Errorf("name %q is reserved: curral's own files start with curral", n)
+	if strings.HasPrefix(n, "catchpen") {
+		return fmt.Errorf("name %q is reserved: catchpen's own files start with catchpen", n)
 	}
 	return nil
 }

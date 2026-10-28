@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/egress"
-	"github.com/blackshieldpt/curral/internal/fsutil"
-	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
 )
 
 const forwardsFile = "forwards.json"
@@ -180,7 +180,7 @@ func (m *Manager) Forward(ctx context.Context, name string, local, remote, dynam
 		port, _ := strconv.Atoi(parts[3])
 		if s.Egress == egress.ModeAllowlist {
 			_ = egress.Append(m.dir(name), egress.LogEntry{Time: time.Now().UTC(), VM: name, Method: "FORWARD", Host: parts[2], Port: port,
-				Action: egress.ActionForward, Reason: "curral forward -R " + r})
+				Action: egress.ActionForward, Reason: "catchpen forward -R " + r})
 		}
 	}
 	return fs, nil

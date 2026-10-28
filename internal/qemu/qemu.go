@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/egress"
 )
 
 type Forward struct{ Host, Guest int }
@@ -100,7 +100,7 @@ func (s Spec) Args() ([]string, error) {
 		return nil, err
 	}
 	a := []string{
-		"-name", "curral-" + s.Name,
+		"-name", "catchpen-" + s.Name,
 		"-machine", cmp.Or(s.Machine, "q35") + ",accel=kvm",
 		"-cpu", "host",
 		"-smp", strconv.Itoa(s.CPUs),
@@ -112,7 +112,7 @@ func (s Spec) Args() ([]string, error) {
 		"-display", "none",
 		"-nodefaults",
 		"-vga", "std", // Debian cloud images don't boot without a video device
-		// seccomp. The filter is inherited by the guestfwd proxy (curral egress-stdio),
+		// seccomp. The filter is inherited by the guestfwd proxy (catchpen egress-stdio),
 		// so spawn stays allowed and elevateprivileges=deny is omitted: it kills the Go child.
 		"-sandbox", "on,obsolete=deny,resourcecontrol=deny",
 	}
@@ -216,7 +216,7 @@ func Pid(pidfile, name string) (int, bool) {
 		return pid, false
 	}
 	for i := 1; i+1 < len(argv); i++ {
-		if argv[i] == "-name" && argv[i+1] == "curral-"+name {
+		if argv[i] == "-name" && argv[i+1] == "catchpen-"+name {
 			return pid, true
 		}
 	}

@@ -27,11 +27,11 @@ type Agent struct {
 	Version string   `yaml:"version,omitempty" json:"version,omitempty"`
 	Auth    string   `yaml:"auth,omitempty" json:"auth,omitempty"` // claude and codex
 	Keys    []string `yaml:"keys,omitempty" json:"keys,omitempty"` // opencode/pi/omp: provider API key secrets
-	// Yolo makes curral run skip permission prompts (claude, opencode, codex); the VM is the sandbox.
+	// Yolo makes catchpen run skip permission prompts (claude, opencode, codex); the VM is the sandbox.
 	Yolo *bool `yaml:"yolo,omitempty" json:"yolo,omitempty"`
 }
 
-// SkipPermissions reports whether curral run starts the agent without permission prompts.
+// SkipPermissions reports whether catchpen run starts the agent without permission prompts.
 func (a *Agent) SkipPermissions() bool { return a != nil && a.Yolo != nil && *a.Yolo }
 
 type Agents struct {

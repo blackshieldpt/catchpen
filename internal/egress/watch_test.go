@@ -341,7 +341,7 @@ func TestDesktopDecider(t *testing.T) {
 		}
 	}
 	args, _ := os.ReadFile(argsFile)
-	if !strings.Contains(string(args), "curral: example.com:443\nvm1 CONNECT\n") {
+	if !strings.Contains(string(args), "catchpen: example.com:443\nvm1 CONNECT\n") {
 		t.Fatalf("notify-send args = %q", args)
 	}
 }

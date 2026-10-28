@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/canary"
 )
 
 // GuestRequest is what agent hooks in the guest POST to /notify. Claude
@@ -79,7 +79,7 @@ func ServeGuest(ctx context.Context, conn net.Conn, vm string, lim Limiter, get 
 	if err != nil {
 		return err
 	}
-	return n.Send(ctx, Event{Kind: AgentWaiting, VM: vm, Title: "curral " + vm + ": " + agent + " is waiting", Message: msg})
+	return n.Send(ctx, Event{Kind: AgentWaiting, VM: vm, Title: "catchpen " + vm + ": " + agent + " is waiting", Message: msg})
 }
 
 // Withhold is ServeGuest's withhold for the VM in dir: a note for text

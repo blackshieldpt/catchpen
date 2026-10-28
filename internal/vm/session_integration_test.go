@@ -16,14 +16,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/vmtest"
+	"github.com/blackshieldpt/catchpen/internal/vmtest"
 
 	"github.com/creack/pty"
 
-	"github.com/blackshieldpt/curral/internal/hosttmux"
+	"github.com/blackshieldpt/catchpen/internal/hosttmux"
 )
 
-// ptyProc is the curral binary running on a test-owned terminal.
+// ptyProc is the catchpen binary running on a test-owned terminal.
 type ptyProc struct {
 	t    *testing.T
 	f    *os.File
@@ -112,7 +112,7 @@ func recordingWith(t *testing.T, m *Manager, name, kind, text string) bool {
 
 func TestSessions(t *testing.T) {
 	m := integrationManager(t)
-	tm := &hosttmux.Tmux{Socket: fmt.Sprintf("curral-it-%d", os.Getpid()), Bin: m.Bin}
+	tm := &hosttmux.Tmux{Socket: fmt.Sprintf("catchpen-it-%d", os.Getpid()), Bin: m.Bin}
 	m.Tmux = tm
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", tm.Socket, "kill-server").Run() })
 	vmtest.Template(t, m.P.Templates(), "sess", "", "runtimes: { node: \"24\" }\nagents: { claude: {} }\n")
@@ -136,7 +136,7 @@ func TestSessions(t *testing.T) {
 		t.Error("ssh session not recorded")
 	}
 
-	// curral run starts the agent (in a guest tmux session) and records it.
+	// catchpen run starts the agent (in a guest tmux session) and records it.
 	p = startPTY(t, m.Bin, "run", "se1", "claude", "--", "--version")
 	if code := p.wait(); code != 0 || !regexp.MustCompile(`\d+\.\d+\.\d+`).MatchString(p.output()) {
 		t.Fatalf("run claude --version: exit %d\n%q", code, p.output())
@@ -160,7 +160,7 @@ func TestSessions(t *testing.T) {
 	p.send("\x01d")
 	p.wait()
 
-	// Host tmux: a window per VM, running curral attach (recorded too).
+	// Host tmux: a window per VM, running catchpen attach (recorded too).
 	attaches := func() int {
 		ids, _ := m.Recordings("se1")
 		n := 0
@@ -181,7 +181,7 @@ func TestSessions(t *testing.T) {
 	deadline := time.Now().Add(30 * time.Second)
 	for attaches() == before {
 		if time.Now().After(deadline) {
-			t.Error("host tmux window didn't run a recorded curral attach")
+			t.Error("host tmux window didn't run a recorded catchpen attach")
 			break
 		}
 		time.Sleep(time.Second)
@@ -193,7 +193,7 @@ func TestSessions(t *testing.T) {
 	dst := filepath.Join(t.TempDir(), "out.txt")
 	for _, args := range [][]string{{"cp", src, "se1:/tmp/cp-in"}, {"cp", "se1:/tmp/cp-in", dst}} {
 		if out, err := exec.Command(m.Bin, args...).CombinedOutput(); err != nil {
-			t.Fatalf("curral %v: %v\n%s", args, err, out)
+			t.Fatalf("catchpen %v: %v\n%s", args, err, out)
 		}
 	}
 	if b, _ := os.ReadFile(dst); string(b) != "copied-content\n" {
@@ -218,7 +218,7 @@ func TestSessions(t *testing.T) {
 		}
 	}
 
-	// Ephemeral: destroyed after the command, and when curral is signalled.
+	// Ephemeral: destroyed after the command, and when catchpen is signalled.
 	out, err := exec.CommandContext(ctx, m.Bin, "up", "eph1", "--ephemeral", "-t", "sess", "--", "sh", "-c", "echo eph-$((1+1))").CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "eph-2") {
 		t.Fatalf("up --ephemeral: %v\n%s", err, out)

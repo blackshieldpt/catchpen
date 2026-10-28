@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/egress"
 )
 
 // testPlugins are agent sections with a plugin each, as a user's agents.yaml.
@@ -24,12 +24,12 @@ pi-permission-gate: { plugins: [{ agent: pi, bundled: examples/extensions/permis
 // TestSkillsAndPlugins creates a VM with Claude's built-in skills and plugins
 // for claude, codex and pi, and checks each agent gets its own, that Claude loads
 // them, that Claude's marketplace isn't cloned although GitHub is reachable,
-// and that a restart replaces curral's folders and keeps the user's.
+// and that a restart replaces catchpen's folders and keeps the user's.
 func TestSkillsAndPlugins(t *testing.T) {
 	m := integrationManager(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Minute)
 	defer cancel()
-	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-curral-integration-fake")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-catchpen-integration-fake")
 	if err := os.MkdirAll(m.P.Templates(), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -52,21 +52,21 @@ func TestSkillsAndPlugins(t *testing.T) {
 	defer c.Close()
 	guest := guestRunner(t, ctx, c)
 
-	const claudeSkill = "test -f ~/.claude/skills/skill-creator/SKILL.md && cat ~/.claude/skills/skill-creator/.curral"
+	const claudeSkill = "test -f ~/.claude/skills/skill-creator/SKILL.md && cat ~/.claude/skills/skill-creator/.catchpen"
 	for _, a := range []struct{ cmd, want string }{
 		{claudeSkill + " || true", "skill-creator"},
 		{"test -e ~/.pi/agent/skills/skill-creator && echo y || true", ""},
 		{"test -e ~/.codex/skills/skill-creator && echo y || true", ""},
-		{"grep -c CLAUDE_CODE_PLUGIN_DIRS ~/.config/curral/claude.env || true", "1"},
-		{"test -f ~/.codex/plugins/cache/curral/superpowers/local/.codex-plugin/plugin.json && echo y || true", "y"},
+		{"grep -c CLAUDE_CODE_PLUGIN_DIRS ~/.config/catchpen/claude.env || true", "1"},
+		{"test -f ~/.codex/plugins/cache/catchpen/superpowers/local/.codex-plugin/plugin.json && echo y || true", "y"},
 		{"grep -c permission-gate.ts ~/.pi/agent/settings.json || true", "1"},
 	} {
 		if got := guest(a.cmd); got != a.want {
 			t.Errorf("%s: %q, want %q", a.cmd, got, a.want)
 		}
 	}
-	if got := guest("grep -c 'superpowers@curral' ~/.codex/config.toml || true"); got == "" || got == "0" {
-		t.Errorf("codex config.toml doesn't enable superpowers@curral: %q", got)
+	if got := guest("grep -c 'superpowers@catchpen' ~/.codex/config.toml || true"); got == "" || got == "0" {
+		t.Errorf("codex config.toml doesn't enable superpowers@catchpen: %q", got)
 	}
 
 	// Claude sees the skill and the plugin. GitHub is allowed, so the
@@ -118,7 +118,7 @@ func TestSkillsAndPlugins(t *testing.T) {
 		t.Errorf("codex debug prompt-input doesn't list superpowers' skills: %q", out)
 	}
 
-	// A restart replaces curral's folder and keeps the user's.
+	// A restart replaces catchpen's folder and keeps the user's.
 	guest("touch ~/.claude/skills/skill-creator/stray && mkdir -p ~/.claude/skills/mine && echo mine > ~/.claude/skills/mine/SKILL.md")
 	c.Close()
 	if err := m.Stop("sk", false); err != nil {
@@ -135,7 +135,7 @@ func TestSkillsAndPlugins(t *testing.T) {
 	defer c2.Close()
 	guest = guestRunner(t, ctx, c2)
 	if got := guest("test -e ~/.claude/skills/skill-creator/stray && echo y || true"); got != "" {
-		t.Error("stray file in curral's skill folder survived the restart")
+		t.Error("stray file in catchpen's skill folder survived the restart")
 	}
 	if got := guest("cat ~/.claude/skills/mine/SKILL.md || true"); got != "mine" {
 		t.Errorf("the user's skill folder: %q", got)

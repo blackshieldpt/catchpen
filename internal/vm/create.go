@@ -13,13 +13,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/canary"
-	"github.com/blackshieldpt/curral/internal/cloudinit"
-	"github.com/blackshieldpt/curral/internal/egress"
-	"github.com/blackshieldpt/curral/internal/fsutil"
-	"github.com/blackshieldpt/curral/internal/qemu"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/cloudinit"
+	"github.com/blackshieldpt/catchpen/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/qemu"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 type CreateOpts struct {
@@ -288,7 +288,7 @@ func (m *Manager) writeSeed(name, id, user, egressMode string, docker bool, cach
 	if id == "" {
 		rnd := make([]byte, 4)
 		_, _ = rand.Read(rnd)
-		id = fmt.Sprintf("curral-%s-%s", name, hex.EncodeToString(rnd))
+		id = fmt.Sprintf("catchpen-%s-%s", name, hex.EncodeToString(rnd))
 	}
 	ud, err := cloudinit.InstanceUserData(cloudinit.Instance{
 		Name: name, User: user, AuthorizedKey: pub,

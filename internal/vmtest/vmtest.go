@@ -15,32 +15,32 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/paths"
-	"github.com/blackshieldpt/curral/internal/qemu"
+	"github.com/blackshieldpt/catchpen/internal/paths"
+	"github.com/blackshieldpt/catchpen/internal/qemu"
 )
 
-// Home makes a curral home for one test, with the cached images linked in
-// and a curral binary built (the supervisors and egress run it).
+// Home makes a catchpen home for one test, with the cached images linked in
+// and a catchpen binary built (the supervisors and egress run it).
 func Home(t *testing.T) (p paths.Paths, bin string) {
 	t.Helper()
 	root := t.TempDir()
-	t.Setenv("CURRAL_HOME", root)
+	t.Setenv("CATCHPEN_HOME", root)
 	p = paths.Default()
 	if err := p.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	images := os.Getenv("CURRAL_TEST_IMAGES")
+	images := os.Getenv("CATCHPEN_TEST_IMAGES")
 	if images == "" {
 		home, _ := os.UserHomeDir()
-		images = filepath.Join(home, ".local/share/curral/images")
+		images = filepath.Join(home, ".local/share/catchpen/images")
 	}
 	if ents, err := os.ReadDir(images); err == nil {
 		for _, e := range ents {
 			_ = os.Symlink(filepath.Join(images, e.Name()), filepath.Join(p.Images(), e.Name()))
 		}
 	}
-	bin = filepath.Join(root, "curral")
-	if out, err := exec.Command("go", "build", "-o", bin, "github.com/blackshieldpt/curral/cmd/curral").CombinedOutput(); err != nil {
+	bin = filepath.Join(root, "catchpen")
+	if out, err := exec.Command("go", "build", "-o", bin, "github.com/blackshieldpt/catchpen/cmd/catchpen").CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, out)
 	}
 	return p, bin
@@ -55,7 +55,7 @@ func (w Writer) Write(b []byte) (int, error) {
 }
 
 // GiteaPassword is user bot's password.
-const GiteaPassword = "curral-Test-pw-1"
+const GiteaPassword = "catchpen-Test-pw-1"
 
 // Gitea is a throwaway Gitea server.
 type Gitea struct {
@@ -73,7 +73,7 @@ func StartGitea(t *testing.T, openssh bool) *Gitea {
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("docker not installed")
 	}
-	image := os.Getenv("CURRAL_TEST_GITEA_IMAGE")
+	image := os.Getenv("CATCHPEN_TEST_GITEA_IMAGE")
 	if image == "" {
 		image = "gitea/gitea:1.24"
 	}
@@ -87,7 +87,7 @@ func StartGitea(t *testing.T, openssh bool) *Gitea {
 	hp, _ := qemu.FreePort()
 	sp, _ := qemu.FreePort()
 	g := &Gitea{t: t, IP: ip, HTTP: fmt.Sprintf("http://%s:%d", ip, hp), SSHPort: sp}
-	name := fmt.Sprintf("curral-test-gitea-%d", hp)
+	name := fmt.Sprintf("catchpen-test-gitea-%d", hp)
 	sshArgs := []string{"-p", fmt.Sprintf("%s:%d:2222", ip, sp), "-e", "GITEA__server__START_SSH_SERVER=true", "-e", "GITEA__server__SSH_LISTEN_PORT=2222"}
 	if openssh {
 		sshArgs = []string{"-p", fmt.Sprintf("%s:%d:22", ip, sp), "-e", "GITEA__server__START_SSH_SERVER=false"}

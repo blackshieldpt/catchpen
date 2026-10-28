@@ -108,7 +108,7 @@ func HostBound(ctx context.Context, f Forge) (bool, error) {
 	if len(f.HostKeys) == 0 {
 		return false, fmt.Errorf("forge %s has no pinned host keys", f.Name)
 	}
-	dir, err := os.MkdirTemp("", "curral-probe")
+	dir, err := os.MkdirTemp("", "catchpen-probe")
 	if err != nil {
 		return false, err
 	}

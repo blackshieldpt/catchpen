@@ -12,11 +12,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/canary"
-	"github.com/blackshieldpt/curral/internal/egress"
-	"github.com/blackshieldpt/curral/internal/notify"
-	"github.com/blackshieldpt/curral/internal/vm"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/notify"
+	"github.com/blackshieldpt/catchpen/internal/vm"
 )
 
 func egressCmd() *cobra.Command {
@@ -234,7 +234,7 @@ func promptDecider(m *vm.Manager, inner egress.Decider) egress.Decider {
 		if nt.Wants(notify.EgressPrompt) {
 			go func() {
 				if err := nt.Send(context.Background(), notify.Event{Kind: notify.EgressPrompt, VM: r.VM,
-					Title: "curral " + r.VM + ": egress prompt", Message: fmt.Sprintf("%s %s:%d is waiting for an answer", r.Method, r.Host, r.Port)}); err != nil {
+					Title: "catchpen " + r.VM + ": egress prompt", Message: fmt.Sprintf("%s %s:%d is waiting for an answer", r.Method, r.Host, r.Port)}); err != nil {
 					fmt.Fprintf(os.Stderr, "warning: notification: %v\n", err)
 				}
 			}()

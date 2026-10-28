@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/forge"
-	"github.com/blackshieldpt/curral/internal/record"
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/forge"
+	"github.com/blackshieldpt/catchpen/internal/record"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 // Session kinds, used in recording names and the audit log.
@@ -28,7 +28,7 @@ const (
 	KindCommand = "command" // ssh <vm> -- cmd: no tty, not recorded
 )
 
-// RunCommand is the guest command for `curral run`: the agent in a tmux
+// RunCommand is the guest command for `catchpen run`: the agent in a tmux
 // session of its own name (reattached if it exists), in the VM's repo.
 func RunCommand(s *State, agent string, args []string) (string, error) {
 	d, ok := template.AgentDefByName(agent)
@@ -39,9 +39,9 @@ func RunCommand(s *State, agent string, args []string) (string, error) {
 	if a == nil {
 		return "", fmt.Errorf("%s is not installed in %s (create a VM whose -t has it, e.g. -t %s)", agent, s.Name, agent)
 	}
-	// curral-env loads the environment pushed at the last start, which a
+	// catchpen-env loads the environment pushed at the last start, which a
 	// long-lived guest tmux server would otherwise not see.
-	cmd := []string{"curral-env", agent}
+	cmd := []string{"catchpen-env", agent}
 	if a.SkipPermissions() {
 		cmd = append(cmd, yolo)
 	}
@@ -50,14 +50,14 @@ func RunCommand(s *State, agent string, args []string) (string, error) {
 	for i, c := range cmd {
 		q[i] = shQuote(c)
 	}
-	// Bases built before curral run lack curral-env; say so instead of a pane that exits.
-	check := "command -v curral-env >/dev/null || { echo 'curral: this VM was built before curral run existed; recreate it (curral destroy, then curral up builds a current base)' >&2; exit 1; }; "
-	notice := "tmux has-session -t =" + agent + " 2>/dev/null && echo 'curral: reattaching to the running " + agent +
+	// Bases built before catchpen run lack catchpen-env; say so instead of a pane that exits.
+	check := "command -v catchpen-env >/dev/null || { echo 'catchpen: this VM was built before catchpen run existed; recreate it (catchpen destroy, then catchpen up builds a current base)' >&2; exit 1; }; "
+	notice := "tmux has-session -t =" + agent + " 2>/dev/null && echo 'catchpen: reattaching to the running " + agent +
 		" session; arguments and yolo only apply when it starts' >&2; "
 	return check + notice + "tmux new-session -A -s " + agent + dirFlag(s) + " -- " + strings.Join(q, " "), nil
 }
 
-// DefaultAgent is the agent curral herdr runs in s: Claude Code if it is
+// DefaultAgent is the agent catchpen herdr runs in s: Claude Code if it is
 // installed, else the first installed agent, else "" (a shell).
 func (s *State) DefaultAgent() string {
 	if s.Agents.Get("claude") != nil {
@@ -124,7 +124,7 @@ func (m *Manager) Session(ctx context.Context, name, kind, remote string) (int, 
 	_, _ = rand.Read(rnd)
 	id := time.Now().UTC().Format("20060102-150405") + "-" + kind + "-" + hex.EncodeToString(rnd)
 	w, h := record.Size()
-	rec, err := record.Create(m.RecordingPath(name, id), w, h, fmt.Sprintf("curral %s %s", kind, name))
+	rec, err := record.Create(m.RecordingPath(name, id), w, h, fmt.Sprintf("catchpen %s %s", kind, name))
 	if err != nil {
 		return -1, fmt.Errorf("recording: %w (set record: false in config.yaml to skip)", err)
 	}

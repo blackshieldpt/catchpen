@@ -41,25 +41,25 @@ var aliasBad = regexp.MustCompile(`[^a-z0-9-]+`)
 // Alias names the SSH host alias for a deploy-keyed repo.
 func Alias(r Repo) string {
 	s := strings.ToLower(r.Forge + "-" + r.Owner + "-" + r.Name)
-	return "curral-" + strings.Trim(aliasBad.ReplaceAllString(s, "-"), "-")
+	return "catchpen-" + strings.Trim(aliasBad.ReplaceAllString(s, "-"), "-")
 }
 
-// SSHConfig renders ~/.ssh/curral_config: one block per deploy-keyed repo,
+// SSHConfig renders ~/.ssh/catchpen_config: one block per deploy-keyed repo,
 // tunnelled through the egress proxy with a pinned host key.
 func SSHConfig(repos []GuestRepo, proxy string) string {
 	var b strings.Builder
-	b.WriteString("# written by curral at each start; do not edit\n")
+	b.WriteString("# written by catchpen at each start; do not edit\n")
 	agentSeen := map[string]bool{}
 	for _, g := range repos {
 		if g.Forge.Auth.Mode == ModeAgent && !agentSeen[g.Forge.Name] {
 			agentSeen[g.Forge.Name] = true
-			// Keys come from the agent forwarded by `curral ssh` / ssh curral-<vm>.
+			// Keys come from the agent forwarded by `catchpen ssh` / ssh catchpen-<vm>.
 			fmt.Fprintf(&b, `
 Host %s
   HostName %s
   Port %d
   User git
-  UserKnownHostsFile ~/.ssh/curral_known_hosts
+  UserKnownHostsFile ~/.ssh/catchpen_known_hosts
   StrictHostKeyChecking yes
   ProxyCommand nc -X connect -x %s %%h %%p
 `, g.Forge.AgentAlias(), g.Forge.Host, g.Forge.Port(), proxy)
@@ -72,10 +72,10 @@ Host %s
   HostName %s
   Port %d
   User git
-  IdentityFile ~/.ssh/curral/%s
+  IdentityFile ~/.ssh/catchpen/%s
   IdentitiesOnly yes
   IdentityAgent none
-  UserKnownHostsFile ~/.ssh/curral_known_hosts
+  UserKnownHostsFile ~/.ssh/catchpen_known_hosts
   StrictHostKeyChecking yes
   ProxyCommand nc -X connect -x %s %%h %%p
 `, g.Alias, g.Forge.Host, g.Forge.Port(), g.Alias, proxy)

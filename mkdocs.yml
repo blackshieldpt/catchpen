@@ -1,8 +1,8 @@
-site_name: curral
+site_name: catchpen
 site_description: KVM sandboxes for coding agents
-site_url: https://blackshieldpt.github.io/curral/
-repo_url: https://github.com/blackshieldpt/curral
-repo_name: blackshieldpt/curral
+site_url: https://blackshieldpt.github.io/catchpen/
+repo_url: https://github.com/blackshieldpt/catchpen
+repo_name: blackshieldpt/catchpen
 edit_uri: edit/master/docs/
 copyright: Licensed under AGPL-3.0
 
@@ -37,7 +37,7 @@ nav:
   - Getting started:
       - Installation: installation.md
       - CLI reference: cli-reference.md
-  - Using curral:
+  - Using catchpen:
       - Templates: templates.md
       - Configuration: configuration.md
       - Agents and credentials: agents.md
@@ -53,7 +53,7 @@ nav:
       - Egress: egress.md
       - Package caches: package-caches.md
       - Canaries: canaries.md
-  - Operating curral:
+  - Operating catchpen:
       - Deployment: deployment.md
       - Troubleshooting: troubleshooting.md
   - Contributing:

@@ -1,4 +1,4 @@
-// Package hosttmux keeps a host tmux session "curral" with one window per
+// Package hosttmux keeps a host tmux session "catchpen" with one window per
 // running VM, each attached to that VM's guest tmux.
 package hosttmux
 
@@ -12,12 +12,12 @@ import (
 )
 
 // Session is the host tmux session name.
-const Session = "curral"
+const Session = "catchpen"
 
 // Tmux drives the host tmux server (Socket: a -L socket name; "" = default).
 type Tmux struct {
 	Socket string
-	Bin    string // curral binary run in each window
+	Bin    string // catchpen binary run in each window
 }
 
 func (t Tmux) cmd(args ...string) *exec.Cmd {
@@ -37,14 +37,14 @@ func (t Tmux) run(args ...string) (string, error) {
 	return out.String(), nil
 }
 
-// Exists reports whether the curral session exists.
+// Exists reports whether the catchpen session exists.
 func (t Tmux) Exists() bool {
 	return t.cmd("has-session", "-t", "="+Session).Run() == nil
 }
 
-// mark is a window option naming the VM of a window curral created; windows
+// mark is a window option naming the VM of a window catchpen created; windows
 // without it are the user's and are left alone.
-const mark = "@curral-vm"
+const mark = "@catchpen-vm"
 
 type win struct{ name, vm string }
 
@@ -64,7 +64,7 @@ func (t Tmux) list() ([]win, error) {
 	return ws, nil
 }
 
-// Windows lists the VMs that have a curral window.
+// Windows lists the VMs that have a catchpen window.
 func (t Tmux) Windows() ([]string, error) {
 	ws, err := t.list()
 	if err != nil {
@@ -127,7 +127,7 @@ func (t Tmux) markWindow(id, vm string) error {
 	return err
 }
 
-// Add adds a window for vm if the session exists (used by curral start).
+// Add adds a window for vm if the session exists (used by catchpen start).
 func (t Tmux) Add(vm string) error {
 	if !t.Exists() {
 		return nil
@@ -135,7 +135,7 @@ func (t Tmux) Add(vm string) error {
 	return t.Ensure([]string{vm})
 }
 
-// Close closes vm's curral window if there is one.
+// Close closes vm's catchpen window if there is one.
 func (t Tmux) Close(vm string) error {
 	if !t.Exists() {
 		return nil
@@ -156,7 +156,7 @@ func (t Tmux) Close(vm string) error {
 	return err
 }
 
-// Sync adds windows for running VMs and closes curral windows of the others.
+// Sync adds windows for running VMs and closes catchpen windows of the others.
 func (t Tmux) Sync(running []string) error {
 	if !t.Exists() {
 		if len(running) == 0 {

@@ -15,14 +15,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/agents"
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/cloudinit"
-	"github.com/blackshieldpt/curral/internal/creds"
-	"github.com/blackshieldpt/curral/internal/forge"
-	"github.com/blackshieldpt/curral/internal/sshagent"
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/agents"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/cloudinit"
+	"github.com/blackshieldpt/catchpen/internal/creds"
+	"github.com/blackshieldpt/catchpen/internal/forge"
+	"github.com/blackshieldpt/catchpen/internal/sshagent"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 const (
@@ -134,7 +134,7 @@ func (m *Manager) provisionForges(ctx context.Context, s *State) error {
 			c := &forge.Client{HTTP: m.HTTP, F: f, User: f.Auth.User, Password: pw}
 			rnd := make([]byte, 4)
 			_, _ = rand.Read(rnd)
-			id, tok, err := c.MintToken(ctx, "curral-"+s.Name+"-"+hex.EncodeToString(rnd), f.Auth.Scopes)
+			id, tok, err := c.MintToken(ctx, "catchpen-"+s.Name+"-"+hex.EncodeToString(rnd), f.Auth.Scopes)
 			if err != nil {
 				return fmt.Errorf("forge %s: mint token: %w", name, err)
 			}
@@ -169,14 +169,14 @@ func (m *Manager) provisionForges(ctx context.Context, s *State) error {
 		if err != nil {
 			return fmt.Errorf("forge %s: %w", f.Name, err)
 		}
-		priv, pub, err := sshx.GenerateKey("curral@" + s.Name)
+		priv, pub, err := sshx.GenerateKey("catchpen@" + s.Name)
 		if err != nil {
 			return err
 		}
 		if err := os.WriteFile(filepath.Join(dir, r.Alias), priv, 0o600); err != nil {
 			return err
 		}
-		id, err := (&forge.Client{HTTP: m.HTTP, F: f, Token: tok}).AddDeployKey(ctx, r.Repo, "curral "+s.Name, strings.TrimSpace(string(pub)), r.ReadOnly)
+		id, err := (&forge.Client{HTTP: m.HTTP, F: f, Token: tok}).AddDeployKey(ctx, r.Repo, "catchpen "+s.Name, strings.TrimSpace(string(pub)), r.ReadOnly)
 		if err != nil {
 			return fmt.Errorf("%s: add deploy key: %w", r.Repo, err)
 		}
@@ -276,9 +276,9 @@ func (m *Manager) pushForges(ctx context.Context, r agents.Remote, s *State, gcr
 	}
 	proxy := fmt.Sprintf("%s:%d", cloudinit.ProxyAddr, cloudinit.ProxyPort)
 	files := map[string]string{
-		".ssh/curral_config":             forge.SSHConfig(repos, proxy),
-		".ssh/curral_known_hosts":        forge.KnownHosts(repos),
-		".config/curral/git-credentials": forge.GitCredentials(gcreds),
+		".ssh/catchpen_config":             forge.SSHConfig(repos, proxy),
+		".ssh/catchpen_known_hosts":        forge.KnownHosts(repos),
+		".config/catchpen/git-credentials": forge.GitCredentials(gcreds),
 	}
 	if tea := forge.TeaConfig(gcreds); tea != "" {
 		files[".config/tea/config.yml"] = tea
@@ -289,7 +289,7 @@ func (m *Manager) pushForges(ctx context.Context, r agents.Remote, s *State, gcr
 			if err != nil {
 				return err
 			}
-			files[".ssh/curral/"+rs.Alias] = string(key)
+			files[".ssh/catchpen/"+rs.Alias] = string(key)
 		}
 	}
 	for rel, content := range files {
@@ -299,9 +299,9 @@ func (m *Manager) pushForges(ctx context.Context, r agents.Remote, s *State, gcr
 	}
 	script := `set -e
 touch ~/.ssh/config && chmod 600 ~/.ssh/config
-grep -qxF 'Include ~/.ssh/curral_config' ~/.ssh/config || { printf 'Include ~/.ssh/curral_config\n\n'; cat ~/.ssh/config; } > ~/.ssh/config.curral-tmp
-[ ! -f ~/.ssh/config.curral-tmp ] || mv -f ~/.ssh/config.curral-tmp ~/.ssh/config
-git config --global credential.helper "store --file=$HOME/.config/curral/git-credentials"
+grep -qxF 'Include ~/.ssh/catchpen_config' ~/.ssh/config || { printf 'Include ~/.ssh/catchpen_config\n\n'; cat ~/.ssh/config; } > ~/.ssh/config.catchpen-tmp
+[ ! -f ~/.ssh/config.catchpen-tmp ] || mv -f ~/.ssh/config.catchpen-tmp ~/.ssh/config
+git config --global credential.helper "store --file=$HOME/.config/catchpen/git-credentials"
 [ -d /workspace ] || sudo install -d -o "$(id -u)" -g "$(id -g)" /workspace
 `
 	if _, err := r.Run(ctx, script, nil); err != nil {
@@ -317,7 +317,7 @@ git config --global credential.helper "store --file=$HOME/.config/curral/git-cre
 		if out, err := run(); err != nil {
 			hint := ""
 			if g.Forge.Auth.Mode == forge.ModeAgent && strings.Contains(string(out.Raw()), "agent refused operation") {
-				hint = "\n(the restricted agent refused: confirmation denied, or the forge's SSH server lacks host-bound auth; see curral forge test " + g.Forge.Name + ")"
+				hint = "\n(the restricted agent refused: confirmation denied, or the forge's SSH server lacks host-bound auth; see catchpen forge test " + g.Forge.Name + ")"
 			}
 			return fmt.Errorf("clone %s: %w\n%s%s", g.Repo, err, out, hint)
 		}

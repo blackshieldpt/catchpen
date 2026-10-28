@@ -11,9 +11,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/template"
-	"github.com/blackshieldpt/curral/internal/vm"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/vm"
 )
 
 func upCmd() *cobra.Command {
@@ -22,7 +22,7 @@ func upCmd() *cobra.Command {
 		Use:   "up <name> [--ephemeral [-- command...]]",
 		Short: "Create (if needed) and start a VM",
 		Long: `--ephemeral creates a new VM, attaches to it (or runs the command), and destroys it,
-with its deploy keys and tokens, when the session ends or curral is signalled.`,
+with its deploy keys and tokens, when the session ends or catchpen is signalled.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()
@@ -34,7 +34,7 @@ with its deploy keys and tokens, when the session ends or curral is signalled.`,
 				return upEphemeral(cmd, m, name, o, args[1:])
 			}
 			if len(args) > 1 {
-				return errors.New("a command after the name needs --ephemeral (else use curral ssh)")
+				return errors.New("a command after the name needs --ephemeral (else use catchpen ssh)")
 			}
 			if _, err := m.Load(name); err != nil {
 				if _, statErr := os.Stat(m.Dir(name)); statErr == nil {
@@ -81,7 +81,7 @@ func upEphemeral(cmd *cobra.Command, m *vm.Manager, name string, o vm.CreateOpts
 			return
 		}
 		if err := m.Destroy(name); err != nil {
-			fmt.Fprintf(os.Stderr, "curral: destroying ephemeral %s: %v (retry: curral destroy -y %s)\n", name, err, name)
+			fmt.Fprintf(os.Stderr, "catchpen: destroying ephemeral %s: %v (retry: catchpen destroy -y %s)\n", name, err, name)
 		}
 	}()
 	s, err := m.Create(ctx, name, o)
@@ -149,7 +149,7 @@ func resumeCmd() *cobra.Command {
 		Use:   "resume <name>",
 		Short: "Continue a VM a canary hit paused",
 		Long: `A VM whose decoy credentials (template canaries:) were used is paused, frozen as it
-was (config.yaml canary_action). Look at what it did first (curral audit, curral egress
+was (config.yaml canary_action). Look at what it did first (catchpen audit, catchpen egress
 log), then resume it, or stop or destroy it.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -207,7 +207,7 @@ func lsCmd() *cobra.Command {
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "NAME\tSTATE\tTEMPLATE\tDISTRO\tCPU\tMEM\tEGRESS\tSSH\tPORTS\tAGE")
 			for _, v := range vms {
-				if v.Pool { // curral pool ls
+				if v.Pool { // catchpen pool ls
 					continue
 				}
 				state, ssh, ports := "stopped", "-", "-"
@@ -285,7 +285,7 @@ func setupSSHCmd() *cobra.Command {
 	var remove bool
 	c := &cobra.Command{
 		Use:   "setup-ssh",
-		Short: "Include curral's ssh_config in ~/.ssh/config (enables `ssh curral-<name>`)",
+		Short: "Include catchpen's ssh_config in ~/.ssh/config (enables `ssh catchpen-<name>`)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()
@@ -308,7 +308,7 @@ func setupSSHCmd() *cobra.Command {
 			case !changed:
 				fmt.Println("nothing to do")
 			case remove:
-				fmt.Printf("removed curral Include from %s\n", userCfg)
+				fmt.Printf("removed catchpen Include from %s\n", userCfg)
 			default:
 				fmt.Printf("added Include %s to %s\n", m.P.SSHConfig(), userCfg)
 			}
@@ -320,7 +320,7 @@ func setupSSHCmd() *cobra.Command {
 }
 
 // templateFlagHelp describes -t on every command that takes it.
-const templateFlagHelp = "picks from the category files, comma separated, e.g. go-1.27,large or -docker (curral template ls; default: every category's default)"
+const templateFlagHelp = "picks from the category files, comma separated, e.g. go-1.27,large or -docker (catchpen template ls; default: every category's default)"
 
 func templateCmd() *cobra.Command {
 	c := &cobra.Command{Use: "template", Short: "List and build templates: picks from the category files"}
@@ -436,8 +436,8 @@ func templateCmd() *cobra.Command {
 		Use:   "rebuild [-t picks]... [--all]",
 		Short: "Build a new base generation with a fresh cloud image and current packages",
 		Long: `The cloud image is re-checked upstream (and re-downloaded if its checksum changed) and
-a new base generation is built. Existing VMs keep their base (curral ls marks them stale):
-curral reset --latest moves one to the new base, curral gc removes unused old bases.`,
+a new base generation is built. Existing VMs keep their base (catchpen ls marks them stale):
+catchpen reset --latest moves one to the new base, catchpen gc removes unused old bases.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()
 			if err != nil {

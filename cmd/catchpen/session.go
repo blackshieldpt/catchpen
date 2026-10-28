@@ -11,11 +11,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/record"
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/template"
-	"github.com/blackshieldpt/curral/internal/vm"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/record"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/vm"
 )
 
 func exitCode(code int, err error) error {
@@ -113,14 +113,14 @@ func recordingsCmd() *cobra.Command {
 			name := args[0]
 			if len(args) > 1 {
 				if args[1] != "play" || len(args) != 3 {
-					return errors.New("usage: curral recordings <name> play <id>")
+					return errors.New("usage: catchpen recordings <name> play <id>")
 				}
 				ids, err := m.Recordings(name)
 				if err != nil {
 					return err
 				}
 				if !contains(ids, args[2]) {
-					return fmt.Errorf("no recording %q for %s (see: curral recordings %s)", args[2], name, name)
+					return fmt.Errorf("no recording %q for %s (see: catchpen recordings %s)", args[2], name, name)
 				}
 				f, err := os.Open(m.RecordingPath(name, args[2]))
 				if err != nil {
@@ -205,7 +205,7 @@ func tmuxCmd() *cobra.Command {
 			}
 			for _, n := range names {
 				if !contains(running, n) {
-					return fmt.Errorf("%s is not running (curral start %s)", n, n)
+					return fmt.Errorf("%s is not running (catchpen start %s)", n, n)
 				}
 			}
 			if len(names) == 0 && !m.Tmux.Exists() {
@@ -224,7 +224,7 @@ func tmuxCmd() *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&all, "all", false, "a window for every running VM (the default with no names)")
-	c.Flags().BoolVar(&sync, "sync", false, "add windows for running VMs and close curral windows of stopped ones, without attaching")
+	c.Flags().BoolVar(&sync, "sync", false, "add windows for running VMs and close catchpen windows of stopped ones, without attaching")
 	return c
 }
 
@@ -248,7 +248,7 @@ func herdrCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// Task VMs run their agent headless; curral herdr leaves them out.
+			// Task VMs run their agent headless; catchpen herdr leaves them out.
 			var interactive []string
 			agentOf := map[string]string{}
 			for _, n := range running {
@@ -287,10 +287,10 @@ func herdrCmd() *cobra.Command {
 			}
 			for _, n := range names {
 				if contains(running, n) && !contains(interactive, n) {
-					return fmt.Errorf("%s runs a headless task (curral task logs)", n)
+					return fmt.Errorf("%s runs a headless task (catchpen task logs)", n)
 				}
 				if !contains(interactive, n) {
-					return fmt.Errorf("%s is not running (curral start %s)", n, n)
+					return fmt.Errorf("%s is not running (catchpen start %s)", n, n)
 				}
 			}
 			if len(names) == 0 {
@@ -307,7 +307,7 @@ func herdrCmd() *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&all, "all", false, "a workspace for every running VM (the default with no names)")
-	c.Flags().BoolVar(&sync, "sync", false, "add workspaces for running VMs and close curral workspaces of stopped ones, without attaching")
+	c.Flags().BoolVar(&sync, "sync", false, "add workspaces for running VMs and close catchpen workspaces of stopped ones, without attaching")
 	c.Flags().StringVar(&agent, "agent", "", "agent to run in new workspaces (default: claude if installed, else the VM's first agent)")
 	return c
 }

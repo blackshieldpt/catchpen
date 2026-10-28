@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackshieldpt/curral/internal/config"
-	"github.com/blackshieldpt/curral/internal/creds"
-	"github.com/blackshieldpt/curral/internal/paths"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/creds"
+	"github.com/blackshieldpt/catchpen/internal/paths"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 func testPaths(t *testing.T) paths.Paths {

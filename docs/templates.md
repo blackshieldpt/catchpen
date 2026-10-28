@@ -5,19 +5,19 @@ credentials and repos. You build one with `-t`, by picking **sections** from
 **category files**:
 
 ```
-curral up dev                                        # every category's default
-curral up dev -t go-1.27,python-3.14                 # the defaults, plus Go and Python 3.14
-curral up dev -t ubuntu-26.04,large,go-1.27,-docker  # another distro and size, Go, no Docker
+catchpen up dev                                        # every category's default
+catchpen up dev -t go-1.27,python-3.14                 # the defaults, plus Go and Python 3.14
+catchpen up dev -t ubuntu-26.04,large,go-1.27,-docker  # another distro and size, Go, no Docker
 ```
 
 Software is baked into a **base** image built from the template; VMs are thin
 copy-on-write overlays on it.
 
 ```
-curral template ls [category]        # every section, with the defaults marked
-curral template show -t go-1.27      # the settings a -t gives, and where they come from
-curral template build -t go-1.27 [--rebuild]
-curral template rebuild --all        # fresh cloud image and packages, as a new base
+catchpen template ls [category]        # every section, with the defaults marked
+catchpen template show -t go-1.27      # the settings a -t gives, and where they come from
+catchpen template build -t go-1.27 [--rebuild]
+catchpen template rebuild --all        # fresh cloud image and packages, as a new base
 ```
 
 ## How `-t` works
@@ -51,8 +51,8 @@ section's value, agents merge field by field, `env` by name and `mcp` by server 
 dropped. A runtime picked with `-t` overrides the Node version the agents ask for
 (`-t node-22`).
 
-A VM records its `-t` (`curral ls` shows it as TEMPLATE), and uses it again for
-`curral reset --latest`, `rebase`, `template rebuild --all` and `creds push`. So editing a
+A VM records its `-t` (`catchpen ls` shows it as TEMPLATE), and uses it again for
+`catchpen reset --latest`, `rebase`, `template rebuild --all` and `creds push`. So editing a
 section changes what those give for every VM that picked it.
 
 ## Categories
@@ -76,40 +76,40 @@ section changes what those give for every VM that picked it.
 | `idle.yaml` | `idle_stop` | none (`config.yaml` `idle_stop`) | `idle-30m`, `idle-1h`, `idle-2h`, `idle-off` |
 | `profiles.yaml` | lists of picks | none | `minimal` |
 
-`curral template ls` prints the full list with descriptions. A section may set only its
+`catchpen template ls` prints the full list with descriptions. A section may set only its
 category's settings, and a `description`.
 
 ## Your sections
 
-`curral init` writes every category file to `~/.config/curral/templates/`. Each one
-explains itself, shows curral's built-in sections commented out, and most have examples.
+`catchpen init` writes every category file to `~/.config/catchpen/templates/`. Each one
+explains itself, shows catchpen's built-in sections commented out, and most have examples.
 To use one, uncomment it with all the lines under it:
 
 ```yaml
-# ~/.config/curral/templates/ssh.yaml
+# ~/.config/catchpen/templates/ssh.yaml
 github-ssh:
   description: Sign git over SSH with my key
   ssh: { agent: restricted, agent_keys: [~/.ssh/id_ed25519], confirm: false }
 ```
 
 ```yaml
-# ~/.config/curral/templates/env.yaml
+# ~/.config/catchpen/templates/env.yaml
 gh-token: { env: { GH_TOKEN: "secret:GH_TOKEN" } }
 ```
 
 ```
-curral up dev -t github-ssh,gh-token --repo github:acme/api
+catchpen up dev -t github-ssh,gh-token --repo github:acme/api
 ```
 
-Your file is read on top of curral's: a section with a built-in name replaces it, and
+Your file is read on top of catchpen's: a section with a built-in name replaces it, and
 `default:` replaces the built-in default. Sections you don't redefine keep tracking
-curral's, so new built-in sections (a new Go version, say) reach you on upgrade.
+catchpen's, so new built-in sections (a new Go version, say) reach you on upgrade.
 
 Section names are lower case letters, digits, `.`, `_` and `-`, start with a letter or
 digit, are at most 48 characters, and are defined once per file. Any other `*.yaml` in
 that folder, such as an old-style template, is refused until you move or rename it.
 Relative paths in `scripts` and `files[].src` resolve inside
-`~/.config/curral/templates/` (symlinks there are followed); absolute paths and `..` are
+`~/.config/catchpen/templates/` (symlinks there are followed); absolute paths and `..` are
 rejected. Unknown settings are errors.
 
 ### Profiles
@@ -118,12 +118,12 @@ A section can also be a list of picks, used like one section. `profiles.yaml` ho
 that span categories:
 
 ```yaml
-# ~/.config/curral/templates/profiles.yaml
+# ~/.config/catchpen/templates/profiles.yaml
 acme-api: [github-ssh, gh-token, api, go-1.27, large]
 ```
 
 ```
-curral up dev -t acme-api
+catchpen up dev -t acme-api
 ```
 
 Lists may include `-name` and other lists. In a category file other than
@@ -132,7 +132,7 @@ Lists may include `-name` and other lists. In a category file other than
 
 The built-in `minimal` profile is the defaults minus everything optional: `small`, the
 `core` tools, the allowlist with only the `anthropic` preset, and no agents, runtimes,
-caches or canaries. It removes curral's built-in default sections by name, so sections
+caches or canaries. It removes catchpen's built-in default sections by name, so sections
 you add to a default stay: with `default: [claude, omp]` in agents.yaml, `-t minimal`
 has omp.
 
@@ -141,12 +141,12 @@ has omp.
 `default:` is a section name, a list of names, or settings of its own:
 
 ```yaml
-# ~/.config/curral/templates/resources.yaml
+# ~/.config/catchpen/templates/resources.yaml
 default: large                     # every VM gets 8 CPUs unless -t says otherwise
 ```
 
 ```yaml
-# ~/.config/curral/templates/agents.yaml
+# ~/.config/catchpen/templates/agents.yaml
 default: [claude, omp]             # no opencode, pi or codex by default
 ```
 
@@ -155,7 +155,7 @@ default: [claude, omp]             # no opencode, pi or codex by default
 | Setting | Values |
 |---|---|
 | `distro` | `ubuntu-24.04`, `ubuntu-26.04`, `debian-13`, or a name from `images:` in config.yaml. |
-| `resources` | `cpus` (0 to 256), `memory`, `disk`: sizes like `512M`, `8G`, `1T`. `--cpus`, `--mem` and `--disk` on `curral up` override them. |
+| `resources` | `cpus` (0 to 256), `memory`, `disk`: sizes like `512M`, `8G`, `1T`. `--cpus`, `--mem` and `--disk` on `catchpen up` override them. |
 | `packages` | apt package names, optionally `name=version`. |
 | `docker` | `true` installs Docker and configures it for the proxy and caches. |
 | `runtimes` | `node: "24"` (a major version, quoted), `go: "1.27"` or `"1.27.1"`, `python: uv` or a version like `"3.14"` (installed with uv, as `python3.14` and `python`). |
@@ -178,7 +178,7 @@ default: [claude, omp]             # no opencode, pi or codex by default
 
 ## Bases and rebuilds
 
-The first `curral up` of a template downloads and verifies the cloud image and builds
+The first `catchpen up` of a template downloads and verifies the cloud image and builds
 the base, which takes a few minutes. Later VMs of the template boot in seconds. On a
 terminal, the build shows its current step with a spinner and how long it has run.
 
@@ -190,11 +190,11 @@ Changing the software in a template (packages, runtimes, scripts, files, agents'
 and the like) means a new base, built on the next `up` of a new VM. Existing VMs keep
 their base and software; only `reset --latest` (a fresh disk on the new base) gives
 them the new software, while `rebase` moves a disk onto the new base without changing
-its files. See [snapshots.md](snapshots.md). `curral template build -t <picks> --rebuild`
-forces a build, re-checking the cloud image upstream, and `curral template rebuild --all`
+its files. See [snapshots.md](snapshots.md). `catchpen template build -t <picks> --rebuild`
+forces a build, re-checking the cloud image upstream, and `catchpen template rebuild --all`
 refreshes every base.
 
 Base builds run with the same isolation as VMs, through a proxy that allows any public
 host but no private address, and use the template's package caches (Docker's excepted).
-Build logs are in `~/.local/share/curral/bases/`; see
+Build logs are in `~/.local/share/catchpen/bases/`; see
 [troubleshooting.md](troubleshooting.md#base-builds).

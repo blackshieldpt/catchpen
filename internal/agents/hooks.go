@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/blackshieldpt/curral/internal/cloudinit"
+	"github.com/blackshieldpt/catchpen/internal/cloudinit"
 )
 
-// Agent hooks tell the host (curral notify-stdio, behind a guestfwd) when an
+// Agent hooks tell the host (catchpen notify-stdio, behind a guestfwd) when an
 // agent is waiting for input. They carry no credentials; the host decides
 // whether and where to notify.
 
@@ -16,9 +16,9 @@ var notifyURL = fmt.Sprintf("http://%s:%d/notify", cloudinit.NotifyAddr, cloudin
 
 const (
 	claudeSettings = ".claude/settings.json"
-	opencodePlugin = ".config/opencode/plugin/curral-notify.js"
-	piExtension    = ".pi/agent/extensions/curral-notify.ts"
-	ompExtension   = ".omp/agent/extensions/curral-notify.ts"
+	opencodePlugin = ".config/opencode/plugin/catchpen-notify.js"
+	piExtension    = ".pi/agent/extensions/catchpen-notify.ts"
+	ompExtension   = ".omp/agent/extensions/catchpen-notify.ts"
 )
 
 // postJS posts a small JSON body with node:http, which ignores the proxy
@@ -42,9 +42,9 @@ func (p *pusher) hooks(s Spec) error {
 		}
 	}
 	if s.Agents.OpenCode != nil {
-		js := `// written by curral at each start; do not edit
+		js := `// written by catchpen at each start; do not edit
 import http from "node:http";
-export const CurralNotify = async () => ({
+export const CatchpenNotify = async () => ({
 	event: async ({ event }) => {
 		if (event.type !== "session.idle") return;
 	` + postJS("opencode", "session.idle") + `
@@ -63,7 +63,7 @@ export const CurralNotify = async () => ({
 		if !e.on {
 			continue
 		}
-		ts := `// written by curral at each start; do not edit
+		ts := `// written by catchpen at each start; do not edit
 import http from "node:http";
 export default function (pi: any) {
 	pi.on("` + e.ev + `", async () => {
@@ -85,7 +85,7 @@ func curlPost(data, query string) string {
 		" '" + notifyURL + query + "' >/dev/null 2>&1 || true"
 }
 
-// claudeHooks adds curral's Notification and Stop hooks to the guest's
+// claudeHooks adds catchpen's Notification and Stop hooks to the guest's
 // settings.json, keeping any others. Unless sync.claude_ai is on, it also
 // turns off the skill and plugin sync from claude.ai.
 func (p *pusher) claudeHooks(s Spec) error {

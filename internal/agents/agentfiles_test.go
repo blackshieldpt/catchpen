@@ -13,9 +13,9 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
-	"github.com/blackshieldpt/curral/internal/gitsrc"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/gitsrc"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 func skillFiles(content string) []gitsrc.File {
@@ -53,10 +53,10 @@ func readFile(t *testing.T, path string) string {
 	return string(b)
 }
 
-// staging lists what's left of curral's staging folders in dir.
+// staging lists what's left of catchpen's staging folders in dir.
 func staging(t *testing.T, dir string) []string {
 	t.Helper()
-	m, err := filepath.Glob(filepath.Join(dir, ".curral-new*"))
+	m, err := filepath.Glob(filepath.Join(dir, ".catchpen-new*"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,11 +79,11 @@ func TestAgentFilesSkillsPerAgent(t *testing.T) {
 		if got := readFile(t, filepath.Join(home, dir, "b", "SKILL.md")); got != "B" {
 			t.Errorf("%s: b/SKILL.md = %q", agent, got)
 		}
-		if got := readFile(t, filepath.Join(home, dir, "b", curralMark)); got != "b" {
+		if got := readFile(t, filepath.Join(home, dir, "b", catchpenMark)); got != "b" {
 			t.Errorf("%s: b's mark = %q", agent, got)
 		}
 	}
-	if got := readFile(t, filepath.Join(home, ".claude/skills/a", curralMark)); got != "a" {
+	if got := readFile(t, filepath.Join(home, ".claude/skills/a", catchpenMark)); got != "a" {
 		t.Errorf("a's mark = %q", got)
 	}
 }
@@ -92,32 +92,32 @@ func TestAgentFilesKeepsTheUsers(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude/skills")
 	write(t, filepath.Join(dir, "mine/SKILL.md"), "mine")
-	write(t, filepath.Join(dir, "old", curralMark), "old")
+	write(t, filepath.Join(dir, "old", catchpenMark), "old")
 	write(t, filepath.Join(dir, "a/SKILL.md"), "the user's a")
-	write(t, filepath.Join(dir, "copy", curralMark), "old") // a mark copied from elsewhere
-	write(t, filepath.Join(dir, "copied", curralMark), "old")
+	write(t, filepath.Join(dir, "copy", catchpenMark), "old") // a mark copied from elsewhere
+	write(t, filepath.Join(dir, "copied", catchpenMark), "old")
 	s := filesSpec(template.Agents{Claude: &template.Agent{}})
-	s.Skills = []Bundle{{Name: "a", Files: skillFiles("curral's a")}, {Name: "copied", Files: skillFiles("curral's copied")}}
+	s.Skills = []Bundle{{Name: "a", Files: skillFiles("catchpen's a")}, {Name: "copied", Files: skillFiles("catchpen's copied")}}
 	res := pushFiles(t, home, s)
 	if !exists(filepath.Join(dir, "mine/SKILL.md")) {
 		t.Error("the user's mine was removed")
 	}
 	if exists(filepath.Join(dir, "old")) {
-		t.Error("curral's old was kept")
+		t.Error("catchpen's old was kept")
 	}
-	if !exists(filepath.Join(dir, "copy", curralMark)) {
+	if !exists(filepath.Join(dir, "copy", catchpenMark)) {
 		t.Error("copy, whose mark isn't its own name, was removed")
 	}
 	if got := readFile(t, filepath.Join(dir, "a/SKILL.md")); got != "the user's a" {
 		t.Errorf("the user's a was replaced: %q", got)
 	}
-	if exists(filepath.Join(dir, "a", curralMark)) {
+	if exists(filepath.Join(dir, "a", catchpenMark)) {
 		t.Error("the user's a was marked")
 	}
 	if !warned(res, "~/.claude/skills/a is yours") {
 		t.Errorf("warnings %v", res.Warnings)
 	}
-	if got := readFile(t, filepath.Join(dir, "copied", curralMark)); got != "old" || exists(filepath.Join(dir, "copied/SKILL.md")) {
+	if got := readFile(t, filepath.Join(dir, "copied", catchpenMark)); got != "old" || exists(filepath.Join(dir, "copied/SKILL.md")) {
 		t.Errorf("copied, whose mark isn't its own name, was replaced: mark %q", got)
 	}
 	if !warned(res, "~/.claude/skills/copied is yours") {
@@ -125,7 +125,7 @@ func TestAgentFilesKeepsTheUsers(t *testing.T) {
 	}
 }
 
-// An agent can make part of a folder read-only; curral still replaces and
+// An agent can make part of a folder read-only; catchpen still replaces and
 // removes its own folder whole.
 func TestAgentFilesReadOnlyFolders(t *testing.T) {
 	if os.Geteuid() == 0 {
@@ -154,7 +154,7 @@ func TestAgentFilesReadOnlyFolders(t *testing.T) {
 	if left := staging(t, dir); len(left) != 0 || warned(res, "can't remove") {
 		t.Errorf("the old copy wasn't removed: %v, warnings %v", left, res.Warnings)
 	}
-	if got := readFile(t, filepath.Join(dir, "a", curralMark)); got != "a" {
+	if got := readFile(t, filepath.Join(dir, "a", catchpenMark)); got != "a" {
 		t.Errorf("a's mark = %q", got)
 	}
 	readOnly()
@@ -196,8 +196,8 @@ exec `+rm+` "$@"
 		}
 		write(t, filepath.Join(dir, "a/stuck"), "")
 	}
-	if exists(filepath.Join(dir, ".curral-new")) {
-		t.Error(".curral-new is left in place, where the next copy needs it")
+	if exists(filepath.Join(dir, ".catchpen-new")) {
+		t.Error(".catchpen-new is left in place, where the next copy needs it")
 	}
 	t.Setenv("PATH", path) // the files can be removed again: the next push does
 	if res := pushFiles(t, home, s); len(staging(t, dir)) != 0 || warned(res, "can't remove") {
@@ -210,8 +210,8 @@ exec `+rm+` "$@"
 func TestAgentFilesRestoresAnInterruptedCopy(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".claude/skills")
-	write(t, filepath.Join(dir, ".curral-new/.old/a", curralMark), "a")
-	write(t, filepath.Join(dir, ".curral-new/.old/a/SKILL.md"), "A")
+	write(t, filepath.Join(dir, ".catchpen-new/.old/a", catchpenMark), "a")
+	write(t, filepath.Join(dir, ".catchpen-new/.old/a/SKILL.md"), "A")
 	s := filesSpec(template.Agents{Claude: &template.Agent{}})
 	s.Skills = []Bundle{{Name: "a", Failed: true}}
 	pushFiles(t, home, s)
@@ -219,7 +219,7 @@ func TestAgentFilesRestoresAnInterruptedCopy(t *testing.T) {
 		t.Errorf("a restored %v, staging left %v", exists(filepath.Join(dir, "a/SKILL.md")), staging(t, dir))
 	}
 	// And when the next push copies.
-	write(t, filepath.Join(dir, ".curral-new/.old/b", curralMark), "b")
+	write(t, filepath.Join(dir, ".catchpen-new/.old/b", catchpenMark), "b")
 	s.Skills = []Bundle{{Name: "a", Files: skillFiles("A2")}, {Name: "b", Files: skillFiles("B2")}}
 	res := pushFiles(t, home, s)
 	for n, want := range map[string]string{"a": "A2", "b": "B2"} {
@@ -263,7 +263,7 @@ func TestAgentFilesFailedFetchKeeps(t *testing.T) {
 
 func TestAgentFilesNoManagementWithoutTheFlag(t *testing.T) {
 	home := t.TempDir()
-	write(t, filepath.Join(home, ".claude/skills/a", curralMark), "a")
+	write(t, filepath.Join(home, ".claude/skills/a", catchpenMark), "a")
 	pushFiles(t, home, Spec{Agents: template.Agents{Claude: &template.Agent{}}})
 	if !exists(filepath.Join(home, ".claude/skills/a")) {
 		t.Error("a marked folder was removed without AgentFiles")
@@ -281,7 +281,7 @@ func TestAgentFilesClaudePlugin(t *testing.T) {
 	s.Plugins = []Bundle{{Agent: "claude", Name: "p", Files: []gitsrc.File{{Name: ".claude-plugin/plugin.json", Data: []byte("{}")}}}}
 	pushFiles(t, home, s)
 	ce := readFile(t, filepath.Join(home, claudeEnvFile))
-	for _, want := range []string{"CLAUDE_CODE_PLUGIN_DIRS=/home/agent/.local/share/curral/plugins/claude/p\n", "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL=1\n"} {
+	for _, want := range []string{"CLAUDE_CODE_PLUGIN_DIRS=/home/agent/.local/share/catchpen/plugins/claude/p\n", "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL=1\n"} {
 		if !strings.Contains(ce, want) {
 			t.Errorf("claude env lacks %q:\n%s", want, ce)
 		}
@@ -297,13 +297,13 @@ func TestAgentFilesClaudePlugin(t *testing.T) {
 	home = t.TempDir()
 	s = filesSpec(template.Agents{Claude: &template.Agent{}})
 	s.Sync, s.ClaudeDir = template.Sync{ClaudeConfig: &tru}, host
-	s.Skills = []Bundle{{Name: "a", Files: skillFiles("curral's a")}}
+	s.Skills = []Bundle{{Name: "a", Files: skillFiles("catchpen's a")}}
 	res := pushFiles(t, home, s)
 	if got := readFile(t, filepath.Join(home, ".claude/skills/a/SKILL.md")); got != "host's a" {
 		t.Errorf("a/SKILL.md = %q", got)
 	}
-	if exists(filepath.Join(home, ".claude/skills/a", curralMark)) {
-		t.Error("curral copied a")
+	if exists(filepath.Join(home, ".claude/skills/a", catchpenMark)) {
+		t.Error("catchpen copied a")
 	}
 	if !warned(res, "your synced ~/.claude/skills/a is used instead") {
 		t.Errorf("warnings %v", res.Warnings)
@@ -321,7 +321,7 @@ func readTOML(t *testing.T, path string) map[string]any {
 
 func TestAgentFilesCodexPlugin(t *testing.T) {
 	home := t.TempDir()
-	write(t, filepath.Join(home, codexConfig), "[plugins.\"stale@curral\"]\nenabled = true\n[plugins.\"mine@other\"]\nenabled = true\n")
+	write(t, filepath.Join(home, codexConfig), "[plugins.\"stale@catchpen\"]\nenabled = true\n[plugins.\"mine@other\"]\nenabled = true\n")
 	s := filesSpec(template.Agents{Codex: &template.Agent{Auth: template.CodexNone}})
 	s.Plugins = []Bundle{{Agent: "codex", Name: "p", Files: []gitsrc.File{{Name: ".codex-plugin/plugin.json", Data: []byte("{}")}}}}
 	pushFiles(t, home, s)
@@ -329,21 +329,21 @@ func TestAgentFilesCodexPlugin(t *testing.T) {
 	if got := readFile(t, filepath.Join(root, "p/local/.codex-plugin/plugin.json")); got != "{}" {
 		t.Errorf("plugin.json = %q", got)
 	}
-	if got := readFile(t, filepath.Join(root, "p", curralMark)); got != "p" {
+	if got := readFile(t, filepath.Join(root, "p", catchpenMark)); got != "p" {
 		t.Errorf("mark = %q", got)
 	}
 	cfg := readTOML(t, filepath.Join(home, codexConfig))
-	if get(cfg, "plugins", "p@curral", "enabled") != true || get(cfg, "features", "remote_plugin") != false {
+	if get(cfg, "plugins", "p@catchpen", "enabled") != true || get(cfg, "features", "remote_plugin") != false {
 		t.Errorf("config.toml: %v", cfg)
 	}
-	if get(cfg, "plugins", "stale@curral") != nil || get(cfg, "plugins", "mine@other", "enabled") != true {
+	if get(cfg, "plugins", "stale@catchpen") != nil || get(cfg, "plugins", "mine@other", "enabled") != true {
 		t.Errorf("config.toml plugins: %v", cfg["plugins"])
 	}
 
 	s.Plugins = nil
 	pushFiles(t, home, s)
 	cfg = readTOML(t, filepath.Join(home, codexConfig))
-	if get(cfg, "plugins", "p@curral") != nil || get(cfg, "plugins", "mine@other", "enabled") != true {
+	if get(cfg, "plugins", "p@catchpen") != nil || get(cfg, "plugins", "mine@other", "enabled") != true {
 		t.Errorf("second push: plugins %v", cfg["plugins"])
 	}
 	if exists(filepath.Join(root, "p")) {
@@ -353,14 +353,14 @@ func TestAgentFilesCodexPlugin(t *testing.T) {
 
 func TestAgentFilesOpencodePlugin(t *testing.T) {
 	home := t.TempDir()
-	write(t, filepath.Join(home, opencodeConfig), `{"plugin": ["npm-thing", ["with-opts", {"x": 1}], "/home/agent/.local/share/curral/plugins/opencode/stale"]}`)
+	write(t, filepath.Join(home, opencodeConfig), `{"plugin": ["npm-thing", ["with-opts", {"x": 1}], "/home/agent/.local/share/catchpen/plugins/opencode/stale"]}`)
 	s := filesSpec(template.Agents{OpenCode: &template.Agent{}})
 	s.Plugins = []Bundle{
 		{Agent: "opencode", Name: "p", Files: []gitsrc.File{{Name: "package.json", Data: []byte("{}")}}},
 		{Agent: "opencode", Name: "nopkg", Files: []gitsrc.File{{Name: "index.ts", Data: []byte("x")}}},
 	}
 	res := pushFiles(t, home, s)
-	want := []any{"npm-thing", []any{"with-opts", map[string]any{"x": float64(1)}}, "/home/agent/.local/share/curral/plugins/opencode/p"}
+	want := []any{"npm-thing", []any{"with-opts", map[string]any{"x": float64(1)}}, "/home/agent/.local/share/catchpen/plugins/opencode/p"}
 	if got := readJSON(t, filepath.Join(home, opencodeConfig))["plugin"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("plugin = %#v", got)
 	}
@@ -389,7 +389,7 @@ func TestAgentFilesPiPlugins(t *testing.T) {
 	}
 	res := pushFiles(t, home, s)
 	doc := readJSON(t, filepath.Join(home, piSettings))
-	if want := []any{"/home/agent/.local/share/curral/plugins/pi/q"}; !reflect.DeepEqual(doc["packages"], want) {
+	if want := []any{"/home/agent/.local/share/catchpen/plugins/pi/q"}; !reflect.DeepEqual(doc["packages"], want) {
 		t.Errorf("packages = %v", doc["packages"])
 	}
 	if want := []any{piPackage + "/examples/extensions/plan-mode.ts"}; !reflect.DeepEqual(doc["extensions"], want) {
@@ -421,25 +421,25 @@ func TestAgentFilesOmpPlugin(t *testing.T) {
 	s.Plugins = nil
 	pushFiles(t, home, s)
 	if exists(filepath.Join(dir, "p")) || !exists(filepath.Join(home, ompExtension)) {
-		t.Errorf("second push: p %v, curral-notify.ts %v", exists(filepath.Join(dir, "p")), exists(filepath.Join(home, ompExtension)))
+		t.Errorf("second push: p %v, catchpen-notify.ts %v", exists(filepath.Join(dir, "p")), exists(filepath.Join(home, ompExtension)))
 	}
 }
 
 func TestAgentFilesChecks(t *testing.T) {
 	home := t.TempDir()
 	s := filesSpec(template.Agents{Claude: &template.Agent{}})
-	s.Skills = []Bundle{{Name: "a b", Files: skillFiles("x")}, {Name: "curral-x", Files: skillFiles("x")}, {Agent: "nope", Name: "z", Files: skillFiles("x")}}
+	s.Skills = []Bundle{{Name: "a b", Files: skillFiles("x")}, {Name: "catchpen-x", Files: skillFiles("x")}, {Agent: "nope", Name: "z", Files: skillFiles("x")}}
 	s.Plugins = []Bundle{{Agent: "codex", Name: "p", Files: skillFiles("x")}, {Name: "y", Files: skillFiles("x")},
 		{Agent: "pi", Name: "b1", Bundled: "../x"}, {Agent: "pi", Name: "b2", Bundled: "a//b"}}
 	res := pushFiles(t, home, s)
-	for _, w := range []string{`skill "a b": invalid name; skipped`, `skill "curral-x": invalid name; skipped`, "plugin p: codex isn't installed in this VM; skipped",
+	for _, w := range []string{`skill "a b": invalid name; skipped`, `skill "catchpen-x": invalid name; skipped`, "plugin p: codex isn't installed in this VM; skipped",
 		`skill z: unknown agent "nope"; skipped`, `plugin y: unknown agent ""; skipped`,
 		`plugin b1: invalid bundled path "../x"; skipped`, `plugin b2: invalid bundled path "a//b"; skipped`} {
 		if !warned(res, w) {
 			t.Errorf("no warning %q in %v", w, res.Warnings)
 		}
 	}
-	for _, p := range []string{".claude/skills/a b", ".claude/skills/curral-x", ".claude/skills/z", pluginDirs["codex"]} {
+	for _, p := range []string{".claude/skills/a b", ".claude/skills/catchpen-x", ".claude/skills/z", pluginDirs["codex"]} {
 		if exists(filepath.Join(home, p)) {
 			t.Errorf("%s exists", p)
 		}
@@ -491,23 +491,23 @@ func TestPushTurnsOffBackgroundFetches(t *testing.T) {
 	}
 }
 
-// A fetched folder holding curral's mark is refused, and the others still
+// A fetched folder holding catchpen's mark is refused, and the others still
 // get theirs, so none is mistaken for the user's later.
 func TestAgentFilesMarksEveryCopy(t *testing.T) {
 	home := t.TempDir()
 	s := filesSpec(template.Agents{Claude: &template.Agent{}})
 	s.Skills = []Bundle{
-		{Name: "a", Files: append(skillFiles("A"), gitsrc.File{Name: ".curral/x", Data: []byte("x")})},
+		{Name: "a", Files: append(skillFiles("A"), gitsrc.File{Name: ".catchpen/x", Data: []byte("x")})},
 		{Name: "b", Files: skillFiles("B")},
 	}
 	res := pushFiles(t, home, s)
-	if !warned(res, "skill a: it holds a .curral, which is curral's; skipped") || exists(filepath.Join(home, ".claude/skills/a")) {
+	if !warned(res, "skill a: it holds a .catchpen, which is catchpen's; skipped") || exists(filepath.Join(home, ".claude/skills/a")) {
 		t.Errorf("a: %v", res.Warnings)
 	}
-	if got := readFile(t, filepath.Join(home, ".claude/skills/b", curralMark)); got != "b" {
+	if got := readFile(t, filepath.Join(home, ".claude/skills/b", catchpenMark)); got != "b" {
 		t.Errorf("b's mark = %q", got)
 	}
-	if exists(filepath.Join(home, ".claude/skills/.curral-new")) {
+	if exists(filepath.Join(home, ".claude/skills/.catchpen-new")) {
 		t.Error("the unpacking folder was left behind")
 	}
 }
@@ -532,7 +532,7 @@ func TestAgentFilesFailedPluginsKeep(t *testing.T) {
 	if err := toml.Unmarshal([]byte(readFile(t, filepath.Join(home, codexConfig))), &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if get(cfg, "plugins", "p@curral", "enabled") != true {
+	if get(cfg, "plugins", "p@catchpen", "enabled") != true {
 		t.Errorf("codex config: %v", cfg)
 	}
 	if oc := readJSON(t, filepath.Join(home, opencodeConfig)); !reflect.DeepEqual(oc["plugin"], []any{"/home/agent/" + pluginDirs["opencode"] + "/q"}) {
@@ -543,7 +543,7 @@ func TestAgentFilesFailedPluginsKeep(t *testing.T) {
 	}
 }
 
-// curral removes only the pi extensions it added; the user's stay.
+// catchpen removes only the pi extensions it added; the user's stay.
 func TestAgentFilesPiKeepsTheUsersExtensions(t *testing.T) {
 	old := piPackage
 	t.Cleanup(func() { piPackage = old })
@@ -571,7 +571,7 @@ func TestAgentFilesPiKeepsTheUsersExtensions(t *testing.T) {
 }
 
 // What the guest put there is the user's: a dangling symlink, a FIFO for a
-// mark (which must not block the push), a folder curral's plugin would use.
+// mark (which must not block the push), a folder catchpen's plugin would use.
 func TestAgentFilesLeavesOddFoldersAlone(t *testing.T) {
 	real := claudeReal
 	t.Cleanup(func() { claudeReal = real })
@@ -586,19 +586,19 @@ func TestAgentFilesLeavesOddFoldersAlone(t *testing.T) {
 	if err := os.Symlink("/nonexistent", filepath.Join(skills, "a")); err != nil {
 		t.Fatal(err)
 	}
-	if err := syscall.Mkfifo(filepath.Join(skills, "f", curralMark), 0o600); err != nil {
+	if err := syscall.Mkfifo(filepath.Join(skills, "f", catchpenMark), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	write(t, filepath.Join(home, pluginDirs["codex"], "p/local/x"), "mine")
 	write(t, filepath.Join(home, pluginDirs["claude"], "q/x"), "mine")
 	write(t, filepath.Join(home, pluginDirs["claude"], "v/x"), "mine")
-	write(t, filepath.Join(home, pluginDirs["claude"], "k", curralMark), "k")
+	write(t, filepath.Join(home, pluginDirs["claude"], "k", catchpenMark), "k")
 	s := filesSpec(template.Agents{Claude: &template.Agent{}, Codex: &template.Agent{Auth: template.CodexNone}})
 	s.Skills = []Bundle{{Name: "a", Files: skillFiles("A")}, {Name: "f", Files: skillFiles("F")}}
-	x := []gitsrc.File{{Name: "x", Data: []byte("curral")}}
+	x := []gitsrc.File{{Name: "x", Data: []byte("catchpen")}}
 	s.Plugins = []Bundle{
 		{Agent: "codex", Name: "p", Files: x}, {Agent: "claude", Name: "q", Files: x}, {Agent: "claude", Name: "r", Files: x},
-		// Failed fetches: curral's old copy k stays loaded; the user's v and a missing w aren't.
+		// Failed fetches: catchpen's old copy k stays loaded; the user's v and a missing w aren't.
 		{Agent: "claude", Name: "k", Failed: true}, {Agent: "claude", Name: "v", Failed: true}, {Agent: "claude", Name: "w", Failed: true},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -616,11 +616,11 @@ func TestAgentFilesLeavesOddFoldersAlone(t *testing.T) {
 	if readFile(t, filepath.Join(home, pluginDirs["codex"], "p/local/x")) != "mine" {
 		t.Error("the user's codex folder was replaced")
 	}
-	if cfg := readFile(t, filepath.Join(home, codexConfig)); strings.Contains(cfg, "p@curral") {
-		t.Errorf("the user's folder was turned on as curral's plugin:\n%s", cfg)
+	if cfg := readFile(t, filepath.Join(home, codexConfig)); strings.Contains(cfg, "p@catchpen") {
+		t.Errorf("the user's folder was turned on as catchpen's plugin:\n%s", cfg)
 	}
-	if ce := readFile(t, filepath.Join(home, claudeEnvFile)); !strings.Contains(ce, "CLAUDE_CODE_PLUGIN_DIRS=/home/agent/.local/share/curral/plugins/claude/r:/home/agent/.local/share/curral/plugins/claude/k\n") {
-		t.Errorf("claude should load curral's r and k only:\n%s", ce)
+	if ce := readFile(t, filepath.Join(home, claudeEnvFile)); !strings.Contains(ce, "CLAUDE_CODE_PLUGIN_DIRS=/home/agent/.local/share/catchpen/plugins/claude/r:/home/agent/.local/share/catchpen/plugins/claude/k\n") {
+		t.Errorf("claude should load catchpen's r and k only:\n%s", ce)
 	}
 }
 
@@ -664,7 +664,7 @@ func TestSetListSeesEveryChange(t *testing.T) {
 // Two pushes at once take turns at a root: they share its staging folder.
 func TestAgentFilesPushesTakeTurns(t *testing.T) {
 	home := t.TempDir()
-	lock := filepath.Join(home, ".local/share/curral/files.lock")
+	lock := filepath.Join(home, ".local/share/catchpen/files.lock")
 	write(t, lock, "")
 	unlock, err := fsutil.Lock(lock)
 	if err != nil {

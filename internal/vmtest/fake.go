@@ -17,7 +17,7 @@ import (
 func FakeQEMU(t *testing.T, dir, name string, memMB int, running func() bool) {
 	t.Helper()
 	write(t, filepath.Join(dir, "vm.json"), fmt.Sprintf(`{"name":%q,"memory_mb":%d}`, name, memMB))
-	c := exec.Command("bash", "-c", `exec -a qemu-system-x86_64 bash -c 'sleep 60; true' -name curral-`+name)
+	c := exec.Command("bash", "-c", `exec -a qemu-system-x86_64 bash -c 'sleep 60; true' -name catchpen-`+name)
 	if err := c.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func FakeQEMU(t *testing.T, dir, name string, memMB int, running func() bool) {
 	t.Fatal("fake QEMU not seen as running")
 }
 
-// FakeSupervisor is a live process whose argv looks like curral task-supervise <id>.
+// FakeSupervisor is a live process whose argv looks like catchpen task-supervise <id>.
 func FakeSupervisor(t *testing.T, id string) int {
 	t.Helper()
 	c := exec.Command("bash", "-c", "sleep 60; true", "task-supervise", id) // "; true": bash would exec a lone command, losing this argv

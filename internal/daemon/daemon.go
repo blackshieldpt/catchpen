@@ -1,4 +1,4 @@
-// Package daemon runs curral's background jobs: warm pool refills, idle
+// Package daemon runs catchpen's background jobs: warm pool refills, idle
 // stop, scheduled base rebuilds and desktop egress prompts. Everything it
 // does can also be done by hand.
 package daemon
@@ -16,11 +16,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/egress"
-	"github.com/blackshieldpt/curral/internal/fsutil"
-	"github.com/blackshieldpt/curral/internal/paths"
-	"github.com/blackshieldpt/curral/internal/template"
-	"github.com/blackshieldpt/curral/internal/vm"
+	"github.com/blackshieldpt/catchpen/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/paths"
+	"github.com/blackshieldpt/catchpen/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/vm"
 )
 
 const (
@@ -73,10 +73,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return err
 	}
 	if !ok {
-		return errors.New("curral daemon is already running")
+		return errors.New("catchpen daemon is already running")
 	}
 	defer unlock()
-	d.logf("curral daemon running")
+	d.logf("catchpen daemon running")
 
 	var wg sync.WaitGroup
 	loop := func(job string, every time.Duration, fn func(context.Context, *vm.Manager) error) {
@@ -184,7 +184,7 @@ func writeStamp(p paths.Paths, t time.Time) error {
 
 // prompts keeps one watcher serving the VMs whose egress asks (on_deny:
 // prompt), restarting it as VMs come and go. VMs another watcher serves
-// (curral egress watch) are left to it.
+// (catchpen egress watch) are left to it.
 func (d *Daemon) prompts(ctx context.Context) {
 	type watcher struct {
 		dirs   map[string]string

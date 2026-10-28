@@ -1,4 +1,4 @@
-// Package notify sends curral events (task results, pending egress prompts,
+// Package notify sends catchpen events (task results, pending egress prompts,
 // agents waiting for input) to the user's notification sinks. Sink
 // credentials stay on the host; guest-originated text is sanitized and
 // rate-limited before it gets here.
@@ -243,7 +243,7 @@ func (n *Notifier) desktop(ctx context.Context, e Event) error {
 // notifySendArgs escapes the body: notification daemons may render markup
 // in it, and it can be guest text.
 func notifySendArgs(title, message string) []string {
-	return []string{"--app-name=curral", "--", title, html.EscapeString(message)}
+	return []string{"--app-name=catchpen", "--", title, html.EscapeString(message)}
 }
 
 func (n *Notifier) secret(ctx context.Context, v string) (string, error) {

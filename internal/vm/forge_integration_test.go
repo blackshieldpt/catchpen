@@ -17,14 +17,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/vmtest"
+	"github.com/blackshieldpt/catchpen/internal/vmtest"
 
-	"github.com/blackshieldpt/curral/internal/canary"
-	"github.com/blackshieldpt/curral/internal/config"
-	"github.com/blackshieldpt/curral/internal/egress"
-	"github.com/blackshieldpt/curral/internal/forge"
-	"github.com/blackshieldpt/curral/internal/qemu"
-	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/forge"
+	"github.com/blackshieldpt/catchpen/internal/qemu"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
 )
 
 func TestForges(t *testing.T) {
@@ -37,7 +37,7 @@ func TestForges(t *testing.T) {
 	var tok struct {
 		SHA1 string `json:"sha1"`
 	}
-	g.API("POST", "/users/bot/tokens", map[string]any{"name": "curral-admin", "scopes": []string{"write:repository", "read:user"}}, &tok)
+	g.API("POST", "/users/bot/tokens", map[string]any{"name": "catchpen-admin", "scopes": []string{"write:repository", "read:user"}}, &tok)
 	t.Setenv("GITEA_ADMIN", tok.SHA1)
 	t.Setenv("GITEA_PASSWORD", vmtest.GiteaPassword)
 
@@ -85,7 +85,7 @@ func TestForges(t *testing.T) {
 	run := guestRunner(t, ctx, c)
 
 	// Both repos were cloned: app over SSH (deploy key, via the proxy), lib over HTTPS (minted token).
-	if got := run("git -C /workspace/app remote get-url origin; git -C /workspace/lib remote get-url origin"); got != "curral-gd-bot-app:bot/app.git\n"+g.HTTP+"/bot/lib.git" {
+	if got := run("git -C /workspace/app remote get-url origin; git -C /workspace/lib remote get-url origin"); got != "catchpen-gd-bot-app:bot/app.git\n"+g.HTTP+"/bot/lib.git" {
 		t.Errorf("remotes: %q", got)
 	}
 	run(`git config --global user.email a@b.test; git config --global user.name agent
@@ -110,7 +110,7 @@ cd /workspace/lib && echo x > x.txt && git add x.txt && git commit -qm "Add x" &
 	if b, _ := os.ReadFile(filepath.Join(pdir, "fg1-local.mbox")); !bytes.Contains(b, []byte("Subject: [PATCH 1/2] Add hi")) || !bytes.Contains(b, []byte("Subject: [PATCH 2/2] Local change")) {
 		t.Errorf("patches:\n%s", b)
 	}
-	if p.Ref != "refs/curral/fg1/local" {
+	if p.Ref != "refs/catchpen/fg1/local" {
 		t.Errorf("ref = %s", p.Ref)
 	}
 	if out, _ := exec.Command("git", "-C", host, "log", "-1", "--format=%s", p.Ref).Output(); strings.TrimSpace(string(out)) != "Local change" {
@@ -137,13 +137,13 @@ cd /workspace/lib && echo x > x.txt && git add x.txt && git commit -qm "Add x" &
 		out, _ := exec.Command("git", "-C", host, "for-each-ref", "--format=%(refname) %(objectname)", ref).Output()
 		return string(out)
 	}
-	before := hostRef("refs/curral/")
+	before := hostRef("refs/catchpen/")
 	run(`cd /workspace/app && git checkout -q local && echo '` + cs[0].Values[0] + `' > leak.txt && git add leak.txt && git commit -qm "Add config"`)
 	if _, err := m.Pull(ctx, "fg1", PullOpts{Repo: "app", Into: host}); !errors.Is(err, ErrCanary) {
 		t.Errorf("pull of a leaking commit: %v", err)
 	}
-	if after := hostRef("refs/curral/"); after != before || hostRef("refs/curral-incoming/") != "" {
-		t.Errorf("refs after a refused pull:\n%s%s\nwas\n%s", after, hostRef("refs/curral-incoming/"), before)
+	if after := hostRef("refs/catchpen/"); after != before || hostRef("refs/catchpen-incoming/") != "" {
+		t.Errorf("refs after a refused pull:\n%s%s\nwas\n%s", after, hostRef("refs/catchpen-incoming/"), before)
 	}
 	run(`cd /workspace/app && git checkout -q -b clean2 origin/HEAD && echo z > z.txt && git add z.txt && git commit -qm z && git branch -q "x-` + cs[0].Hosts[0] + `"`)
 	if _, err := m.Pull(ctx, "fg1", PullOpts{Repo: "app", Into: host, Branch: "x-" + cs[0].Hosts[0]}); !errors.Is(err, ErrCanary) {
@@ -176,7 +176,7 @@ cd /workspace/lib && echo x > x.txt && git add x.txt && git commit -qm "Add x" &
 	var toks []map[string]any
 	g.API("GET", "/users/bot/tokens", nil, &toks)
 	for _, tk := range toks {
-		if strings.HasPrefix(fmt.Sprint(tk["name"]), "curral-fg1-") {
+		if strings.HasPrefix(fmt.Sprint(tk["name"]), "catchpen-fg1-") {
 			t.Errorf("minted token left: %v", tk)
 		}
 	}
@@ -207,7 +207,7 @@ func TestAgentForwarding(t *testing.T) {
 	os.WriteFile(answer, []byte("0"), 0o600)
 	t.Setenv("SSH_ASKPASS", askpass)
 	t.Setenv("SSH_ASKPASS_REQUIRE", "force")
-	t.Setenv("DISPLAY", ":curral-test")
+	t.Setenv("DISPLAY", ":catchpen-test")
 
 	keys, err := forge.Scan(ctx, g.IP, g.SSHPort)
 	if err != nil {
@@ -244,8 +244,8 @@ func TestAgentForwarding(t *testing.T) {
 		return strings.TrimSpace(string(out.Raw())), err
 	}
 	if _, err := m.Start(ctx, "ag2"); err != nil {
-		if os.Getenv("CURRAL_TEST_DEBUG") != "" {
-			for _, c := range []string{"echo $SSH_AUTH_SOCK; ssh-add -l", "ssh -v -T curral-forge-ga 2>&1 | grep -v -e load_hostkeys -e kex -e rekey -e Reading | tail -25"} {
+		if os.Getenv("CATCHPEN_TEST_DEBUG") != "" {
+			for _, c := range []string{"echo $SSH_AUTH_SOCK; ssh-add -l", "ssh -v -T catchpen-forge-ga 2>&1 | grep -v -e load_hostkeys -e kex -e rekey -e Reading | tail -25"} {
 				out, err := ssh(c)
 				t.Logf("$ %s (%v)\n%s", c, err, out)
 			}
@@ -271,12 +271,12 @@ func TestAgentForwarding(t *testing.T) {
 	if out, err := ssh("ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=no agent@localhost echo pwned"); err == nil || strings.Contains(out, "pwned") {
 		t.Errorf("constrained key worked for the VM itself: %q", out)
 	}
-	if out, err := ssh("git ls-remote curral-forge-ga:bot/app.git HEAD"); err != nil || !strings.Contains(out, "HEAD") {
+	if out, err := ssh("git ls-remote catchpen-forge-ga:bot/app.git HEAD"); err != nil || !strings.Contains(out, "HEAD") {
 		t.Errorf("ls-remote via agent: %q %v", out, err)
 	}
 	// A denied confirmation fails the operation.
 	os.WriteFile(answer, []byte("1"), 0o600)
-	if out, err := ssh("git ls-remote curral-forge-ga:bot/app.git HEAD"); err == nil {
+	if out, err := ssh("git ls-remote catchpen-forge-ga:bot/app.git HEAD"); err == nil {
 		t.Errorf("ls-remote succeeded though confirmation was denied: %q", out)
 	}
 	os.WriteFile(answer, []byte("0"), 0o600)

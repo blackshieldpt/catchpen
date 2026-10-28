@@ -53,7 +53,7 @@ func output(evs [][]any) string {
 
 func TestCast(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "r", "a.cast")
-	c, err := Create(p, 100, 30, "curral ssh vm")
+	c, err := Create(p, 100, 30, "catchpen ssh vm")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestCast(t *testing.T) {
 		t.Errorf("mode %v", st.Mode())
 	}
 	h, evs := readCast(t, p)
-	if h.Version != 2 || h.Width != 100 || h.Height != 30 || h.Title != "curral ssh vm" {
+	if h.Version != 2 || h.Width != 100 || h.Height != 30 || h.Title != "catchpen ssh vm" {
 		t.Errorf("header %+v", h)
 	}
 	if got := output(evs); got != "héllo € \x1b[31mred\x1b[0mbad � byte" {

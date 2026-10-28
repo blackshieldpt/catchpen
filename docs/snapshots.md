@@ -1,21 +1,21 @@
 # Snapshots, reset and base updates
 
 ```
-curral snapshot dev [before-upgrade]    # running: memory and disk; --disk-only for the disk
-curral snapshots dev
-curral restore dev before-upgrade       # --disk-only: restore only the disk, booting afresh
-curral rmsnap dev before-upgrade
-curral template rebuild --all           # fresh cloud image and packages, as a new base
-curral reset dev [--latest]             # fresh disk, first boot again (--latest: new base)
-curral rebase dev                       # onto the current base, contents unchanged
-curral gc [--dry-run]
+catchpen snapshot dev [before-upgrade]    # running: memory and disk; --disk-only for the disk
+catchpen snapshots dev
+catchpen restore dev before-upgrade       # --disk-only: restore only the disk, booting afresh
+catchpen rmsnap dev before-upgrade
+catchpen template rebuild --all           # fresh cloud image and packages, as a new base
+catchpen reset dev [--latest]             # fresh disk, first boot again (--latest: new base)
+catchpen rebase dev                       # onto the current base, contents unchanged
+catchpen gc [--dry-run]
 ```
 
 ## Snapshots
 
 Snapshots are stored inside the VM's disk. A snapshot of a running VM saves its memory
 too (the VM pauses while it's written), so restoring it resumes the VM where it was,
-starting it if stopped. Afterwards curral sets the guest clock and pushes credentials
+starting it if stopped. Afterwards catchpen sets the guest clock and pushes credentials
 again. `--disk-only` saves just the disk, without pausing for memory. Restoring a
 disk-only snapshot needs the VM off, so a running VM is stopped and started again.
 
@@ -29,7 +29,7 @@ task. Memory snapshots hold whatever was in the guest's memory, credentials incl
 
 A rebuild never replaces a base in use. It adds a generation
 (`<distro>-<hash>.2.qcow2`) that new VMs use; the one it supersedes is removed if no VM
-uses it. `curral ls` marks VMs on an older generation `stale-base`.
+uses it. `catchpen ls` marks VMs on an older generation `stale-base`.
 
 To move a VM to new software:
 
@@ -50,7 +50,7 @@ The daemon can rebuild bases on a schedule (`rebuild:` in config.yaml); see
 
 ## Garbage collection
 
-`curral gc` removes:
+`catchpen gc` removes:
 
 - bases no VM uses (the current base of each `-t` spec stays);
 - leftovers of interrupted builds, downloads, resets and destroys;

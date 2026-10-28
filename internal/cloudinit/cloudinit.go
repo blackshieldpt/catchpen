@@ -15,17 +15,17 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/blackshieldpt/curral/internal/cache"
-	"github.com/blackshieldpt/curral/internal/canary"
-	"github.com/blackshieldpt/curral/internal/egress"
-	tpl "github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/cache"
+	"github.com/blackshieldpt/catchpen/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/egress"
+	tpl "github.com/blackshieldpt/catchpen/internal/template"
 )
 
 // Guest-side endpoints served by QEMU guestfwd.
 const (
 	ProxyAddr = "10.0.2.100"
 	ProxyPort = 3128
-	// NotifyAddr:NotifyPort reaches curral notify-stdio on the host (agent hooks).
+	// NotifyAddr:NotifyPort reaches catchpen notify-stdio on the host (agent hooks).
 	NotifyAddr = "10.0.2.101"
 	NotifyPort = 80
 )
@@ -33,14 +33,14 @@ const (
 // Claude Code's token or key goes to ClaudeEnvFile (under the guest home),
 // which only the base's claude wrapper loads before running ClaudeReal.
 const (
-	ClaudeReal    = "/usr/local/lib/curral/claude"
-	ClaudeEnvFile = ".config/curral/claude.env"
-	withEnv       = "/usr/local/lib/curral/with-env"
+	ClaudeReal    = "/usr/local/lib/catchpen/claude"
+	ClaudeEnvFile = ".config/catchpen/claude.env"
+	withEnv       = "/usr/local/lib/catchpen/with-env"
 )
 
 const (
-	BuildOK   = "CURRAL-BUILD-OK"
-	BuildFail = "CURRAL-BUILD-FAIL"
+	BuildOK   = "CATCHPEN-BUILD-OK"
+	BuildFail = "CATCHPEN-BUILD-FAIL"
 )
 
 //go:embed build.sh.tmpl
@@ -160,11 +160,11 @@ func BuildUserData(t *tpl.Template, user string, caches []string) ([]byte, error
 		return nil, err
 	}
 	files := []writeFile{{
-		Path: "/var/lib/curral/build/build.sh", Content: script, Permissions: "0700",
+		Path: "/var/lib/catchpen/build/build.sh", Content: script, Permissions: "0700",
 	}}
 	for i, s := range t.Scripts {
 		files = append(files, writeFile{
-			Path:        "/var/lib/curral/build/scripts/" + scriptTarget(i, s),
+			Path:        "/var/lib/catchpen/build/scripts/" + scriptTarget(i, s),
 			Content:     base64.StdEncoding.EncodeToString(t.Asset(s)),
 			Encoding:    "b64",
 			Permissions: "0700",
@@ -187,7 +187,7 @@ func BuildUserData(t *tpl.Template, user string, caches []string) ([]byte, error
 		files = append(files, wf)
 	}
 	// ttyS1 is a dedicated build-log port (ttyS0 carries the console and a getty).
-	run := fmt.Sprintf("stty -F /dev/ttyS1 raw -echo; /var/lib/curral/build/build.sh >/dev/ttyS1 2>&1 && echo %s >/dev/ttyS1 || echo %s >/dev/ttyS1; sync; poweroff",
+	run := fmt.Sprintf("stty -F /dev/ttyS1 raw -echo; /var/lib/catchpen/build/build.sh >/dev/ttyS1 2>&1 && echo %s >/dev/ttyS1 || echo %s >/dev/ttyS1; sync; poweroff",
 		BuildOK, BuildFail)
 	return marshal(map[string]any{
 		"users":       []ciUser{{Name: user, Shell: "/bin/bash", Sudo: "ALL=(ALL) NOPASSWD:ALL", LockPasswd: true}},
@@ -240,13 +240,13 @@ type Instance struct {
 	Canaries      []canary.GuestFile // decoys for the user's home
 }
 
-const sshdConf = `# curral: key-only access
+const sshdConf = `# catchpen: key-only access
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin no
 AllowUsers %s
 X11Forwarding no
-# curral pushes the template's env: values to ~/.ssh/environment (0600)
+# catchpen pushes the template's env: values to ~/.ssh/environment (0600)
 PermitUserEnvironment yes
 `
 
@@ -254,7 +254,7 @@ PermitUserEnvironment yes
 // (the seed file is 0600 in the VM directory) and no user credentials.
 func InstanceUserData(in Instance) ([]byte, error) {
 	files := []writeFile{{
-		Path: "/etc/ssh/sshd_config.d/00-curral.conf", Content: fmt.Sprintf(sshdConf, in.User), Permissions: "0644",
+		Path: "/etc/ssh/sshd_config.d/00-catchpen.conf", Content: fmt.Sprintf(sshdConf, in.User), Permissions: "0644",
 	}}
 	var run [][]string
 	noProxy := "localhost,127.0.0.1,::1"
@@ -266,14 +266,14 @@ func InstanceUserData(in Instance) ([]byte, error) {
 		env := fmt.Sprintf("http_proxy=%[1]s\nhttps_proxy=%[1]s\nHTTP_PROXY=%[1]s\nHTTPS_PROXY=%[1]s\nno_proxy=%[2]s\nNO_PROXY=%[2]s\n", proxy, noProxy)
 		files = append(files,
 			writeFile{Path: "/etc/environment", Content: env, Append: true},
-			writeFile{Path: "/etc/apt/apt.conf.d/95curral-proxy", Permissions: "0644",
+			writeFile{Path: "/etc/apt/apt.conf.d/95catchpen-proxy", Permissions: "0644",
 				Content: fmt.Sprintf("Acquire::http::Proxy \"%[1]s\";\nAcquire::https::Proxy \"%[1]s\";\n", proxy)},
 		)
 		if in.Docker {
 			unit := fmt.Sprintf("[Service]\nEnvironment=\"HTTP_PROXY=%[1]s\" \"HTTPS_PROXY=%[1]s\" \"NO_PROXY=%[2]s\"\n", proxy, noProxy)
 			files = append(files,
-				writeFile{Path: "/etc/systemd/system/docker.service.d/curral-proxy.conf", Content: unit, Permissions: "0644"},
-				writeFile{Path: "/etc/systemd/system/containerd.service.d/curral-proxy.conf", Content: unit, Permissions: "0644"},
+				writeFile{Path: "/etc/systemd/system/docker.service.d/catchpen-proxy.conf", Content: unit, Permissions: "0644"},
+				writeFile{Path: "/etc/systemd/system/containerd.service.d/catchpen-proxy.conf", Content: unit, Permissions: "0644"},
 				writeFile{Path: "/home/" + in.User + "/.docker/config.json", Owner: in.User + ":" + in.User, Permissions: "0600", Defer: true,
 					Content: fmt.Sprintf(`{"proxies":{"default":{"httpProxy":"%[1]s","httpsProxy":"%[1]s","noProxy":"%[2]s"}}}`+"\n", proxy, noProxy)},
 			)
@@ -284,7 +284,7 @@ func InstanceUserData(in Instance) ([]byte, error) {
 		files = append(files, writeFile{Path: "/etc/environment", Content: strings.Join(env, "\n") + "\n", Append: true})
 	}
 	if apt := cacheApt(in.Cache); apt != "" {
-		files = append(files, writeFile{Path: "/etc/apt/apt.conf.d/94curral-cache", Content: apt, Permissions: "0644"})
+		files = append(files, writeFile{Path: "/etc/apt/apt.conf.d/94catchpen-cache", Content: apt, Permissions: "0644"})
 	}
 	if in.Docker && slices.Contains(in.Cache, "docker") {
 		// Merged into what the template's base may have in daemon.json.

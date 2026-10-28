@@ -1,9 +1,9 @@
 # Security model
 
-This page lists what curral does to keep a VM contained and what it leaves to you. For
-reporting vulnerabilities, see [SECURITY.md](https://github.com/blackshieldpt/curral/blob/master/SECURITY.md).
+This page lists what catchpen does to keep a VM contained and what it leaves to you. For
+reporting vulnerabilities, see [SECURITY.md](https://github.com/blackshieldpt/catchpen/blob/master/SECURITY.md).
 
-curral treats the guest as hostile. Everything in a VM (the agent, its tools, the code
+catchpen treats the guest as hostile. Everything in a VM (the agent, its tools, the code
 it writes and the packages it installs) may try to escape, read host secrets,
 exfiltrate data or reach your network. The VM, not the guest user, is the boundary:
 the agent user has passwordless sudo inside it.
@@ -31,7 +31,7 @@ the agent user has passwordless sudo inside it.
   but cannot authenticate.
 - The generated `ssh_config` disables agent forwarding (unless `ssh.agent` is set), X11,
   port forwarding and tunnels for VM hosts, overriding a `Host *` block in your own
-  config. `curral forward` turns port forwarding back on only for its own sessions.
+  config. `catchpen forward` turns port forwarding back on only for its own sessions.
 - `ssh.agent: restricted` gives the VM a per-VM `ssh-agent` holding only the keys you
   list, each destination-constrained so it signs only for that VM's `agent`-mode forges,
   and asking for confirmation on each use by default. `ssh.agent: host` forwards your
@@ -43,23 +43,23 @@ the agent user has passwordless sudo inside it.
 - In `allowlist` mode (the default) the VM has no direct network access. QEMU's user
   network runs with `restrict=on`; the exits are an HTTP proxy at `10.0.2.100:3128`, the
   package caches at `10.0.2.102` and the notification relay at `10.0.2.101`, all served
-  by curral on the host. DNS resolves on the host. In `none` mode only the notification
+  by catchpen on the host. DNS resolves on the host. In `none` mode only the notification
   relay is left.
 - Allowlisted names that resolve to private or loopback addresses are blocked unless
   `allow_private` is set. The denylist wins over the allowlist.
 - The proxy caps request headers (64 KiB), concurrent connections per VM (128) and idle
   tunnels (10 min), and accepts only standard HTTP methods. Each guest connection,
-  rejected ones included, starts one short-lived `curral egress-stdio` process (about
+  rejected ones included, starts one short-lived `catchpen egress-stdio` process (about
   3 ms and 11 MiB RSS each, so at most about 1.4 GiB per VM at the connection cap).
-  The package caches have their own cap of 128 connections and `curral cache-stdio`
+  The package caches have their own cap of 128 connections and `catchpen cache-stdio`
   processes per VM, so about twice that with both in use.
 - A connection that is allowed but whose log entry can't be written is refused.
   `egress.log` rotates at 32 MiB, keeping one old file, so a guest making many denied
   requests can push older entries out.
 - `network.egress: open` gives the guest unfiltered internet and the host's `127.0.0.1`
-  services (the `open` section of `network.yaml`). `curral up` requires `--allow-open`
+  services (the `open` section of `network.yaml`). `catchpen up` requires `--allow-open`
   for it.
-- `curral forward -R` bypasses the proxy. It is recorded in the audit log, and in the
+- `catchpen forward -R` bypasses the proxy. It is recorded in the audit log, and in the
   egress log of allowlist-mode VMs.
 
 ## Credentials
@@ -81,7 +81,7 @@ the agent user has passwordless sudo inside it.
 
 ## Data coming from the guest
 
-- Bundles from `pull`, `pr` and tasks are fetched into `refs/curral/...` with hooks off,
+- Bundles from `pull`, `pr` and tasks are fetched into `refs/catchpen/...` with hooks off,
   fsmonitor off and `transfer.fsckObjects` on. Nothing from the guest runs on the host,
   and the host working tree is untouched.
 - Exported commits, branch names, PR titles and bodies, task results and agent
@@ -92,7 +92,7 @@ the agent user has passwordless sudo inside it.
 - Notification text from the guest is stripped of control characters, cut to 300
   characters and rate-limited (a burst of 5 per VM, then one every 30 s).
 - Guest output shown on the host is filtered: first-boot errors drop control
-  characters, and `curral console` and `curral recordings play` drop OSC, DCS and APC
+  characters, and `catchpen console` and `catchpen recordings play` drop OSC, DCS and APC
   sequences (window title, clipboard). `asciinema play` does not filter them.
 - Session recordings are written on the host, from the host side of the pty, so the
   guest can't alter them.
@@ -149,4 +149,4 @@ the agent user has passwordless sudo inside it.
 - Pin `version:` for agents installed from release binaries.
 - Keep canaries on (the `canaries.yaml` default plants all three) and
   `canary_action: pause`.
-- Review `curral audit` and `curral egress log` for VMs that ran unattended.
+- Review `catchpen audit` and `catchpen egress log` for VMs that ran unattended.

@@ -4,36 +4,36 @@ A task runs an agent on a prompt in a fresh VM, with no one watching, and brings
 work out through the host.
 
 ```
-curral task run --repo github:acme/api --prompt "fix issue #42"
-curral task run --repo github:acme/api --prompt-file task.md --agent opencode --out bundle --into ~/src/api
-curral task run --agent cmd --cmd 'make fix' --prompt "..."   # any command, prompt on stdin
-curral task run -t go-1.27,codex-api-key --agent codex --repo github:acme/api --prompt "..."
-curral task run --file tasks.yaml --parallel 2
-curral task ls
-curral task show <id>
-curral task logs <id> [-f] [--raw]
-curral task cancel <id>
-curral task rm <id>
+catchpen task run --repo github:acme/api --prompt "fix issue #42"
+catchpen task run --repo github:acme/api --prompt-file task.md --agent opencode --out bundle --into ~/src/api
+catchpen task run --agent cmd --cmd 'make fix' --prompt "..."   # any command, prompt on stdin
+catchpen task run -t go-1.27,codex-api-key --agent codex --repo github:acme/api --prompt "..."
+catchpen task run --file tasks.yaml --parallel 2
+catchpen task ls
+catchpen task show <id>
+catchpen task logs <id> [-f] [--raw]
+catchpen task cancel <id>
+catchpen task rm <id>
 ```
 
 ## What a task does
 
-1. It waits for the budget in config.yaml (all running curral VMs count):
+1. It waits for the budget in config.yaml (all running catchpen VMs count):
 
    ```yaml
    tasks: { max_vms: 2, max_memory: 24G }
    ```
 
 2. It gets a new VM named `task-<id>`, with the template `-t` gives (as on
-   `curral up`), from the warm pool when one matches, with read-only deploy keys unless
+   `catchpen up`), from the warm pool when one matches, with read-only deploy keys unless
    `--rw`.
-3. The agent works on branch `curral/<id>` without permission prompts: claude
+3. The agent works on branch `catchpen/<id>` without permission prompts: claude
    `-p --output-format stream-json`, `opencode run --format json --auto`,
    `pi -p --mode json`, `codex exec --json --yolo`. omp also runs headless. Codex
    tasks need `-t codex-api-key` (the default `codex` section has no credentials, and
    `codex-chatgpt` has no sign-in in a new VM, so both are refused), and Codex
    reports no cost. `--agent cmd` runs your command with the prompt on stdin
-   and its path in `$CURRAL_PROMPT_FILE`. `--timeout` (default 2h, from 1m to 48h)
+   and its path in `$CATCHPEN_PROMPT_FILE`. `--timeout` (default 2h, from 1m to 48h)
    stops it; `--max-budget-usd` caps Claude's spend (claude only). Prompts are limited
    to 100 KiB.
 4. Whatever the agent leaves uncommitted is committed.
@@ -41,8 +41,8 @@ curral task rm <id>
 
    | `--out` | Result |
    |---|---|
-   | `pr` (default with a repo) | Pushes `curral/task-<id>/curral/<id>` through a remote of `--into` (default: the current directory) with your credentials, and opens a PR with the prompt and result. |
-   | `bundle` | Fetches the branch into `refs/curral/...` of `--into`. |
+   | `pr` (default with a repo) | Pushes `catchpen/task-<id>/catchpen/<id>` through a remote of `--into` (default: the current directory) with your credentials, and opens a PR with the prompt and result. |
+   | `bundle` | Fetches the branch into `refs/catchpen/...` of `--into`. |
    | `patch` | Writes an mbox in the task directory, made on the host from the scanned commits. |
    | `none` | Nothing is exported. |
 
@@ -56,7 +56,7 @@ whose supervisor died shows as `lost`; `cancel` or `rm` destroys its VM.
 
 ## Output
 
-Everything is on the host in `~/.local/share/curral/tasks/<id>/`:
+Everything is on the host in `~/.local/share/catchpen/tasks/<id>/`:
 
 | File | Contents |
 |---|---|

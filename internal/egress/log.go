@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/jsonl"
-	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/jsonl"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
 )
 
 const (
@@ -21,7 +21,7 @@ const (
 	ActionPromptAllow = "prompt-allow"
 	ActionPromptDeny  = "prompt-deny"
 	ActionError       = "error"
-	ActionForward     = "forward" // host service exposed to the guest with curral forward -R
+	ActionForward     = "forward" // host service exposed to the guest with catchpen forward -R
 	ActionCache       = "cache"   // fetched upstream by a package cache
 )
 

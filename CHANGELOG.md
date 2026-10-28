@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to curral are listed here. The format follows
+All notable changes to catchpen are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), newest first. Sections dated
 before 0.1.0 describe work on `master` before the first tagged release.
 
@@ -8,6 +8,10 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Changed (breaking)
 
+- curral is now catchpen: the binary, the `catchpen` command, the Go module
+  `github.com/blackshieldpt/catchpen`, the `.deb` package, the `CATCHPEN_*` environment
+  variables and the `~/.config/catchpen`, `~/.local/share/catchpen` and
+  `~/.cache/catchpen` directories.
 - Templates are now [category files](docs/templates.md) of named sections: `distros`,
   `resources`, `tools`, `agents`, `runtimes`, `network`, `caches`, `canaries`, `env`,
   `mcp`, `ssh`, `sync`, `repos`, `ports`, `idle` and `profiles`,
@@ -20,10 +24,10 @@ before 0.1.0 describe work on `master` before the first tagged release.
   profile), `--distro` and config.yaml's `defaults.distro`, `defaults.template`,
   `defaults.resources` and pool `distro:` are gone; all but `--distro` give errors that
   say so. Commands that read templates refuse while old template files, such as the
-  `example.yaml` an older `curral init` wrote, are in `~/.config/curral/templates/`. A
+  `example.yaml` an older `catchpen init` wrote, are in `~/.config/catchpen/templates/`. A
   pool entry's or task batch's `template:` is now a `-t` spec, so an old template name
   that is now a section's (`go`, `gh`) means that section on top of the defaults: check
-  scripts and config with `curral template show -t <name>`. VMs made before keep
+  scripts and config with `catchpen template show -t <name>`. VMs made before keep
   running, but `reset --latest` and `rebase` refuse them and `creds push` leaves their
   env alone.
 - opencode no longer reads `~/.claude/skills` in VMs, unless
@@ -32,9 +36,9 @@ before 0.1.0 describe work on `master` before the first tagged release.
   `sync: { claude_ai: true }` (`-t claude-ai-sync`).
 - Bases are named after the distro and a hash of their content
   (`ubuntu-24.04-<hash>.qcow2`), so `-t` lists that give the same software share one.
-- `curral init` writes every category file, commented, with curral's built-in sections
+- `catchpen init` writes every category file, commented, with catchpen's built-in sections
   and examples, instead of `templates/example.yaml`.
-- `curral template ls [category]`, `show -t`, `build -t` and `rebuild -t` work on picks.
+- `catchpen template ls [category]`, `show -t`, `build -t` and `rebuild -t` work on picks.
 
 ### Added
 
@@ -52,14 +56,14 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Changed
 
-- `curral creds push` takes the VM's `env:` from its template as the template is now, so
+- `catchpen creds push` takes the VM's `env:` from its template as the template is now, so
   variables added to the template after the VM was created reach it. It also refreshes
   the VM's skills and plugins from the template.
 - Claude Code no longer clones its official plugin marketplace in VMs; no setting turns
   it back on.
 - Codex's remote plugins are off.
 - A `--repo` whose host has no forge says that repos clone only from added forges, lists
-  the configured ones, and prints a complete `curral forge add` command for the host.
+  the configured ones, and prints a complete `catchpen forge add` command for the host.
 
 ## [0.1.1] - 2026-10-25
 

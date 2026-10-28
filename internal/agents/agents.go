@@ -16,10 +16,10 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
-	"github.com/blackshieldpt/curral/internal/cloudinit"
-	"github.com/blackshieldpt/curral/internal/gitsrc"
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/cloudinit"
+	"github.com/blackshieldpt/catchpen/internal/gitsrc"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 // Remote runs a shell command in the guest as the VM user.
@@ -46,7 +46,7 @@ type Spec struct {
 	Home            string // the guest user's home, e.g. /home/agent
 	Skills, Plugins []Bundle
 	// AgentFiles makes Push manage skill and plugin folders: copy these and
-	// remove curral's folders that aren't listed. Callers that don't build
+	// remove catchpen's folders that aren't listed. Callers that don't build
 	// the full list must leave it false.
 	AgentFiles bool
 }
@@ -200,7 +200,7 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 		} else {
 			maps.Copy(env, claudeEnv)
 			if ok {
-				p.warn("claude: this VM's base predates keeping Claude's credential to Claude Code, so every session gets it in its environment (curral reset --latest moves the VM to a current base)")
+				p.warn("claude: this VM's base predates keeping Claude's credential to Claude Code, so every session gets it in its environment (catchpen reset --latest moves the VM to a current base)")
 			}
 		}
 	}
@@ -253,7 +253,7 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 
 func envFileContent(env map[string]string) []byte {
 	var b strings.Builder
-	b.WriteString("# written by curral at each start; do not edit\n")
+	b.WriteString("# written by catchpen at each start; do not edit\n")
 	for _, k := range slices.Sorted(maps.Keys(env)) {
 		fmt.Fprintf(&b, "%s=%s\n", k, env[k])
 	}
@@ -485,7 +485,7 @@ const (
 	maxTOMLDepth   = 64
 )
 
-// limitError rejects a guest file curral won't parse; it says why.
+// limitError rejects a guest file catchpen won't parse; it says why.
 type limitError string
 
 func (e limitError) Error() string { return string(e) }
@@ -558,9 +558,9 @@ func (p *pusher) codex(a *template.Agent, servers []template.MCP) error {
 		cfg["sandbox_mode"] = "danger-full-access"
 	}
 	// Codex adds the event as a last argument, which sh -c leaves in $1.
-	notify := []any{"sh", "-c", curlPost(`'{"agent":"codex","hook_event_name":"agent-turn-complete"}'`, ""), "curral-notify"}
+	notify := []any{"sh", "-c", curlPost(`'{"agent":"codex","hook_event_name":"agent-turn-complete"}'`, ""), "catchpen-notify"}
 	if old, ok := cfg["notify"]; ok && fmt.Sprint(old) != fmt.Sprint(notify) {
-		p.warn("codex: replaced notify in ~/%s with curral's notification hook", codexConfig)
+		p.warn("codex: replaced notify in ~/%s with catchpen's notification hook", codexConfig)
 	}
 	cfg["notify"] = notify
 	if len(servers) > 0 {
@@ -614,7 +614,7 @@ func (p *pusher) codex(a *template.Agent, servers []template.MCP) error {
 }
 
 // getJSON reads a guest JSON object; a missing file is empty. An unparsable
-// file is kept as <file>.curral-bak and replaced.
+// file is kept as <file>.catchpen-bak and replaced.
 func (p *pusher) getJSON(rel string) (map[string]any, error) {
 	return p.getDoc(rel, "JSON", json.Unmarshal)
 }
@@ -626,13 +626,13 @@ func (p *pusher) getDoc(rel, format string, unmarshal func([]byte, any) error) (
 	// The file is guest-controlled: only regular files, size-capped on the guest side.
 	out, err := p.r.Run(p.ctx, fmt.Sprintf(`f="$HOME/%s"; [ -f "$f" ] && [ ! -L "$f" ] || exit 0; [ "$(stat -c %%s "$f")" -le %d ] || exit %d; cat "$f"`, rel, maxGuestDoc, tooLarge), nil)
 	if ec := (interface{ ExitCode() int })(nil); errors.As(err, &ec) && ec.ExitCode() == tooLarge {
-		return nil, fmt.Errorf("~/%s is over %d MiB, so curral won't read it back: move it aside in the VM and push again", rel, maxGuestDoc>>20)
+		return nil, fmt.Errorf("~/%s is over %d MiB, so catchpen won't read it back: move it aside in the VM and push again", rel, maxGuestDoc>>20)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read ~/%s: %w", rel, err)
 	}
 	if len(out.Raw()) > maxGuestDoc { // the guest's own size check is the guest's
-		return nil, fmt.Errorf("~/%s is over %d MiB, so curral won't read it back: move it aside in the VM and push again", rel, maxGuestDoc>>20)
+		return nil, fmt.Errorf("~/%s is over %d MiB, so catchpen won't read it back: move it aside in the VM and push again", rel, maxGuestDoc>>20)
 	}
 	doc := map[string]any{}
 	if strings.TrimSpace(string(out.Raw())) == "" {
@@ -644,8 +644,8 @@ func (p *pusher) getDoc(rel, format string, unmarshal func([]byte, any) error) (
 		if errors.As(err, &le) {
 			why = le.Error()
 		}
-		p.warn("~/%s %s; saved as ~/%s.curral-bak and replaced", rel, why, rel)
-		if _, err := p.r.Run(p.ctx, fmt.Sprintf(`cp -f "$HOME/%s" "$HOME/%s.curral-bak"`, rel, rel), nil); err != nil {
+		p.warn("~/%s %s; saved as ~/%s.catchpen-bak and replaced", rel, why, rel)
+		if _, err := p.r.Run(p.ctx, fmt.Sprintf(`cp -f "$HOME/%s" "$HOME/%s.catchpen-bak"`, rel, rel), nil); err != nil {
 			return nil, err
 		}
 		return map[string]any{}, nil
@@ -664,12 +664,12 @@ func (p *pusher) putJSON(rel string, doc map[string]any) error {
 func (p *pusher) put(rel string, data []byte) error { return WriteFile(p.ctx, p.r, rel, data) }
 
 // WriteFile atomically writes a 0600 file under the guest user's home. rel is
-// a curral-chosen path (no quotes or $).
+// a catchpen-chosen path (no quotes or $).
 func WriteFile(ctx context.Context, r Remote, rel string, data []byte) error {
 	if strings.ContainsAny(rel, "\"'$`\\\n") || strings.Contains(rel, "..") {
 		return fmt.Errorf("invalid guest path %q", rel)
 	}
-	cmd := fmt.Sprintf(`set -e; umask 077; f="$HOME/%s"; mkdir -p "$(dirname "$f")"; rm -f "$f.curral-tmp"; cat > "$f.curral-tmp"; chmod 600 "$f.curral-tmp"; mv -f -T "$f.curral-tmp" "$f"`, rel)
+	cmd := fmt.Sprintf(`set -e; umask 077; f="$HOME/%s"; mkdir -p "$(dirname "$f")"; rm -f "$f.catchpen-tmp"; cat > "$f.catchpen-tmp"; chmod 600 "$f.catchpen-tmp"; mv -f -T "$f.catchpen-tmp" "$f"`, rel)
 	if _, err := r.Run(ctx, cmd, data); err != nil {
 		return fmt.Errorf("write ~/%s: %w", rel, err)
 	}

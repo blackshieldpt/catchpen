@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blackshieldpt/curral/internal/notify"
+	"github.com/blackshieldpt/catchpen/internal/notify"
 )
 
 func notifyStdioCmd() *cobra.Command {

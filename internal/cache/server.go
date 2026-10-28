@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/canary"
-	"github.com/blackshieldpt/curral/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/egress"
 )
 
 const (
@@ -540,7 +540,7 @@ func (s *Server) token(ctx context.Context, challenge string) (string, error) {
 }
 
 // allowed logs a fetch of u (what: the cache kind, or why it's fetched) in
-// the VM's egress log, refusing it when curral egress deny names its host.
+// the VM's egress log, refusing it when catchpen egress deny names its host.
 // (The allowlist doesn't apply: cached hosts need no entry.)
 func (s *Server) allowed(method, what string, u *url.URL) bool {
 	port, _ := strconv.Atoi(u.Port())

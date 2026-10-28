@@ -1,4 +1,4 @@
-// Package egress implements curral's per-VM egress policy: allow/deny lists,
+// Package egress implements catchpen's per-VM egress policy: allow/deny lists,
 // the per-connection HTTP proxy QEMU spawns via guestfwd, the prompt watcher
 // and the egress log.
 package egress
@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
 )
 
 const (

@@ -1,6 +1,6 @@
 package template
 
-// AgentDef describes one agent curral can install and run. Adding an agent
+// AgentDef describes one agent catchpen can install and run. Adding an agent
 // takes an entry here and a field in Agents, its credential push
 // (internal/agents), its task command and stream parser (internal/task), and
 // its docs; tests fail while one of those is missing.
@@ -14,12 +14,12 @@ type AgentDef struct {
 	Env     []string
 	Node    bool     // needs runtimes.node
 	Auth    []string // its auth modes; nil: it takes provider keys instead
-	Yolo    string   // curral run's flag to skip permission prompts; "": it has none
+	Yolo    string   // catchpen run's flag to skip permission prompts; "": it has none
 	// Transcripts are its session files, under the guest home.
 	Transcripts []string
 }
 
-// AgentDefs are the agents, in the order curral installs and configures them.
+// AgentDefs are the agents, in the order catchpen installs and configures them.
 var AgentDefs = []AgentDef{
 	{Name: "claude", Get: func(a *Agents) **Agent { return &a.Claude }, Package: "@anthropic-ai/claude-code",
 		Env: []string{"DISABLE_AUTOUPDATER=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"}, Node: true,

@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/cache"
-	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/cache"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
 )
 
 // GCItem is something gc removed (or would remove).

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackshieldpt/curral/internal/forge"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/forge"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 func TestForwardSpecs(t *testing.T) {

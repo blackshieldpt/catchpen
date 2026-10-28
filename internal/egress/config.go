@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
 )
 
 const (

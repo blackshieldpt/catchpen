@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
 )
 
 // ISO 9660 with a single root directory and Rock Ridge (RRIP 1.10) names.

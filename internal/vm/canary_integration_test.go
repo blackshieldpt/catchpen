@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/vmtest"
+	"github.com/blackshieldpt/catchpen/internal/vmtest"
 
-	"github.com/blackshieldpt/curral/internal/canary"
-	"github.com/blackshieldpt/curral/internal/qemu"
-	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/qemu"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
 )
 
 // TestCanaries plants decoys, uses one from the guest and checks the VM is

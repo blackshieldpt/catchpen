@@ -8,7 +8,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 // Template writes settings given as one YAML mapping into the category files

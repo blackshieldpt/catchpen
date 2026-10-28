@@ -9,9 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blackshieldpt/curral/internal/daemon"
-	"github.com/blackshieldpt/curral/internal/egress"
-	"github.com/blackshieldpt/curral/internal/vm"
+	"github.com/blackshieldpt/catchpen/internal/daemon"
+	"github.com/blackshieldpt/catchpen/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/vm"
 )
 
 func daemonCmd() *cobra.Command {
@@ -32,7 +32,7 @@ func daemonCmd() *cobra.Command {
 	}
 	install := &cobra.Command{
 		Use:   "install",
-		Short: "Install and start curral daemon as a systemd user service",
+		Short: "Install and start catchpen daemon as a systemd user service",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()
@@ -42,7 +42,7 @@ func daemonCmd() *cobra.Command {
 			if err := daemon.Install(m.Bin); err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stderr, "installed %s and started it (logs: journalctl --user -u curral)\n", daemon.UnitPath())
+			fmt.Fprintf(os.Stderr, "installed %s and started it (logs: journalctl --user -u catchpen)\n", daemon.UnitPath())
 			return nil
 		},
 	}
@@ -56,7 +56,7 @@ func daemonCmd() *cobra.Command {
 	}
 	status := &cobra.Command{
 		Use:   "status",
-		Short: "Show whether curral daemon runs",
+		Short: "Show whether catchpen daemon runs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()
@@ -100,7 +100,7 @@ func poolCmd() *cobra.Command {
 				state := "filling"
 				switch {
 				case v.Hit:
-					state = "canary hit (curral destroy " + v.Name + ")"
+					state = "canary hit (catchpen destroy " + v.Name + ")"
 				case v.Ready():
 					state = "ready"
 				}

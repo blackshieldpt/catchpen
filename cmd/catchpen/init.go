@@ -12,8 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blackshieldpt/curral/internal/paths"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/paths"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 //go:embed initfiles
@@ -61,7 +61,7 @@ func initFileList(p paths.Paths) ([]initFile, error) {
 	return out, nil
 }
 
-// categoryFile is a commented category file: what it's for, curral's built-in
+// categoryFile is a commented category file: what it's for, catchpen's built-in
 // sections for reference, and examples.
 func categoryFile(c template.Category, examples string) []byte {
 	var b strings.Builder
@@ -85,7 +85,7 @@ func categoryFile(c template.Category, examples string) []byte {
 `)
 	}
 	b.WriteString(`## To use one below, uncomment it with all the lines under it.
-## Reference: https://blackshieldpt.github.io/curral/templates/
+## Reference: https://blackshieldpt.github.io/catchpen/templates/
 `)
 	if bi := template.BuiltinFile(c.Name); bi != "" {
 		b.WriteString("\n## Built in:\n")

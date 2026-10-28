@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/jsonl"
-	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/jsonl"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
 )
 
 const maxBytes = 32 << 20

@@ -13,16 +13,16 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/blackshieldpt/curral/internal/gitsrc"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/gitsrc"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
-// Every pinned skill and plugin, built in or in curral init's examples, is
+// Every pinned skill and plugin, built in or in catchpen init's examples, is
 // still fetchable, with its manifest and a licence.
 func TestBuiltinSourcesFetch(t *testing.T) {
 	f := gitsrc.Fetcher{Dir: t.TempDir()}
 	manifest := map[string]string{"claude": ".claude-plugin/plugin.json", "codex": ".codex-plugin/plugin.json"}
-	examples, err := os.ReadFile("../../cmd/curral/initfiles/examples/agents.yaml")
+	examples, err := os.ReadFile("../../cmd/catchpen/initfiles/examples/agents.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

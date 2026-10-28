@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blackshieldpt/curral/internal/cache"
+	"github.com/blackshieldpt/catchpen/internal/cache"
 )
 
 func cacheCmd() *cobra.Command {
@@ -16,7 +16,7 @@ func cacheCmd() *cobra.Command {
 		Long: `Shows what the host pull-through package caches hold. Templates list the caches
 their VMs use (cache: [apt, go, npm, pypi, docker]); config.yaml cache_max caps their
 size (default 20G): the caches trim themselves every 10 minutes while fetching, and
-curral gc trims them too.`,
+catchpen gc trims them too.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()

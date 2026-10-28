@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/forge"
+	"github.com/blackshieldpt/catchpen/internal/forge"
 )
 
 // Agent is the agent of one VM, kept in the VM's ssh directory.
@@ -30,7 +30,7 @@ func (a Agent) knownHosts() string { return filepath.Join(a.Dir, "agent_known_ho
 
 // Spec says what to load.
 type Spec struct {
-	VMAlias      string // ssh alias of the VM (curral-<vm>), as in VMKnownHosts
+	VMAlias      string // ssh alias of the VM (catchpen-<vm>), as in VMKnownHosts
 	VMKnownHosts string // known_hosts file with the VM's pinned host key
 	Forges       []forge.Forge
 	Keys         []string // private key files on the host

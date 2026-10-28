@@ -18,7 +18,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
 )
 
 const (
@@ -31,7 +31,7 @@ const (
 	ModeDeployKey   = "deploy-key"   // per-VM, per-repo SSH key added via the API
 	ModeMintedToken = "minted-token" // Gitea: per-VM token minted via the API
 	ModeToken       = "token"        // a user-supplied token given to the VM
-	ModeNone        = "none"         // anonymous HTTPS clone; work leaves via curral pull/pr
+	ModeNone        = "none"         // anonymous HTTPS clone; work leaves via catchpen pull/pr
 	ModeAgent       = "agent"        // SSH with keys from the VM's forwarded (restricted) agent; nothing stored
 )
 
@@ -39,7 +39,7 @@ const (
 func (f Forge) UsesSSH() bool { return f.Auth.Mode == ModeDeployKey || f.Auth.Mode == ModeAgent }
 
 // AgentAlias is the guest SSH alias and agent-constraint name for an agent-mode forge.
-func (f Forge) AgentAlias() string { return "curral-forge-" + f.Name }
+func (f Forge) AgentAlias() string { return "catchpen-forge-" + f.Name }
 
 type Auth struct {
 	Mode     string   `yaml:"mode" json:"mode"`
@@ -162,7 +162,7 @@ func (f Forge) Validate() error {
 		return fmt.Errorf("forge %s: auth.mode must be deploy-key, minted-token, token, agent or none", f.Name)
 	}
 	if f.UsesSSH() && len(f.HostKeys) == 0 {
-		return fmt.Errorf("forge %s: no pinned host keys (re-add it with curral forge add)", f.Name)
+		return fmt.Errorf("forge %s: no pinned host keys (re-add it with catchpen forge add)", f.Name)
 	}
 	for _, k := range f.HostKeys {
 		if _, err := ParseHostKey(k); err != nil {
@@ -242,7 +242,7 @@ func Update(path string, fn func(*Registry) error) error {
 	if err != nil {
 		return err
 	}
-	return fsutil.WriteFileAtomic(path, append([]byte("# managed by curral forge add/rm\n"), b...), 0o600)
+	return fsutil.WriteFileAtomic(path, append([]byte("# managed by catchpen forge add/rm\n"), b...), 0o600)
 }
 
 func (r Registry) Get(name string) (Forge, bool) {
@@ -327,10 +327,10 @@ func (r Registry) noForge(ref, host string) error {
 		}
 		have = "configured forges: " + strings.Join(hs, ", ")
 	}
-	add := "curral forge add <name> --type github|gitea --host " + host + " --mode deploy-key|token|agent|none"
+	add := "catchpen forge add <name> --type github|gitea --host " + host + " --mode deploy-key|token|agent|none"
 	if strings.EqualFold(host, "github.com") {
-		add = "curral forge add github --type github --host github.com --mode deploy-key|token|agent|none"
+		add = "catchpen forge add github --type github --host github.com --mode deploy-key|token|agent|none"
 	}
-	return fmt.Errorf("repo %q: no forge for host %s (%s). curral clones only from forges added with "+
-		"curral forge add; add one, then retry:\n  %s\nModes: https://blackshieldpt.github.io/curral/forges/#modes", ref, host, have, add)
+	return fmt.Errorf("repo %q: no forge for host %s (%s). catchpen clones only from forges added with "+
+		"catchpen forge add; add one, then retry:\n  %s\nModes: https://blackshieldpt.github.io/catchpen/forges/#modes", ref, host, have, add)
 }

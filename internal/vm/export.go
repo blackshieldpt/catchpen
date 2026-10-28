@@ -14,9 +14,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/forge"
-	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/forge"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -33,7 +33,7 @@ type PullOpts struct {
 type Pulled struct {
 	Repo   RepoState
 	Branch string
-	Ref    string // refs/curral/<vm>/<branch> in the host repo
+	Ref    string // refs/catchpen/<vm>/<branch> in the host repo
 	Into   string
 }
 
@@ -81,7 +81,7 @@ func HostGit(ctx context.Context, dir string, args ...string) (sshx.GuestOutput,
 }
 
 // Pull copies a branch out of the VM as a git bundle and fetches it into
-// refs/curral/<vm>/<branch> of a host repository. Nothing from the guest runs
+// refs/catchpen/<vm>/<branch> of a host repository. Nothing from the guest runs
 // on the host, and the host working tree is untouched.
 func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, error) {
 	s, err := m.Load(name)
@@ -126,8 +126,8 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 	}
 	// Fetched aside and scanned for canaries before it replaces ref; aside
 	// for this pull only, so a concurrent one can't swap in unscanned commits.
-	ref := "refs/curral/" + name + "/" + branch
-	incoming := fmt.Sprintf("refs/curral-incoming/%d-%d/%s/%s", os.Getpid(), time.Now().UnixNano(), name, branch)
+	ref := "refs/catchpen/" + name + "/" + branch
+	incoming := fmt.Sprintf("refs/catchpen-incoming/%d-%d/%s/%s", os.Getpid(), time.Now().UnixNano(), name, branch)
 	pruneIncoming(ctx, into)
 	if err := m.FetchBranch(ctx, c, name, "git -C "+dir, branch, into, incoming); err != nil {
 		return nil, err
@@ -162,12 +162,12 @@ func (m *Manager) Pull(ctx context.Context, name string, o PullOpts) (*Pulled, e
 // up (their process is gone) and of older versions (no process in the name):
 // they hold unscanned guest commits.
 func pruneIncoming(ctx context.Context, dir string) {
-	out, err := HostGit(ctx, dir, "for-each-ref", "--format=%(refname)", "refs/curral-incoming/")
+	out, err := HostGit(ctx, dir, "for-each-ref", "--format=%(refname)", "refs/catchpen-incoming/")
 	if err != nil {
 		return
 	}
 	for _, ref := range strings.Fields(string(out.Raw())) {
-		id, _, _ := strings.Cut(strings.TrimPrefix(ref, "refs/curral-incoming/"), "/")
+		id, _, _ := strings.Cut(strings.TrimPrefix(ref, "refs/catchpen-incoming/"), "/")
 		if pid, _, ok := strings.Cut(id, "-"); ok {
 			if n, err := strconv.Atoi(pid); err == nil && n > 0 {
 				if err := syscall.Kill(n, 0); err == nil || errors.Is(err, syscall.EPERM) {
@@ -183,7 +183,7 @@ func pruneIncoming(ctx context.Context, dir string) {
 // git command for the repo) and fetches it into ref of the host repository
 // into.
 func (m *Manager) FetchBranch(ctx context.Context, c *ssh.Client, name, git, branch, into, ref string) error {
-	tmp, err := os.CreateTemp("", "curral-bundle-*")
+	tmp, err := os.CreateTemp("", "catchpen-bundle-*")
 	if err != nil {
 		return err
 	}
@@ -249,7 +249,7 @@ type PROpts struct {
 	BodyFile string
 	Draft    bool
 	Base     string // default: the repo's default branch
-	Head     string // branch to push on the forge (default curral/<vm>/<branch>)
+	Head     string // branch to push on the forge (default catchpen/<vm>/<branch>)
 }
 
 // PR pulls a branch, pushes it to the forge with the host's git credentials
@@ -271,12 +271,12 @@ func (m *Manager) PR(ctx context.Context, name string, o PROpts) (string, error)
 	}
 	head := o.Head
 	if head == "" {
-		head = "curral/" + name + "/" + p.Branch
+		head = "catchpen/" + name + "/" + p.Branch
 	}
 	if err := validBranch(head); err != nil {
 		return "", err
 	}
-	body := fmt.Sprintf("Opened by curral from VM `%s` (branch `%s`).", name, p.Branch)
+	body := fmt.Sprintf("Opened by catchpen from VM `%s` (branch `%s`).", name, p.Branch)
 	if o.BodyFile != "" {
 		b, err := os.ReadFile(o.BodyFile)
 		if err != nil {

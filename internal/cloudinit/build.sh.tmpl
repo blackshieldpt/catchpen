@@ -1,20 +1,20 @@
 #!/bin/bash
-# curral base build — generated, runs once as root inside the build VM.
+# catchpen base build — generated, runs once as root inside the build VM.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
-log() { echo "curral-build: $*"; }
+log() { echo "catchpen-build: $*"; }
 aptq() { apt-get -q -o DPkg::Lock::Timeout=600 "$@"; }
 . /etc/os-release
-# The build VM's only exit is curral's egress proxy (public hosts only).
+# The build VM's only exit is catchpen's egress proxy (public hosts only).
 export http_proxy={{.Proxy}} https_proxy={{.Proxy}} HTTP_PROXY={{.Proxy}} HTTPS_PROXY={{.Proxy}}
 export no_proxy=localhost,127.0.0.1{{if .Caches}},{{.CacheAddr}}{{end}} NO_PROXY=localhost,127.0.0.1{{if .Caches}},{{.CacheAddr}}{{end}}
-printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";\n' {{.Proxy}} {{.Proxy}} > /etc/apt/apt.conf.d/95curral-build-proxy
+printf 'Acquire::http::Proxy "%s";\nAcquire::https::Proxy "%s";\n' {{.Proxy}} {{.Proxy}} > /etc/apt/apt.conf.d/95catchpen-build-proxy
 {{- range .CacheEnv}}
 export {{.}}
 {{- end}}
 {{- if .CacheApt}}
-cat > /etc/apt/apt.conf.d/94curral-build-cache <<'CURRAL_CACHE'
-{{.CacheApt}}CURRAL_CACHE
+cat > /etc/apt/apt.conf.d/94catchpen-build-cache <<'CATCHPEN_CACHE'
+{{.CacheApt}}CATCHPEN_CACHE
 {{- end}}
 
 log "disabling background package jobs"
@@ -129,8 +129,8 @@ tea --version
 {{- end}}
 
 # with-env FILE CMD...: CMD with FILE's NAME=value lines in its environment.
-install -d -m 0755 /usr/local/lib/curral
-cat > {{.WithEnv}} <<'CURRAL_SCRIPT'
+install -d -m 0755 /usr/local/lib/catchpen
+cat > {{.WithEnv}} <<'CATCHPEN_SCRIPT'
 #!/bin/sh
 f=$1
 shift
@@ -140,7 +140,7 @@ if [ -r "$f" ]; then
   done < "$f"
 fi
 exec "$@"
-CURRAL_SCRIPT
+CATCHPEN_SCRIPT
 chmod 0755 {{.WithEnv}}
 {{- if .AgentPkgs}}
 
@@ -150,25 +150,25 @@ npm install -g --no-fund --no-audit --loglevel=error {{join .AgentPkgs " "}}
 {{.}} --version
 {{- end}}
 {{- if .Claude}}
-# curral pushes Claude Code's token or key to ~/{{.ClaudeEnvFile}}, and only
+# catchpen pushes Claude Code's token or key to ~/{{.ClaudeEnvFile}}, and only
 # claude loads it: other agents and sessions don't get it in their environment.
 bin=$(command -v claude)
 ln -sfn "$(readlink -f "$bin")" {{.ClaudeReal}}
 rm -f "$bin"
-cat > "$bin" <<'CURRAL_SCRIPT'
+cat > "$bin" <<'CATCHPEN_SCRIPT'
 #!/bin/sh
 exec {{.WithEnv}} "$HOME/{{.ClaudeEnvFile}}" {{.ClaudeReal}} "$@"
-CURRAL_SCRIPT
+CATCHPEN_SCRIPT
 chmod 0755 "$bin"
 claude --version
 {{- end}}
 # No self-updates, telemetry or background catalog fetches: the VM only reaches
 # allowlisted hosts, and versions change by rebuilding the base.
-cat >> /etc/environment <<'CURRAL_ENV'
+cat >> /etc/environment <<'CATCHPEN_ENV'
 {{- range .AgentEnv}}
 {{.}}
 {{- end}}
-CURRAL_ENV
+CATCHPEN_ENV
 {{- end}}
 {{- if .OMP}}
 
@@ -195,29 +195,29 @@ sudo -u {{.User}} -H omp config set marketplace.autoUpdate off
 {{- range .Scripts}}
 
 log "running {{.}}"
-bash "/var/lib/curral/build/scripts/{{.}}"
+bash "/var/lib/catchpen/build/scripts/{{.}}"
 {{- end}}
 
-# curral run starts agents through curral-env, so a long-lived tmux server
+# catchpen run starts agents through catchpen-env, so a long-lived tmux server
 # still gives them the environment pushed at the latest start.
-cat > /usr/local/bin/curral-env <<'CURRAL_SCRIPT'
+cat > /usr/local/bin/catchpen-env <<'CATCHPEN_SCRIPT'
 #!/bin/sh
 exec {{.WithEnv}} "$HOME/.ssh/environment" "$@"
-CURRAL_SCRIPT
-chmod 755 /usr/local/bin/curral-env
+CATCHPEN_SCRIPT
+chmod 755 /usr/local/bin/catchpen-env
 # Prefix C-a so the guest's tmux doesn't clash with a host tmux on C-b.
-cat > /etc/tmux.conf <<'CURRAL_TMUX'
+cat > /etc/tmux.conf <<'CATCHPEN_TMUX'
 set -g prefix C-a
 unbind C-b
 bind C-a send-prefix
-CURRAL_TMUX
+CATCHPEN_TMUX
 
 log "cleaning up"
 aptq -y autoremove
 apt-get clean
-rm -f /etc/apt/apt.conf.d/95curral-build-proxy
+rm -f /etc/apt/apt.conf.d/95catchpen-build-proxy
 {{- if .CacheApt}}
-rm -f /etc/apt/apt.conf.d/94curral-build-cache
+rm -f /etc/apt/apt.conf.d/94catchpen-build-cache
 {{- end}}
 cloud-init clean --logs --machine-id
 rm -f /etc/ssh/ssh_host_*

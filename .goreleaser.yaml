@@ -1,10 +1,10 @@
 version: 2
 
-project_name: curral
+project_name: catchpen
 
 builds:
-  - main: ./cmd/curral
-    binary: curral
+  - main: ./cmd/catchpen
+    binary: catchpen
     env:
       - CGO_ENABLED=0
     goos: [linux]
@@ -31,14 +31,14 @@ archives:
 
 nfpms:
   - id: deb
-    package_name: curral
-    file_name_template: "{{ .ConventionalFileName }}" # curral_X.Y.Z_amd64.deb
+    package_name: catchpen
+    file_name_template: "{{ .ConventionalFileName }}" # catchpen_X.Y.Z_amd64.deb
     formats: [deb]
     bindir: /usr/bin
     mtime: "{{ .CommitDate }}" # reproducible, like the archives
     maintainer: JPinheiro <jpinheiro@blackshield.pt>
     vendor: Blackshield
-    homepage: https://github.com/blackshieldpt/curral
+    homepage: https://github.com/blackshieldpt/catchpen
     description: Runs coding agents in QEMU/KVM sandbox VMs.
     license: AGPL-3.0
     section: utils
@@ -46,13 +46,13 @@ nfpms:
     recommends: [libnotify-bin, ssh-askpass, tmux]
     contents:
       - src: LICENSE
-        dst: /usr/share/doc/curral/copyright
+        dst: /usr/share/doc/catchpen/copyright
         file_info: { mode: 0644, mtime: "{{ .CommitDate }}" }
       - src: CHANGELOG.md
-        dst: /usr/share/doc/curral/CHANGELOG.md
+        dst: /usr/share/doc/catchpen/CHANGELOG.md
         file_info: { mode: 0644, mtime: "{{ .CommitDate }}" }
       - src: README.md
-        dst: /usr/share/doc/curral/README.md
+        dst: /usr/share/doc/catchpen/README.md
         file_info: { mode: 0644, mtime: "{{ .CommitDate }}" }
 
 checksum:

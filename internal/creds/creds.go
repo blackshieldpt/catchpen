@@ -1,6 +1,6 @@
 // Package creds resolves secrets on the host. A secret NAME comes from, in order:
 // a configured source (config.yaml `secrets:`), the environment variable NAME,
-// or ~/.config/curral/secrets.env.
+// or ~/.config/catchpen/secrets.env.
 package creds
 
 import (

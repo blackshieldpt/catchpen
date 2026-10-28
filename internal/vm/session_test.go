@@ -4,16 +4,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackshieldpt/curral/internal/forge"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/forge"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 func TestRunCommand(t *testing.T) {
 	yes := true
 	s := &State{Name: "v", Agents: template.Agents{Claude: &template.Agent{Yolo: &yes}, OpenCode: &template.Agent{}}}
 	got, err := RunCommand(s, "claude", []string{"--model", "it's"})
-	want := `; tmux new-session -A -s claude -- 'curral-env' 'claude' '--dangerously-skip-permissions' '--model' 'it'\''s'`
-	if err != nil || !strings.HasSuffix(got, want) || !strings.HasPrefix(got, "command -v curral-env") || !strings.Contains(got, "has-session -t =claude") {
+	want := `; tmux new-session -A -s claude -- 'catchpen-env' 'claude' '--dangerously-skip-permissions' '--model' 'it'\''s'`
+	if err != nil || !strings.HasSuffix(got, want) || !strings.HasPrefix(got, "command -v catchpen-env") || !strings.Contains(got, "has-session -t =claude") {
 		t.Errorf("claude:\n got %s\nwant %s (%v)", got, want, err)
 	}
 	if got, _ := RunCommand(s, "opencode", nil); strings.Contains(got, "--auto") {
@@ -27,11 +27,11 @@ func TestRunCommand(t *testing.T) {
 		t.Errorf("pi missing: %v", err)
 	}
 	s.Agents.OMP = &template.Agent{}
-	if got, err := RunCommand(s, "omp", nil); err != nil || !strings.HasSuffix(got, "-s omp -- 'curral-env' 'omp'") {
+	if got, err := RunCommand(s, "omp", nil); err != nil || !strings.HasSuffix(got, "-s omp -- 'catchpen-env' 'omp'") {
 		t.Errorf("omp: %s %v", got, err)
 	}
 	s.Agents.Codex = &template.Agent{}
-	if got, err := RunCommand(s, "codex", nil); err != nil || !strings.HasSuffix(got, "-s codex -- 'curral-env' 'codex'") {
+	if got, err := RunCommand(s, "codex", nil); err != nil || !strings.HasSuffix(got, "-s codex -- 'catchpen-env' 'codex'") {
 		t.Errorf("codex: %s %v", got, err)
 	}
 	s.Agents.Codex.Yolo = &yes

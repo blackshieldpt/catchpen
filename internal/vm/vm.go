@@ -18,18 +18,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/config"
-	"github.com/blackshieldpt/curral/internal/egress"
-	"github.com/blackshieldpt/curral/internal/forge"
-	"github.com/blackshieldpt/curral/internal/fsutil"
-	"github.com/blackshieldpt/curral/internal/hostherdr"
-	"github.com/blackshieldpt/curral/internal/hosttmux"
-	"github.com/blackshieldpt/curral/internal/notify"
-	"github.com/blackshieldpt/curral/internal/paths"
-	"github.com/blackshieldpt/curral/internal/qemu"
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/forge"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/hostherdr"
+	"github.com/blackshieldpt/catchpen/internal/hosttmux"
+	"github.com/blackshieldpt/catchpen/internal/notify"
+	"github.com/blackshieldpt/catchpen/internal/paths"
+	"github.com/blackshieldpt/catchpen/internal/qemu"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 const (
@@ -112,7 +112,7 @@ type Manager struct {
 	In    io.Reader        // terminal input for key passphrases (nil: none)
 	Tmux  *hosttmux.Tmux   // host tmux session to keep in sync (nil: none)
 	Herdr *hostherdr.Herdr // host herdr workspaces to keep in sync (nil: none)
-	Bin   string           // absolute path of the curral binary (ProxyCommand, guestfwd)
+	Bin   string           // absolute path of the catchpen binary (ProxyCommand, guestfwd)
 	Debug bool             // stream the whole build log; log the serial console; keep failed VMs running
 	HTTP  *http.Client     // forge API client (nil: default)
 }
@@ -364,13 +364,13 @@ func (m *Manager) SSHPort(name string) (int, error) {
 	}
 	rt, ok := m.Running(name)
 	if !ok {
-		return 0, fmt.Errorf("VM %s is not running (start it: curral start %s)", name, name)
+		return 0, fmt.Errorf("VM %s is not running (start it: catchpen start %s)", name, name)
 	}
 	if rt.SSHPort == 0 {
 		return 0, fmt.Errorf("VM %s: runtime state missing", name)
 	}
 	if m.Paused(name) {
-		return 0, fmt.Errorf("VM %s was paused by a canary hit (curral resume %s, or curral destroy %s)", name, name, name)
+		return 0, fmt.Errorf("VM %s was paused by a canary hit (catchpen resume %s, or catchpen destroy %s)", name, name, name)
 	}
 	return rt.SSHPort, nil
 }

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/egress"
 )
 
 func netdevOf(t *testing.T, s Spec) string {
@@ -34,18 +34,18 @@ func TestNetdevAllowlist(t *testing.T) {
 	nd := netdevOf(t, Spec{
 		CPUs: 1, MemoryMB: 512, Disk: "/d,isk.qcow2", Egress: "allowlist", SSHPort: 2222,
 		Forwards: []Forward{{Host: 8080, Guest: 80}},
-		ProxyCmd: []string{"/opt/my bin/curral", "egress-stdio", "--dir", "/v,m"}, ProxyIP: "10.0.2.100", ProxyPort: 3128,
-		NotifyCmd: []string{"/opt/my bin/curral", "notify-stdio", "--vm", "v"}, NotifyIP: "10.0.2.101", NotifyPort: 80,
-		CacheCmd: []string{"/opt/my bin/curral", "cache-stdio", "--kinds", "apt,npm"}, CacheIP: "10.0.2.102", CachePort: 80,
+		ProxyCmd: []string{"/opt/my bin/catchpen", "egress-stdio", "--dir", "/v,m"}, ProxyIP: "10.0.2.100", ProxyPort: 3128,
+		NotifyCmd: []string{"/opt/my bin/catchpen", "notify-stdio", "--vm", "v"}, NotifyIP: "10.0.2.101", NotifyPort: 80,
+		CacheCmd: []string{"/opt/my bin/catchpen", "cache-stdio", "--kinds", "apt,npm"}, CacheIP: "10.0.2.102", CachePort: 80,
 	})
 	for _, want := range []string{
 		"restrict=on",
 		"ipv6=off",
 		"hostfwd=tcp:127.0.0.1:2222-:22",
 		"hostfwd=tcp:127.0.0.1:8080-:80",
-		"guestfwd=tcp:10.0.2.100:3128-cmd:'/opt/my bin/curral' 'egress-stdio' '--dir' '/v,,m'",
-		"guestfwd=tcp:10.0.2.101:80-cmd:'/opt/my bin/curral' 'notify-stdio' '--vm' 'v'",
-		"guestfwd=tcp:10.0.2.102:80-cmd:'/opt/my bin/curral' 'cache-stdio' '--kinds' 'apt,,npm'",
+		"guestfwd=tcp:10.0.2.100:3128-cmd:'/opt/my bin/catchpen' 'egress-stdio' '--dir' '/v,,m'",
+		"guestfwd=tcp:10.0.2.101:80-cmd:'/opt/my bin/catchpen' 'notify-stdio' '--vm' 'v'",
+		"guestfwd=tcp:10.0.2.102:80-cmd:'/opt/my bin/catchpen' 'cache-stdio' '--kinds' 'apt,,npm'",
 	} {
 		if !strings.Contains(nd, want) {
 			t.Errorf("netdev %q missing %q", nd, want)
@@ -134,7 +134,7 @@ func fakeQEMU(t *testing.T, argv0, vmName string) string {
 	t.Helper()
 	cmd := exec.Command("/bin/sh")
 	// sh -c <script> <$0> <$1>: the -name pair is visible as separate argv entries.
-	cmd.Args = []string{argv0, "-c", "sleep 30; :", "-name", "curral-" + vmName}
+	cmd.Args = []string{argv0, "-c", "sleep 30; :", "-name", "catchpen-" + vmName}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}

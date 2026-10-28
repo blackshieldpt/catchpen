@@ -1,6 +1,6 @@
 default: [allowlist, anthropic, github, npm, pypi, go, apt-ubuntu, apt-debian, docker-apt, docker-hub, ghcr]
 allowlist: { description: "Only allowed hosts, through the egress proxy", network: { egress: allowlist } }
-open: { description: Unfiltered internet (curral up asks for --allow-open), network: { egress: open } }
+open: { description: Unfiltered internet (catchpen up asks for --allow-open), network: { egress: open } }
 offline: { description: No network at all, network: { egress: none } }
 prompt: { description: Ask before allowing a blocked host, network: { on_deny: prompt } }
 anthropic: { description: Anthropic API, network: { presets: [anthropic] } }

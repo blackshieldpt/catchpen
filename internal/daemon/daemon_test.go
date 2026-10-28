@@ -9,19 +9,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/config"
-	"github.com/blackshieldpt/curral/internal/egress"
-	"github.com/blackshieldpt/curral/internal/paths"
-	"github.com/blackshieldpt/curral/internal/vm"
+	"github.com/blackshieldpt/catchpen/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/paths"
+	"github.com/blackshieldpt/catchpen/internal/vm"
 )
 
 func TestUnit(t *testing.T) {
-	env := map[string]string{"CURRAL_HOME": "/srv/cur ral%$x", "XDG_DATA_HOME": "relative", "PATH": "/usr/bin:/bin"}
-	u := Unit("/opt/cur$ral/bin/curral", func(k string) string { return env[k] })
+	env := map[string]string{"CATCHPEN_HOME": "/srv/cur ral%$x", "XDG_DATA_HOME": "relative", "PATH": "/usr/bin:/bin"}
+	u := Unit("/opt/cur$ral/bin/catchpen", func(k string) string { return env[k] })
 	for _, want := range []string{
-		"Environment=\"CURRAL_HOME=/srv/cur ral%%$x\"\n",
+		"Environment=\"CATCHPEN_HOME=/srv/cur ral%%$x\"\n",
 		"Environment=\"PATH=/usr/bin:/bin\"\n",
-		"ExecStart=\"/opt/cur$$ral/bin/curral\" daemon\n",
+		"ExecStart=\"/opt/cur$$ral/bin/catchpen\" daemon\n",
 		"WantedBy=default.target\n",
 	} {
 		if !strings.Contains(u, want) {

@@ -56,7 +56,7 @@ func TestResolve(t *testing.T) {
 		}
 	}
 	for ref, want := range map[string]string{
-		"https://unknown.test/o/r": "curral forge add",
+		"https://unknown.test/o/r": "catchpen forge add",
 		"github:o":                 "owner/repo",
 		"github:o/r/extra":         "owner/repo",
 		"github:../r":              "owner/repo",
@@ -71,7 +71,7 @@ func TestResolve(t *testing.T) {
 
 func TestResolveWithoutForgeSaysHowToAddOne(t *testing.T) {
 	_, _, err := Registry{}.Resolve("github.com:zipreport/miya.git")
-	for _, want := range []string{"no forges are configured", "curral forge add github --type github --host github.com --mode "} {
+	for _, want := range []string{"no forges are configured", "catchpen forge add github --type github --host github.com --mode "} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("err = %v, want %q", err, want)
 		}
@@ -163,11 +163,11 @@ func TestGuestRendering(t *testing.T) {
 		{Repo: Repo{Forge: "github", Owner: "O", Name: "R.js"}, Forge: gh, Alias: Alias(Repo{Forge: "github", Owner: "O", Name: "R.js"})},
 		{Repo: Repo{Forge: "acme", Owner: "team", Name: "app"}, Forge: acme},
 	}
-	if repos[0].Alias != "curral-github-o-r-js" || repos[0].CloneURL() != "curral-github-o-r-js:O/R.js.git" || repos[1].CloneURL() != "https://git.acme.test/team/app.git" || repos[0].Dir() != "/workspace/R.js" {
+	if repos[0].Alias != "catchpen-github-o-r-js" || repos[0].CloneURL() != "catchpen-github-o-r-js:O/R.js.git" || repos[1].CloneURL() != "https://git.acme.test/team/app.git" || repos[0].Dir() != "/workspace/R.js" {
 		t.Errorf("alias/url: %s %s %s", repos[0].Alias, repos[0].CloneURL(), repos[1].CloneURL())
 	}
 	cfg := SSHConfig(repos, "10.0.2.100:3128")
-	for _, want := range []string{"Host curral-github-o-r-js\n", "HostName github.com\n", "Port 22\n", "IdentitiesOnly yes", "StrictHostKeyChecking yes", "ProxyCommand nc -X connect -x 10.0.2.100:3128 %h %p"} {
+	for _, want := range []string{"Host catchpen-github-o-r-js\n", "HostName github.com\n", "Port 22\n", "IdentitiesOnly yes", "StrictHostKeyChecking yes", "ProxyCommand nc -X connect -x 10.0.2.100:3128 %h %p"} {
 		if !strings.Contains(cfg, want) {
 			t.Errorf("ssh config lacks %q:\n%s", want, cfg)
 		}
@@ -266,7 +266,7 @@ func TestClient(t *testing.T) {
 	c := &Client{F: gitea, Token: "tok", User: "bot", Password: "pw"}
 	repo := Repo{Owner: "o", Name: "r"}
 
-	if id, err := c.AddDeployKey(ctx, repo, "curral vm", "ssh-ed25519 AAA", true); err != nil || id != 41 {
+	if id, err := c.AddDeployKey(ctx, repo, "catchpen vm", "ssh-ed25519 AAA", true); err != nil || id != 41 {
 		t.Fatalf("AddDeployKey = %d, %v", id, err)
 	}
 	if b := api.body["POST /api/v1/repos/o/r/keys"]; b["read_only"] != true || b["key"] != "ssh-ed25519 AAA" {
@@ -278,7 +278,7 @@ func TestClient(t *testing.T) {
 	if err := c.DeleteDeployKey(ctx, repo, 404); err != nil {
 		t.Errorf("deleting a missing key: %v", err)
 	}
-	id, tok, err := c.MintToken(ctx, "curral-vm", []string{"write:repository"})
+	id, tok, err := c.MintToken(ctx, "catchpen-vm", []string{"write:repository"})
 	if err != nil || id != 7 || tok != "minted" {
 		t.Fatalf("MintToken = %d %q %v", id, tok, err)
 	}
@@ -288,7 +288,7 @@ func TestClient(t *testing.T) {
 	if login, err := c.Login(ctx); err != nil || login != "bot" {
 		t.Errorf("Login = %q, %v", login, err)
 	}
-	if u, err := c.CreatePR(ctx, repo, "curral/vm/b", "main", "Title", "Body", true); err != nil || u != "https://x/pr/1" {
+	if u, err := c.CreatePR(ctx, repo, "catchpen/vm/b", "main", "Title", "Body", true); err != nil || u != "https://x/pr/1" {
 		t.Errorf("CreatePR = %q, %v", u, err)
 	}
 	if api.body["POST /api/v1/repos/o/r/pulls"]["title"] != "WIP: Title" {
@@ -359,11 +359,11 @@ func TestAgentModeGuest(t *testing.T) {
 		t.Errorf("hosts: %v", f.Hosts())
 	}
 	repos := []GuestRepo{{Repo: Repo{Forge: "acme", Owner: "t", Name: "a"}, Forge: f}, {Repo: Repo{Forge: "acme", Owner: "t", Name: "b"}, Forge: f}}
-	if repos[0].CloneURL() != "curral-forge-acme:t/a.git" {
+	if repos[0].CloneURL() != "catchpen-forge-acme:t/a.git" {
 		t.Errorf("clone url %s", repos[0].CloneURL())
 	}
 	cfg := SSHConfig(repos, "10.0.2.100:3128")
-	if strings.Count(cfg, "Host curral-forge-acme\n") != 1 || strings.Contains(cfg, "IdentityFile") || !strings.Contains(cfg, "Port 2222") || !strings.Contains(cfg, "ProxyCommand nc -X connect") {
+	if strings.Count(cfg, "Host catchpen-forge-acme\n") != 1 || strings.Contains(cfg, "IdentityFile") || !strings.Contains(cfg, "Port 2222") || !strings.Contains(cfg, "ProxyCommand nc -X connect") {
 		t.Errorf("agent-mode ssh config:\n%s", cfg)
 	}
 	if !strings.HasPrefix(KnownHosts(repos), "[git.acme.test]:2222 ") {

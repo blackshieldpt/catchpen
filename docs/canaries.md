@@ -9,8 +9,8 @@ Each kind is a section of `canaries.yaml`: `aws-canary`, `env-canary` and `git-c
 The default plants all three; `-name` drops one:
 
 ```
-curral up dev -t -aws-canary                         # env and git only
-curral up dev -t -aws-canary,-env-canary,-git-canary # none
+catchpen up dev -t -aws-canary                         # env and git only
+catchpen up dev -t -aws-canary,-env-canary,-git-canary # none
 ```
 
 The built-in `minimal` profile has none. Each VM gets its own values, pointing at hosts
@@ -31,14 +31,14 @@ The host keeps each VM's values in `vms/<name>/canaries.json`.
   package cache request, including percent-encoded in the URL, in URL user info and in
   `Basic` credentials;
 - a canary value or host (hosts in any letter case) in what leaves the VM through
-  curral:
+  catchpen:
   - the commits that `pull`, `pr` and tasks bring out, including headers, author and
     committer, messages (as stored and as re-encoded to UTF-8), root commits, merges
     and binary files;
   - branch names;
   - patches, which are made on the host from the commits they export, scanned first;
   - a PR's title and body;
-  - a task's whole result (`curral task show`, its PR body and notifications) and an
+  - a task's whole result (`catchpen task show`, its PR body and notifications) and an
     agent's notification text.
 
 ## What happens on a hit
@@ -53,11 +53,11 @@ The host keeps each VM's values in `vms/<name>/canaries.json`.
    canary_action: pause    # default; or stop, or log
    ```
 
-   - `pause` freezes the VM as it was, for inspection. `curral ls` shows it `paused`,
+   - `pause` freezes the VM as it was, for inspection. `catchpen ls` shows it `paused`,
      and `ssh`, `run`, `attach` and the like refuse it until you run
-     `curral resume <name>`, which also sets the guest clock.
+     `catchpen resume <name>`, which also sets the guest clock.
    If the VM can't be paused (QEMU's control socket is busy, as during
-     `curral snapshot`), it is stopped instead.
+     `catchpen snapshot`), it is stopped instead.
    - `stop` powers it off at once.
    - `log` only records the hit.
 
@@ -68,21 +68,21 @@ Tasks and the pool react on top of that:
   While it runs (paused included), it counts against the task budget
   (`tasks.max_vms`, `tasks.max_memory`).
 - A pool VM with a hit is never handed out, nor counted in the pool: it's kept for
-  inspection, shown in `curral pool ls` as `canary hit`, until you destroy it or run
-  `curral pool drain`.
+  inspection, shown in `catchpen pool ls` as `canary hit`, until you destroy it or run
+  `catchpen pool drain`.
 
 If a VM's `canaries.json` can't be read, its proxy, cache and exports refuse everything,
 and its notifications and task results are withheld.
 
 ## Responding to a hit
 
-1. Look at what triggered it: `curral audit <name>` shows the hit, and
-   `curral egress log <name>` shows the surrounding requests.
-2. Inspect the paused VM before resuming it. `curral snapshot <name>` keeps its memory
-   and disk for later analysis, and recordings are in `curral recordings <name>`.
-   `curral transcripts` refuses a paused VM; copies made earlier are in
-   `~/.local/share/curral/transcripts/<name>/`.
-3. Then `curral resume <name>` to continue, or `curral destroy <name>`.
+1. Look at what triggered it: `catchpen audit <name>` shows the hit, and
+   `catchpen egress log <name>` shows the surrounding requests.
+2. Inspect the paused VM before resuming it. `catchpen snapshot <name>` keeps its memory
+   and disk for later analysis, and recordings are in `catchpen recordings <name>`.
+   `catchpen transcripts` refuses a paused VM; copies made earlier are in
+   `~/.local/share/catchpen/transcripts/<name>/`.
+3. Then `catchpen resume <name>` to continue, or `catchpen destroy <name>`.
 
 ## What goes unseen
 
@@ -93,7 +93,7 @@ and its notifications and task results are withheld.
 - Network use in VMs with `egress: open` or `egress: none`. Their exports,
   notifications and task results are still scanned, and so are cache requests in
   `open` VMs.
-- `curral cp` and `curral forward`.
+- `catchpen cp` and `catchpen forward`.
 - Commits the guest pushed to a forge itself (with a deploy key or token). The host has
   them once it fetches them.
 - A careful attacker can tell the decoys from real credentials: the hosts don't

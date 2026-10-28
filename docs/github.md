@@ -14,9 +14,9 @@ Run every command on the host unless it says "in the VM".
 
 ## Before you start
 
-curral is installed and `curral doctor` passes ([Installation](installation.md)), and
-you've run `curral init`, which creates `~/.config/curral/secrets.env` and the template
-category files in `~/.config/curral/templates/` (see [Templates](templates.md)).
+catchpen is installed and `catchpen doctor` passes ([Installation](installation.md)), and
+you've run `catchpen init`, which creates `~/.config/catchpen/secrets.env` and the template
+category files in `~/.config/catchpen/templates/` (see [Templates](templates.md)).
 
 ## Part 1: SSH
 
@@ -30,11 +30,11 @@ You should see `Hi <your-user>! You've successfully authenticated`. If not, crea
 with `ssh-keygen -t ed25519`, add the contents of `~/.ssh/id_ed25519.pub` on GitHub
 under **Settings → SSH and GPG keys → New SSH key**, and try again.
 
-### 2. Tell curral about GitHub
+### 2. Tell catchpen about GitHub
 
 ```
-curral forge add github --type github --host github.com --mode agent
-curral forge ls
+catchpen forge add github --type github --host github.com --mode agent
+catchpen forge ls
 ```
 
 `forge ls` should list `github`. You do this once per host. `agent` mode means the VM
@@ -42,7 +42,7 @@ gets no key of its own: it asks your key, through a restricted agent, to sign.
 
 ### 3. Add your key and a profile
 
-Add this section to `~/.config/curral/templates/ssh.yaml`:
+Add this section to `~/.config/catchpen/templates/ssh.yaml`:
 
 ```yaml
 github-ssh:
@@ -52,10 +52,10 @@ github-ssh:
     confirm: false                    # see the note below
 ```
 
-With `confirm: true`, curral asks you to approve each use of the key in a desktop
+With `confirm: true`, catchpen asks you to approve each use of the key in a desktop
 pop-up (`ssh-askpass`). That needs a display, so on a server keep `confirm: false`.
 
-Then name what this project's VMs get, in `~/.config/curral/templates/profiles.yaml`:
+Then name what this project's VMs get, in `~/.config/catchpen/templates/profiles.yaml`:
 
 ```yaml
 acme-api: [github-ssh]
@@ -67,16 +67,16 @@ A profile is a list of picks; you'll add to it in Part 2, and can add runtimes t
 ### 4. Create the VM with the repo
 
 ```
-curral up dev -t acme-api --repo github:acme/api
+catchpen up dev -t acme-api --repo github:acme/api
 ```
 
-If the key has a passphrase, curral asks for it here. The repo is cloned into
+If the key has a passphrase, catchpen asks for it here. The repo is cloned into
 `/workspace/api`.
 
 ### 5. Work and push
 
 ```
-curral run dev claude
+catchpen run dev claude
 ```
 
 Ask Claude to commit, or commit yourself in the VM, then push in the VM:
@@ -86,7 +86,7 @@ cd /workspace/api && git push
 ```
 
 You can also take the commits out from the host instead of pushing from the VM:
-`curral pull dev --into ~/src/api` fetches the VM's branch into your host clone.
+`catchpen pull dev --into ~/src/api` fetches the VM's branch into your host clone.
 
 ## Part 2: token for `gh`
 
@@ -108,7 +108,7 @@ owner may have to approve the token before it works.
 
 ### 2. Store it on the host
 
-Add this line to `~/.config/curral/secrets.env`:
+Add this line to `~/.config/catchpen/secrets.env`:
 
 ```
 GH_TOKEN=github_pat_...
@@ -116,7 +116,7 @@ GH_TOKEN=github_pat_...
 
 ### 3. Pass it to the VM
 
-Add this section to `~/.config/curral/templates/env.yaml`:
+Add this section to `~/.config/catchpen/templates/env.yaml`:
 
 ```yaml
 gh-token:
@@ -129,7 +129,7 @@ and add it to the profile in `profiles.yaml`:
 acme-api: [github-ssh, gh-token]
 ```
 
-`secret:GH_TOKEN` tells curral to read the value from `secrets.env` on the host; the
+`secret:GH_TOKEN` tells catchpen to read the value from `secrets.env` on the host; the
 category files hold no secret.
 
 ### 4. Push it to the VM
@@ -138,14 +138,14 @@ New VMs made with `-t acme-api` get the token when they're created. The VM from 
 the same profile, so it gets it too:
 
 ```
-curral creds push dev
+catchpen creds push dev
 ```
 
 It prints `dev: env from template acme-api: +GH_TOKEN`. New sessions get the token; a Claude
 Code session that was already open doesn't, so restart the VM to be sure:
 
 ```
-curral stop dev && curral start dev
+catchpen stop dev && catchpen start dev
 ```
 
 ### 5. Check it, in the VM
@@ -156,7 +156,7 @@ gh auth status
 
 It should say you're logged in to github.com with the `GH_TOKEN` token.
 
-When the token expires, put the new one in `secrets.env` and run `curral creds push dev`
+When the token expires, put the new one in `secrets.env` and run `catchpen creds push dev`
 again.
 
 ## Good to know
@@ -165,8 +165,8 @@ again.
   give it an expiry. The SSH key is safer: the VM can only ask it to sign for
   github.com, through that VM, and only while the VM runs.
 - Don't want the VM to hold a token at all? Leave out Part 2 and open pull requests from
-  the host with `curral pr dev --into ~/src/api`. That needs a token on the forge
-  (`curral forge add ... --token-secret NAME`) but not in the VM.
+  the host with `catchpen pr dev --into ~/src/api`. That needs a token on the forge
+  (`catchpen forge add ... --token-secret NAME`) but not in the VM.
 - Don't want to use your own key? Use `--mode deploy-key` in step 2 of Part 1 (with
   `--token-secret` for a token that can manage deploy keys): each VM then gets its own
   key for the repo, removed when the VM is destroyed. See [Forges](forges.md#modes).
@@ -175,8 +175,8 @@ again.
 
 | You see | Do this |
 |---|---|
-| `no forge for host github.com` | Part 1, step 2: `curral forge add ...` was not run on this host. |
+| `no forge for host github.com` | Part 1, step 2: `catchpen forge add ...` was not run on this host. |
 | `Permission denied (publickey)` on clone or push | Run `ssh -T git@github.com` on the host (step 1), and check `agent_keys` names that key. |
 | `the restricted agent refused` | `confirm: true` on a host without a display: set `confirm: false` in `ssh.yaml` and create the VM again (a VM keeps the `ssh:` settings it was created with). |
-| `gh: To get started with GitHub CLI, please run: gh auth login` | Part 2: run `curral creds push dev`, then open a new session (or restart the VM). |
+| `gh: To get started with GitHub CLI, please run: gh auth login` | Part 2: run `catchpen creds push dev`, then open a new session (or restart the VM). |
 | `gh` says `HTTP 403` or `Resource not accessible` | The token lacks a permission or the repo (Part 2, step 1), or an organization owner hasn't approved it. |

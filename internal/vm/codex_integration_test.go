@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/vmtest"
+	"github.com/blackshieldpt/catchpen/internal/vmtest"
 
-	"github.com/blackshieldpt/curral/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/egress"
 )
 
 // TestCodex builds a base with Codex and checks it is installed, logged in
-// with the host's API key, accepts the config curral writes (no update
-// checks, curral's sandbox mode), and reaches the OpenAI API through the
+// with the host's API key, accepts the config catchpen writes (no update
+// checks, catchpen's sandbox mode), and reaches the OpenAI API through the
 // egress proxy.
 func TestCodex(t *testing.T) {
 	m := integrationManager(t)
@@ -25,7 +25,7 @@ func TestCodex(t *testing.T) {
 	defer cancel()
 	tpl := "runtimes: { node: \"24\" }\nagents: { codex: {} }\n"
 	vmtest.Template(t, m.P.Templates(), "cx", "", tpl)
-	const key = "sk-proj-curral-integration-fake"
+	const key = "sk-proj-catchpen-integration-fake"
 	t.Setenv("OPENAI_API_KEY", key)
 	if _, err := m.Create(ctx, "cx", CreateOpts{Template: "cx"}); err != nil {
 		t.Fatal(err)

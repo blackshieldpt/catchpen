@@ -14,13 +14,13 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/config"
-	"github.com/blackshieldpt/curral/internal/egress"
-	"github.com/blackshieldpt/curral/internal/fsutil"
-	"github.com/blackshieldpt/curral/internal/qemu"
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/qemu"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 // A warm pool VM has been through first boot with its own keys, but has no
@@ -28,13 +28,13 @@ import (
 // snapshot poolSnap: a claim renames it and resumes it from there. (A running
 // VM can't be renamed: QEMU's command line names its files.)
 const (
-	poolSnap     = "curral-pool"
+	poolSnap     = "catchpen-pool"
 	poolLock     = ".pool.lock"      // in vms/: claims and removals
 	poolFillLock = ".pool-fill.lock" // in vms/: fills, recycling and draining
 )
 
 // ErrFillRunning means another process is filling or draining the pool.
-var ErrFillRunning = errors.New("another curral is filling or draining the pool")
+var ErrFillRunning = errors.New("another catchpen is filling or draining the pool")
 
 // poolKey is what a pool VM must match to be claimed: what its disk, seed
 // and QEMU command line were made with.
@@ -271,7 +271,7 @@ func (m *Manager) recyclePool(wants []poolWant, complete bool) error {
 	for _, v := range vms {
 		k := keyOf(&v.State)
 		if v.Hit {
-			continue // kept for inspection, and not counted (curral pool ls)
+			continue // kept for inspection, and not counted (catchpen pool ls)
 		}
 		if v.Ready() && (left[k] > 0 || !complete) {
 			left[k]--

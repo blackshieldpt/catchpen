@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/config"
-	"github.com/blackshieldpt/curral/internal/paths"
-	"github.com/blackshieldpt/curral/internal/template"
-	"github.com/blackshieldpt/curral/internal/vm"
-	"github.com/blackshieldpt/curral/internal/vmtest"
+	"github.com/blackshieldpt/catchpen/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/paths"
+	"github.com/blackshieldpt/catchpen/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/vm"
+	"github.com/blackshieldpt/catchpen/internal/vmtest"
 
-	"github.com/blackshieldpt/curral/internal/task"
+	"github.com/blackshieldpt/catchpen/internal/task"
 )
 
 func fakeQEMU(t *testing.T, m *vm.Manager, name string, memMB int) {
@@ -119,7 +119,7 @@ func testRunner(t *testing.T) *Runner {
 	if err := p.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	return &Runner{M: &vm.Manager{P: p, Cfg: config.Default(), Tpl: template.Loader{UserDir: p.Templates()}, Bin: "/usr/local/bin/curral"}}
+	return &Runner{M: &vm.Manager{P: p, Cfg: config.Default(), Tpl: template.Loader{UserDir: p.Templates()}, Bin: "/usr/local/bin/catchpen"}}
 }
 
 func writeFile(t *testing.T, path, content string) {

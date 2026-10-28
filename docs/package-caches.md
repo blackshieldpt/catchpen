@@ -1,13 +1,13 @@
 # Package caches
 
-VMs whose template lists `cache:` fetch packages through curral on the host, which
+VMs whose template lists `cache:` fetch packages through catchpen on the host, which
 keeps what never changes for every other VM and base build.
 
 Each cache is a section of `caches.yaml`: `apt-cache`, `go-cache`, `npm-cache`,
 `pypi-cache` and `docker-cache`. The default has all five; `-name` drops one:
 
 ```
-curral up dev -t -npm-cache,-docker-cache
+catchpen up dev -t -npm-cache,-docker-cache
 ```
 
 The docker cache needs Docker in the VM, which the `docker` section of `runtimes.yaml`
@@ -19,14 +19,14 @@ cache_max: 20G          # default; least recently used objects go first
 ```
 
 ```
-curral cache                                   # what each cache holds
-curral cache clear [apt|go|npm|pypi|docker ...]
+catchpen cache                                   # what each cache holds
+catchpen cache clear [apt|go|npm|pypi|docker ...]
 ```
 
 ## What is cached
 
 The guest reaches the caches at `10.0.2.102`. The store is
-`~/.cache/curral/pkg/<kind>/`.
+`~/.cache/catchpen/pkg/<kind>/`.
 
 | Cache | Stored | Fetched every time |
 |---|---|---|
@@ -41,7 +41,7 @@ registry mirror (merged into the VM's `daemon.json` at first boot). Other mirror
 indexes still go through the egress proxy.
 
 Cached hosts need no allowlist entry, but `egress deny` still applies, redirects
-included. Cache fetches show in `curral egress log` as `CACHE`. Base builds use the
+included. Cache fetches show in `catchpen egress log` as `CACHE`. Base builds use the
 template's caches too (Docker's excepted) without changing the base. VMs with
 `egress: none` use none.
 

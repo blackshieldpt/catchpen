@@ -18,16 +18,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/canary"
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/template"
-	"github.com/blackshieldpt/curral/internal/vm"
-	"github.com/blackshieldpt/curral/internal/vmtest"
+	"github.com/blackshieldpt/catchpen/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/vm"
+	"github.com/blackshieldpt/catchpen/internal/vmtest"
 
-	"github.com/blackshieldpt/curral/internal/config"
-	"github.com/blackshieldpt/curral/internal/forge"
-	"github.com/blackshieldpt/curral/internal/notify"
-	"github.com/blackshieldpt/curral/internal/task"
+	"github.com/blackshieldpt/catchpen/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/forge"
+	"github.com/blackshieldpt/catchpen/internal/notify"
+	"github.com/blackshieldpt/catchpen/internal/task"
 )
 
 // TestTasks runs headless tasks end to end against Gitea with the cmd agent:
@@ -75,7 +75,7 @@ func TestTasks(t *testing.T) {
 	var tok struct {
 		SHA1 string `json:"sha1"`
 	}
-	g.API("POST", "/users/bot/tokens", map[string]any{"name": "curral-admin", "scopes": []string{"write:repository", "read:user"}}, &tok)
+	g.API("POST", "/users/bot/tokens", map[string]any{"name": "catchpen-admin", "scopes": []string{"write:repository", "read:user"}}, &tok)
 	t.Setenv("GITEA_ADMIN", tok.SHA1)
 	keys, err := forge.Scan(ctx, g.IP, g.SSHPort)
 	if err != nil {
@@ -237,7 +237,7 @@ echo agent-finished`
 		t.Fatal(err)
 	}
 	r5 := waitState(t5.ID, func(tk *task.Task) bool { return task.Final(tk.State) })
-	if b, _ := os.ReadFile(r5.Output); r5.State != task.Done || !bytes.Contains(b, []byte("Subject: [PATCH] curral task "+t5.ID)) || !bytes.Contains(b, []byte("GIT binary patch")) {
+	if b, _ := os.ReadFile(r5.Output); r5.State != task.Done || !bytes.Contains(b, []byte("Subject: [PATCH] catchpen task "+t5.ID)) || !bytes.Contains(b, []byte("GIT binary patch")) {
 		t.Errorf("task 5: %+v\n%s", r5, b)
 	}
 
@@ -293,7 +293,7 @@ echo agent-finished`
 	for len(eventsOf(notify.AgentWaiting)) < 5 && time.Now().Before(deadline) {
 		time.Sleep(200 * time.Millisecond)
 	}
-	if w := eventsOf(notify.AgentWaiting); len(w) != 5 || w[0].Title != "curral nt1: tester is waiting" || w[0].Message != "needs input" {
+	if w := eventsOf(notify.AgentWaiting); len(w) != 5 || w[0].Title != "catchpen nt1: tester is waiting" || w[0].Message != "needs input" {
 		t.Errorf("agent.waiting: %+v", w)
 	}
 }

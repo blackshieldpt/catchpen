@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/config"
 )
 
 func TestPoolAndIdleStop(t *testing.T) {
@@ -68,7 +68,7 @@ func TestPoolAndIdleStop(t *testing.T) {
 	if s, _ := m.Load("pw"); s.Resume != "" || s.Pool {
 		t.Errorf("state after claim %+v", s)
 	}
-	out, err := exec.CommandContext(ctx, "ssh", "-F", m.P.SSHConfig(), "-o", "BatchMode=yes", "curral-pw", "hostname").CombinedOutput()
+	out, err := exec.CommandContext(ctx, "ssh", "-F", m.P.SSHConfig(), "-o", "BatchMode=yes", "catchpen-pw", "hostname").CombinedOutput()
 	if err != nil || strings.TrimSpace(string(out)) != "pw" {
 		t.Errorf("openssh: %v %s", err, out)
 	}

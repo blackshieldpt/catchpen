@@ -82,7 +82,7 @@ func TestGenerateAndDialPinned(t *testing.T) {
 		}
 	}
 	known, _ := os.ReadFile(k.KnownHosts())
-	if !strings.HasPrefix(string(known), "curral-vm1 ssh-ed25519 ") {
+	if !strings.HasPrefix(string(known), "catchpen-vm1 ssh-ed25519 ") {
 		t.Errorf("known_hosts = %q", known)
 	}
 	pubB, _ := os.ReadFile(k.Identity() + ".pub")
@@ -127,22 +127,22 @@ func TestGenerateAndDialPinned(t *testing.T) {
 
 func TestWriteConfig(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "ssh_config")
-	if err := WriteConfig(p, "/usr/bin/curral", []Entry{{Name: "b", User: "agent", Keys: Keys{Dir: "/k/b"}}, {Name: "a", User: "agent", Keys: Keys{Dir: "/k/a"}}}); err != nil {
+	if err := WriteConfig(p, "/usr/bin/catchpen", []Entry{{Name: "b", User: "agent", Keys: Keys{Dir: "/k/b"}}, {Name: "a", User: "agent", Keys: Keys{Dir: "/k/a"}}}); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(p)
 	s := string(b)
-	for _, want := range []string{"Host curral-a\n", "StrictHostKeyChecking yes", "ForwardAgent no", "IdentitiesOnly yes",
-		"IdentityAgent none", "PasswordAuthentication no", "HostKeyAlgorithms ssh-ed25519", "HostKeyAlias curral-a",
-		"ForwardX11 no", "ForwardX11Trusted no", "ClearAllForwardings yes", "Tunnel no", `ProxyCommand '/usr/bin/curral' ssh-proxy a`, `UserKnownHostsFile "/k/a/known_hosts"`} {
+	for _, want := range []string{"Host catchpen-a\n", "StrictHostKeyChecking yes", "ForwardAgent no", "IdentitiesOnly yes",
+		"IdentityAgent none", "PasswordAuthentication no", "HostKeyAlgorithms ssh-ed25519", "HostKeyAlias catchpen-a",
+		"ForwardX11 no", "ForwardX11Trusted no", "ClearAllForwardings yes", "Tunnel no", `ProxyCommand '/usr/bin/catchpen' ssh-proxy a`, `UserKnownHostsFile "/k/a/known_hosts"`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("ssh_config missing %q", want)
 		}
 	}
-	if strings.Index(s, "curral-a") > strings.Index(s, "curral-b") {
+	if strings.Index(s, "catchpen-a") > strings.Index(s, "catchpen-b") {
 		t.Error("entries not sorted")
 	}
-	for _, bad := range []struct{ bin, dir string }{{"/usr/bin/cur\nral", "/k"}, {"/bin/%h", "/k"}, {"/usr/bin/curral", `/k"x`}, {"/usr/bin/curral", "/k/%d"}} {
+	for _, bad := range []struct{ bin, dir string }{{"/usr/bin/cur\nral", "/k"}, {"/bin/%h", "/k"}, {"/usr/bin/catchpen", `/k"x`}, {"/usr/bin/catchpen", "/k/%d"}} {
 		if err := WriteConfig(p, bad.bin, []Entry{{Name: "a", User: "agent", Keys: Keys{Dir: bad.dir}}}); err == nil {
 			t.Errorf("WriteConfig(%q, %q) accepted an unsafe path", bad.bin, bad.dir)
 		}
@@ -276,7 +276,7 @@ func TestCapWriter(t *testing.T) {
 
 func TestWriteConfigForwardAgent(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "ssh_config")
-	err := WriteConfig(p, "/usr/bin/curral", []Entry{
+	err := WriteConfig(p, "/usr/bin/catchpen", []Entry{
 		{Name: "off", User: "agent", Keys: Keys{Dir: "/k/off"}},
 		{Name: "res", User: "agent", Keys: Keys{Dir: "/k/res"}, ForwardAgent: "/k/res/agent.sock"},
 		{Name: "host", User: "agent", Keys: Keys{Dir: "/k/host"}, ForwardAgent: "$SSH_AUTH_SOCK"},
@@ -288,7 +288,7 @@ func TestWriteConfigForwardAgent(t *testing.T) {
 	blocks := strings.Split(string(b), "\nHost ")
 	want := map[string]string{"off": "ForwardAgent no\n", "res": `ForwardAgent "/k/res/agent.sock"` + "\n", "host": "ForwardAgent $SSH_AUTH_SOCK\n"}
 	for _, blk := range blocks[1:] {
-		name := strings.TrimPrefix(strings.SplitN(blk, "\n", 2)[0], "curral-")
+		name := strings.TrimPrefix(strings.SplitN(blk, "\n", 2)[0], "catchpen-")
 		ia := strings.Replace(want[name], "ForwardAgent", "IdentityAgent", 1)
 		if name == "off" {
 			ia = "IdentityAgent none\n"
@@ -297,7 +297,7 @@ func TestWriteConfigForwardAgent(t *testing.T) {
 			t.Errorf("%s block:\n%s", name, blk)
 		}
 	}
-	if err := WriteConfig(p, "/usr/bin/curral", []Entry{{Name: "x", User: "a", Keys: Keys{Dir: "/k"}, ForwardAgent: "/k/%h.sock"}}); err == nil {
+	if err := WriteConfig(p, "/usr/bin/catchpen", []Entry{{Name: "x", User: "a", Keys: Keys{Dir: "/k"}, ForwardAgent: "/k/%h.sock"}}); err == nil {
 		t.Error("percent token in agent socket path accepted")
 	}
 }
@@ -312,7 +312,7 @@ func TestRenamePinsTheSameHostKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(k.KnownHosts())
-	if string(after) != strings.Replace(string(before), "curral-pool-1 ", "curral-work ", 1) {
+	if string(after) != strings.Replace(string(before), "catchpen-pool-1 ", "catchpen-work ", 1) {
 		t.Errorf("known_hosts %q -> %q", before, after)
 	}
 }

@@ -144,7 +144,7 @@ func resetCmd() *cobra.Command {
 		Short: "Give a VM a fresh disk and run first boot again",
 		Long: `Everything on the VM's disk is lost; its keys, forges and settings stay, and its repos
 are cloned again. --latest uses the template's current base (new packages after
-curral template rebuild). A running VM is started again afterwards.`,
+catchpen template rebuild). A running VM is started again afterwards.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !yes {
@@ -169,8 +169,8 @@ func rebaseCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "rebase <vm>",
 		Short: "Move a VM's disk onto the template's current base, keeping its contents",
-		Long: `The guest sees the same disk afterwards (new packages need curral reset --latest);
-the old base is then no longer used and curral gc can remove it. Snapshots are deleted.
+		Long: `The guest sees the same disk afterwards (new packages need catchpen reset --latest);
+the old base is then no longer used and catchpen gc can remove it. Snapshots are deleted.
 A running VM is stopped and started again.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -20,10 +20,10 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
 )
 
-const AliasPrefix = "curral-"
+const AliasPrefix = "catchpen-"
 
 // Keys is a VM's key directory: client identity + pinned host key.
 type Keys struct{ Dir string }
@@ -58,7 +58,7 @@ func (k Keys) Generate(vm string) error {
 		return err
 	}
 	alias := AliasPrefix + vm
-	cpriv, cpub, err := genKey("curral@" + vm)
+	cpriv, cpub, err := genKey("catchpen@" + vm)
 	if err != nil {
 		return err
 	}
@@ -372,14 +372,14 @@ func cfgQuote(s string) (string, error) {
 // shQuote single-quotes s for the shell that runs ProxyCommand.
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
-// WriteConfig regenerates the curral ssh_config with one Host block per VM.
-func WriteConfig(path, curralBin string, entries []Entry) error {
+// WriteConfig regenerates the catchpen ssh_config with one Host block per VM.
+func WriteConfig(path, catchpenBin string, entries []Entry) error {
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name < entries[j].Name })
-	if strings.ContainsAny(curralBin, "\n\r%") {
-		return fmt.Errorf("curral binary path %q cannot be used in ssh_config", curralBin)
+	if strings.ContainsAny(catchpenBin, "\n\r%") {
+		return fmt.Errorf("catchpen binary path %q cannot be used in ssh_config", catchpenBin)
 	}
 	var b strings.Builder
-	b.WriteString("# Managed by curral; regenerated on VM create/destroy. Do not edit.\n")
+	b.WriteString("# Managed by catchpen; regenerated on VM create/destroy. Do not edit.\n")
 	for _, e := range entries {
 		alias := AliasPrefix + e.Name
 		fmt.Fprintf(&b, "\nHost %s\n", alias)
@@ -422,7 +422,7 @@ func WriteConfig(path, curralBin string, entries []Entry) error {
 		b.WriteString("  StrictHostKeyChecking yes\n")
 		b.WriteString("  HostKeyAlgorithms ssh-ed25519\n")
 		b.WriteString("  PasswordAuthentication no\n")
-		fmt.Fprintf(&b, "  ProxyCommand %s ssh-proxy %s\n", shQuote(curralBin), e.Name)
+		fmt.Fprintf(&b, "  ProxyCommand %s ssh-proxy %s\n", shQuote(catchpenBin), e.Name)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -452,11 +452,11 @@ func Proxy(port int, in io.Reader, out io.Writer) error {
 	return <-errc
 }
 
-const includeMarker = "# curral: VM host aliases (remove with: curral setup-ssh --remove)"
+const includeMarker = "# catchpen: VM host aliases (remove with: catchpen setup-ssh --remove)"
 
 // SetupInclude adds or removes the Include line at the top of ~/.ssh/config.
-func SetupInclude(userConfig, curralConfig string, remove bool) (changed bool, err error) {
-	inc, err := cfgQuote(curralConfig)
+func SetupInclude(userConfig, catchpenConfig string, remove bool) (changed bool, err error) {
+	inc, err := cfgQuote(catchpenConfig)
 	if err != nil {
 		return false, err
 	}

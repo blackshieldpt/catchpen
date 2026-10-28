@@ -3,48 +3,48 @@
 ## Interactive sessions
 
 ```
-curral ssh dev                    # a shell
-curral ssh dev -- docker ps       # a command (no tty, not recorded)
-curral run dev claude             # an agent in a guest tmux session; reattaches later
-curral attach dev                 # the guest's main tmux session
-curral cp ./notes.md dev:/tmp/    # scp, either direction (-r for directories)
+catchpen ssh dev                    # a shell
+catchpen ssh dev -- docker ps       # a command (no tty, not recorded)
+catchpen run dev claude             # an agent in a guest tmux session; reattaches later
+catchpen attach dev                 # the guest's main tmux session
+catchpen cp ./notes.md dev:/tmp/    # scp, either direction (-r for directories)
 ```
 
-`curral run <vm> claude|opencode|pi|omp|codex [-- args]` starts the agent in a guest tmux
+`catchpen run <vm> claude|opencode|pi|omp|codex [-- args]` starts the agent in a guest tmux
 session named after it and reattaches to it later. New arguments and `yolo` apply only
-when the session starts. `curral attach` does the same for a `main` shell session. The
+when the session starts. `catchpen attach` does the same for a `main` shell session. The
 guest tmux prefix is `C-a`, so it doesn't clash with a host tmux. VMs created before
-`curral run` existed need recreating for it.
+`catchpen run` existed need recreating for it.
 
 `ssh -- command` joins the command's words with spaces without quoting them; quote for
 the remote shell yourself.
 
-With `curral setup-ssh`, `ssh curral-<vm>`, `scp` and editors' remote SSH (VS Code
-Remote-SSH, for example) work directly. Those connections aren't recorded; `curral ssh`,
+With `catchpen setup-ssh`, `ssh catchpen-<vm>`, `scp` and editors' remote SSH (VS Code
+Remote-SSH, for example) work directly. Those connections aren't recorded; `catchpen ssh`,
 `run` and `attach` are.
 
 ## Host tmux
 
-`curral tmux [<vm>...]` opens a host tmux session `curral` with a window per running VM,
-each running `curral attach`. `start` and `stop` add and close windows while the session
-exists, and `curral tmux --sync` reconciles it. Windows you open there yourself are left
+`catchpen tmux [<vm>...]` opens a host tmux session `catchpen` with a window per running VM,
+each running `catchpen attach`. `start` and `stop` add and close windows while the session
+exists, and `catchpen tmux --sync` reconciles it. Windows you open there yourself are left
 alone.
 
 ## herdr
 
-`curral herdr` does the same with [herdr](herdr.md), which also shows each agent's state
+`catchpen herdr` does the same with [herdr](herdr.md), which also shows each agent's state
 and resumes it after a restart.
 
 ## Ephemeral VMs
 
 ```
-curral up scratch --ephemeral
-curral up scratch --ephemeral -- make test
+catchpen up scratch --ephemeral
+catchpen up scratch --ephemeral -- make test
 ```
 
 `--ephemeral` creates a new VM, attaches (or runs the command, with each argument
 shell-quoted) and destroys the VM, with its deploy keys and tokens, when the session ends
-or curral gets SIGINT, SIGTERM or SIGHUP. `curral ls` marks ephemeral VMs, so one left
+or catchpen gets SIGINT, SIGTERM or SIGHUP. `catchpen ls` marks ephemeral VMs, so one left
 behind by a crash is easy to spot. Idle stop leaves them alone.
 
 ## Recordings
@@ -55,8 +55,8 @@ record its output (not your keystrokes) as asciicast v2 in
 `destroy`. The guest can't alter them.
 
 ```
-curral recordings dev                         # list
-curral recordings dev play <id> [--speed 2]   # replay, title and clipboard sequences dropped
+catchpen recordings dev                         # list
+catchpen recordings dev play <id> [--speed 2]   # replay, title and clipboard sequences dropped
 ```
 
 `asciinema play` also reads them, but replays guest escape sequences (window title,
@@ -65,7 +65,7 @@ clipboard writes) unfiltered. `record: false` in config.yaml turns recording off
 ## Audit log
 
 ```
-curral audit [<vm>] [-f]
+catchpen audit [<vm>] [-f]
 ```
 
 `audit.jsonl` (rotated at 32 MiB) records:

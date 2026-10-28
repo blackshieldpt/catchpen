@@ -11,7 +11,7 @@ import (
 )
 
 // GuestPrompt is where the prompt is written in the guest.
-const GuestPrompt = ".curral/task-prompt.md"
+const GuestPrompt = ".catchpen/task-prompt.md"
 
 // Command is the guest shell command that runs the agent headless, in the
 // repo, with stdout as its event stream. The prompt goes on stdin where the
@@ -33,7 +33,7 @@ func Command(s Spec) string {
 	case "codex":
 		return "codex exec --json --yolo --skip-git-repo-check -" + stdin
 	}
-	return `CURRAL_PROMPT_FILE="$HOME/` + GuestPrompt + `" sh -c ` + shQuote(s.Cmd) + stdin
+	return `CATCHPEN_PROMPT_FILE="$HOME/` + GuestPrompt + `" sh -c ` + shQuote(s.Cmd) + stdin
 }
 
 // Summary is what a finished run reported.

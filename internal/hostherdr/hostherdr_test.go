@@ -16,9 +16,9 @@ func testHerdr(t *testing.T) Herdr {
 	if !Installed() {
 		t.Skip("herdr not installed")
 	}
-	bin := filepath.Join(t.TempDir(), "fake-curral")
+	bin := filepath.Join(t.TempDir(), "fake-catchpen")
 	os.WriteFile(bin, []byte("#!/bin/sh\nexec sleep 300\n"), 0o755)
-	h := Herdr{Session: fmt.Sprintf("curral-test-%d", os.Getpid()), Bin: bin}
+	h := Herdr{Session: fmt.Sprintf("catchpen-test-%d", os.Getpid()), Bin: bin}
 	t.Cleanup(func() {
 		_ = h.cmd("session", "stop", h.Session).Run()
 		_ = h.cmd("session", "delete", h.Session).Run()
@@ -41,7 +41,7 @@ func TestWorkspaces(t *testing.T) {
 		t.Fatal(err)
 	}
 	if ws, _ := h.Workspaces(); len(ws) != 0 {
-		t.Fatalf("Add without curral workspaces must do nothing: %v", ws)
+		t.Fatalf("Add without catchpen workspaces must do nothing: %v", ws)
 	}
 	// The user's own workspaces are left alone.
 	if _, err := h.run("workspace", "create", "--label", "mine", "--no-focus"); err != nil {
@@ -75,7 +75,7 @@ func TestWorkspaces(t *testing.T) {
 		t.Errorf("the user's workspace was closed: %s", out)
 	}
 
-	// After each herdr restart, the workspace comes back and reruns curral
+	// After each herdr restart, the workspace comes back and reruns catchpen
 	// run, which herdr again recognises as the agent.
 	for restart := 1; restart <= 2; restart++ {
 		if _, err := h.run("session", "stop", h.Session); err != nil {
@@ -101,11 +101,11 @@ func TestWorkspaces(t *testing.T) {
 }
 
 func TestArgv(t *testing.T) {
-	h := Herdr{Bin: "/opt/curral"}
-	if got := h.argv("dev", "pi"); !slices.Equal(got, []string{"env", "HERDR_AGENT=pi", "/opt/curral", "run", "dev", "pi"}) {
+	h := Herdr{Bin: "/opt/catchpen"}
+	if got := h.argv("dev", "pi"); !slices.Equal(got, []string{"env", "HERDR_AGENT=pi", "/opt/catchpen", "run", "dev", "pi"}) {
 		t.Errorf("agent argv %v", got)
 	}
-	if got := h.argv("dev", ""); !slices.Equal(got, []string{"/opt/curral", "attach", "dev"}) {
+	if got := h.argv("dev", ""); !slices.Equal(got, []string{"/opt/catchpen", "attach", "dev"}) {
 		t.Errorf("shell argv %v", got)
 	}
 }

@@ -96,7 +96,7 @@ func claudeConfigTar(dir string) ([]byte, []string, error) {
 
 // sensitiveDirs (relative to the host home) are never copied, even via a symlink.
 var sensitiveDirs = []string{".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".password-store",
-	".config/gh", ".config/gcloud", ".config/curral", ".local/share/curral"}
+	".config/gh", ".config/gcloud", ".config/catchpen", ".local/share/catchpen"}
 
 // sensitive reports whether a resolved path is the home directory itself or
 // inside a credentials directory. It is checked for every visited path.

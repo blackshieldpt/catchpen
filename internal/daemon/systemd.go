@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
 )
 
-const unitName = "curral.service"
+const unitName = "catchpen.service"
 
 // UnitPath is where the systemd user unit goes: a directory systemd always
 // searches, whatever XDG_CONFIG_HOME its manager has.
@@ -20,15 +20,15 @@ func UnitPath() string {
 }
 
 // Unit renders the unit running bin as the daemon. The variables that pick
-// curral's directories are carried over, so it sees the same VMs, and PATH,
+// catchpen's directories are carried over, so it sees the same VMs, and PATH,
 // so it finds the same qemu.
 func Unit(bin string, env func(string) string) string {
 	var b strings.Builder
-	b.WriteString("[Unit]\nDescription=curral daemon: warm pool, idle stop, base rebuilds, egress prompts\n\n[Service]\n")
+	b.WriteString("[Unit]\nDescription=catchpen daemon: warm pool, idle stop, base rebuilds, egress prompts\n\n[Service]\n")
 	if v := env("PATH"); v != "" {
 		fmt.Fprintf(&b, "Environment=%s\n", unitQuote("PATH="+v))
 	}
-	for _, k := range []string{"CURRAL_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"} {
+	for _, k := range []string{"CATCHPEN_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"} {
 		if v := env(k); v != "" && filepath.IsAbs(v) {
 			fmt.Fprintf(&b, "Environment=%s\n", unitQuote(k+"="+v))
 		}

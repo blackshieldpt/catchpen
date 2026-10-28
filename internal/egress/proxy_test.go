@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/canary"
 )
 
 func setup(t *testing.T, cfg Config, allow, deny []string) *Proxy {
@@ -159,7 +159,7 @@ func expect403(t *testing.T, c net.Conn, target, reason string) {
 	t.Helper()
 	_, resp := connect(t, c, target, "")
 	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 403 || !strings.Contains(string(body), reason) || !strings.Contains(string(body), "curral egress log vm1") {
+	if resp.StatusCode != 403 || !strings.Contains(string(body), reason) || !strings.Contains(string(body), "catchpen egress log vm1") {
 		t.Fatalf("resp = %d %q, want 403 with %q", resp.StatusCode, body, reason)
 	}
 }

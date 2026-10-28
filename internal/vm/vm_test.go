@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackshieldpt/curral/internal/config"
-	"github.com/blackshieldpt/curral/internal/image"
-	"github.com/blackshieldpt/curral/internal/paths"
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/template"
-	"github.com/blackshieldpt/curral/internal/vmtest"
+	"github.com/blackshieldpt/catchpen/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/image"
+	"github.com/blackshieldpt/catchpen/internal/paths"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/vmtest"
 )
 
 func testManager(t *testing.T) *Manager {
@@ -24,7 +24,7 @@ func testManager(t *testing.T) *Manager {
 	if err := p.Ensure(); err != nil {
 		t.Fatal(err)
 	}
-	return &Manager{P: p, Cfg: config.Default(), Tpl: template.Loader{UserDir: p.Templates()}, Bin: "/usr/local/bin/curral"}
+	return &Manager{P: p, Cfg: config.Default(), Tpl: template.Loader{UserDir: p.Templates()}, Bin: "/usr/local/bin/catchpen"}
 }
 
 func writeFile(t *testing.T, path, content string) {
@@ -39,11 +39,11 @@ func writeFile(t *testing.T, path, content string) {
 
 func TestLastLine(t *testing.T) {
 	for in, want := range map[string]string{
-		"a\nb\nCURRAL-BUILD-OK\n":         "CURRAL-BUILD-OK",
-		"CURRAL-BUILD-OK\r\n\x00\x00":     "CURRAL-BUILD-OK",
-		"CURRAL-BUILD-OK\nlater output\n": "later output", // the marker must be last
-		"":                                "",
-		"  x  ":                           "x",
+		"a\nb\nCATCHPEN-BUILD-OK\n":         "CATCHPEN-BUILD-OK",
+		"CATCHPEN-BUILD-OK\r\n\x00\x00":     "CATCHPEN-BUILD-OK",
+		"CATCHPEN-BUILD-OK\nlater output\n": "later output", // the marker must be last
+		"":                                  "",
+		"  x  ":                             "x",
 	} {
 		if got := lastLine(in); got != want {
 			t.Errorf("lastLine(%q) = %q, want %q", in, got, want)
@@ -185,7 +185,7 @@ func TestCreateRollsBackOnFailure(t *testing.T) {
 		t.Errorf("base removed by rollback: %v", err)
 	}
 
-	m.Bin = "/usr/local/bin/curral"
+	m.Bin = "/usr/local/bin/catchpen"
 	s, err := m.Create(context.Background(), "a", CreateOpts{Template: "minimal", CPUs: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -198,7 +198,7 @@ func TestCreateRollsBackOnFailure(t *testing.T) {
 			t.Errorf("missing %s: %v", f, err)
 		}
 	}
-	if b, _ := os.ReadFile(m.P.SSHConfig()); !strings.Contains(string(b), "Host curral-a\n") {
+	if b, _ := os.ReadFile(m.P.SSHConfig()); !strings.Contains(string(b), "Host catchpen-a\n") {
 		t.Errorf("ssh_config lacks the VM: %q", b)
 	}
 	if _, err := m.Create(context.Background(), "a", CreateOpts{Template: "minimal"}); err == nil || !strings.Contains(err.Error(), "already exists") {

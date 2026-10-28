@@ -173,7 +173,7 @@ func (lib *Library) add(c Category, b []byte, source string, fsys fs.FS) error {
 		}
 		// An old-style template's settings, where sections belong.
 		if (name == "extends" || name == "description" || slices.Contains(c.Fields, name)) && v.Kind != yaml.MappingNode {
-			return fmt.Errorf("%s:%d: %s: this looks like an old-style template, which curral no longer reads. Move its settings into sections (see https://blackshieldpt.github.io/curral/templates/)", source, m.Content[i].Line, name)
+			return fmt.Errorf("%s:%d: %s: this looks like an old-style template, which catchpen no longer reads. Move its settings into sections (see https://blackshieldpt.github.io/catchpen/templates/)", source, m.Content[i].Line, name)
 		}
 		if seen[name] {
 			return fmt.Errorf("%s:%d: %s is defined twice", source, m.Content[i].Line, name)
@@ -500,7 +500,7 @@ func (lib *Library) lookup(ref, in string) (*Section, error) {
 	case 1:
 		return found[0], nil
 	case 0:
-		return nil, missing(fmt.Sprintf("unknown section %q (curral template ls lists them)", name))
+		return nil, missing(fmt.Sprintf("unknown section %q (catchpen template ls lists them)", name))
 	}
 	var q []string
 	for _, s := range found {
@@ -509,7 +509,7 @@ func (lib *Library) lookup(ref, in string) (*Section, error) {
 	return nil, fmt.Errorf("%q is in several categories; say which: %s", name, strings.Join(q, ", "))
 }
 
-// oldFiles refuses template files curral no longer reads: an old default.yaml
+// oldFiles refuses template files catchpen no longer reads: an old default.yaml
 // may be stricter than the defaults that would silently replace it.
 func oldFiles(dir string) error {
 	ents, err := os.ReadDir(dir)
@@ -533,7 +533,7 @@ func oldFiles(dir string) error {
 	if len(old) == 0 {
 		return errors.Join(errs...)
 	}
-	return errors.Join(append(errs, fmt.Errorf("%s: %s: old-style templates, which curral no longer reads. Move their settings into sections of the category files (curral init writes them; see https://blackshieldpt.github.io/curral/templates/), then remove or rename them",
+	return errors.Join(append(errs, fmt.Errorf("%s: %s: old-style templates, which catchpen no longer reads. Move their settings into sections of the category files (catchpen init writes them; see https://blackshieldpt.github.io/catchpen/templates/), then remove or rename them",
 		dir, strings.Join(old, ", ")))...)
 }
 

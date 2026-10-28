@@ -1,7 +1,7 @@
 # Configuration
 
-curral reads its settings from `~/.config/curral/config.yaml`. The file is optional: a
-missing or empty file means the defaults below. Unknown keys are errors. `curral init`
+catchpen reads its settings from `~/.config/catchpen/config.yaml`. The file is optional: a
+missing or empty file means the defaults below. Unknown keys are errors. `catchpen init`
 writes a commented `config.yaml` and `secrets.env` listing the settings and secret
 names, and the commented [template](templates.md) category files; it keeps files that
 exist. What VMs contain (distro, size, software, network) is set in those category
@@ -11,17 +11,17 @@ files, not here.
 
 | Variable | Effect |
 |---|---|
-| `CURRAL_HOME` | When set, config goes in `$CURRAL_HOME/config`, data in `$CURRAL_HOME/data` and caches in `$CURRAL_HOME/cache`. |
-| `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Used when set to an absolute path; otherwise `~/.config`, `~/.local/share` and `~/.cache`. curral adds `/curral` to each. |
+| `CATCHPEN_HOME` | When set, config goes in `$CATCHPEN_HOME/config`, data in `$CATCHPEN_HOME/data` and caches in `$CATCHPEN_HOME/cache`. |
+| `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Used when set to an absolute path; otherwise `~/.config`, `~/.local/share` and `~/.cache`. catchpen adds `/catchpen` to each. |
 
 ```
-~/.config/curral/
+~/.config/catchpen/
   config.yaml                this file
   secrets.env                NAME=value secrets (must be 0600)
-  forges.yaml                managed by curral forge add/rm
-  ssh_config                 generated; curral setup-ssh includes it from ~/.ssh/config
+  forges.yaml                managed by catchpen forge add/rm
+  ssh_config                 generated; catchpen setup-ssh includes it from ~/.ssh/config
   templates/<category>.yaml  your template sections (distros.yaml, runtimes.yaml, ...)
-~/.local/share/curral/
+~/.local/share/catchpen/
   images/                    verified cloud images (+ .img.json: source URL and digest)
   bases/                     template bases, one file per generation, and build logs
   vms/<name>/                disk overlay, seed, keys, allowlist, egress.log, qemu.log, ...
@@ -30,12 +30,12 @@ files, not here.
   transcripts/<name>/        agent session stores copied from the VM
   tasks/<id>/                task.json, prompt.md, output.jsonl, result.md, supervisor.log
   audit.jsonl                host audit log
-  daemon.lock, rebuild.stamp curral daemon state
-~/.cache/curral/pkg/         package caches (apt, go, npm, pypi, docker)
-~/.cache/curral/sources/     pinned git repos of skills and plugins
+  daemon.lock, rebuild.stamp catchpen daemon state
+~/.cache/catchpen/pkg/         package caches (apt, go, npm, pypi, docker)
+~/.cache/catchpen/sources/     pinned git repos of skills and plugins
 ```
 
-curral creates these directories with mode 0700.
+catchpen creates these directories with mode 0700.
 
 ## Reference
 
@@ -77,7 +77,7 @@ canary_action: pause            # pause, stop or log
 | `secrets.<NAME>` | | Exactly one of `command` (argv, 30 s timeout, trailing newline trimmed) or `env`. |
 | `record` | `true` | `false` turns session recording off. |
 | `notify` | no sinks | See [notifications.md](notifications.md). |
-| `tasks.max_vms` | `2` | All running curral VMs count against it. |
+| `tasks.max_vms` | `2` | All running catchpen VMs count against it. |
 | `tasks.max_memory` | no limit | A size such as `24G`. |
 | `idle_stop` | off | A template can override it (`idle.yaml`). See [deployment.md](deployment.md#idle-stop). |
 | `rebuild` | off | Needs the daemon. |
@@ -110,7 +110,7 @@ host, in this order:
 1. a `secrets.NAME` source in config.yaml (if it gives an empty value, the lookup stops
    there);
 2. the environment variable `NAME`;
-3. `~/.config/curral/secrets.env`.
+3. `~/.config/catchpen/secrets.env`.
 
 `secrets.env` holds `NAME=value` lines, optionally prefixed with `export ` and with the
 value in matching quotes. Lines starting with `#` and blank lines are skipped; there is
@@ -123,6 +123,6 @@ secrets it needs (notification tokens) belong in
 
 ## forges.yaml
 
-`curral forge add` and `curral forge rm` manage `~/.config/curral/forges.yaml` (mode
+`catchpen forge add` and `catchpen forge rm` manage `~/.config/catchpen/forges.yaml` (mode
 0600). You can read it, but prefer the commands, which pin host keys for you. See
 [forges.md](forges.md).

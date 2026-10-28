@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
 )
 
 // Store is the on-disk cache: <Dir>/<kind>/<xx>/<sha256 of the key>, with

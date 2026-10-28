@@ -1,4 +1,4 @@
-# curral
+# catchpen
 
 A Go CLI that runs coding agents in QEMU/KVM VMs. The guest is hostile: treat
 everything from it (output, files, git objects, notifications) as attacker input.
@@ -8,7 +8,7 @@ agent; read it before changing code.
 ## Commands
 
 ```
-go build -o ~/.local/bin/curral ./cmd/curral   # install at a stable path: QEMU and ssh call it back
+go build -o ~/.local/bin/catchpen ./cmd/catchpen   # install at a stable path: QEMU and ssh call it back
 go vet ./... && go vet -tags integration ./...
 go test -race ./...                            # unit tests
 go test -p 1 -tags integration -timeout 60m ./internal/vm/ ./internal/runner/   # boots real VMs

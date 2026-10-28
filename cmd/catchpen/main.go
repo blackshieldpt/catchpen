@@ -1,4 +1,4 @@
-// Command curral launches KVM sandboxes for coding agents.
+// Command catchpen launches KVM sandboxes for coding agents.
 package main
 
 import (
@@ -12,12 +12,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blackshieldpt/curral/internal/config"
-	"github.com/blackshieldpt/curral/internal/hostherdr"
-	"github.com/blackshieldpt/curral/internal/hosttmux"
-	"github.com/blackshieldpt/curral/internal/paths"
-	"github.com/blackshieldpt/curral/internal/template"
-	"github.com/blackshieldpt/curral/internal/vm"
+	"github.com/blackshieldpt/catchpen/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/hostherdr"
+	"github.com/blackshieldpt/catchpen/internal/hosttmux"
+	"github.com/blackshieldpt/catchpen/internal/paths"
+	"github.com/blackshieldpt/catchpen/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/vm"
 )
 
 var debug bool
@@ -44,7 +44,7 @@ func manager() (*vm.Manager, error) {
 
 func main() {
 	root := &cobra.Command{
-		Use:           "curral",
+		Use:           "catchpen",
 		Short:         "KVM sandboxes for coding agents",
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -61,14 +61,14 @@ func main() {
 	)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer cancel()
-	// After the first signal, restore default handling so a second one kills curral.
+	// After the first signal, restore default handling so a second one kills catchpen.
 	go func() { <-ctx.Done(); cancel() }()
 	if err := root.ExecuteContext(ctx); err != nil {
 		var ee exitError
 		if errors.As(err, &ee) {
 			os.Exit(int(ee))
 		}
-		fmt.Fprintln(os.Stderr, "curral:", err)
+		fmt.Fprintln(os.Stderr, "catchpen:", err)
 		os.Exit(1)
 	}
 }

@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/vmtest"
+	"github.com/blackshieldpt/catchpen/internal/vmtest"
 
-	"github.com/blackshieldpt/curral/internal/canary"
-	"github.com/blackshieldpt/curral/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/config"
 )
 
 func gitRun(t *testing.T, dir string, args ...string) {
@@ -55,17 +55,17 @@ func TestCanariesPlantedAndScanned(t *testing.T) {
 	gitRun(t, repo, "checkout", "-qb", "work")
 	os.WriteFile(filepath.Join(repo, "a"), []byte("a\nfixed\n"), 0o600)
 	gitRun(t, repo, "commit", "-qam", "clean change")
-	gitRun(t, repo, "update-ref", "refs/curral/c1/clean", "HEAD")
+	gitRun(t, repo, "update-ref", "refs/catchpen/c1/clean", "HEAD")
 	os.WriteFile(filepath.Join(repo, ".env"), []byte("TOKEN="+cs[0].Values[2]+"\n"), 0o600)
 	gitRun(t, repo, "add", ".env")
 	gitRun(t, repo, "commit", "-qm", "add config")
-	gitRun(t, repo, "update-ref", "refs/curral-incoming/c1/leak", "HEAD")
+	gitRun(t, repo, "update-ref", "refs/catchpen-incoming/c1/leak", "HEAD")
 	gitRun(t, repo, "checkout", "-q", "main")
-	gitRun(t, repo, "branch", "-qD", "work") // only refs/curral/ has the VM's commits
-	if err := m.scanCommits(context.Background(), "c1", repo, "refs/curral/c1/clean"); err != nil {
+	gitRun(t, repo, "branch", "-qD", "work") // only refs/catchpen/ has the VM's commits
+	if err := m.scanCommits(context.Background(), "c1", repo, "refs/catchpen/c1/clean"); err != nil {
 		t.Errorf("clean commits: %v", err)
 	}
-	if err := m.scanCommits(context.Background(), "c1", repo, "refs/curral-incoming/c1/leak"); !errors.Is(err, ErrCanary) {
+	if err := m.scanCommits(context.Background(), "c1", repo, "refs/catchpen-incoming/c1/leak"); !errors.Is(err, ErrCanary) {
 		t.Errorf("leaking commit: %v", err)
 	}
 	if b, _ := os.ReadFile(m.P.Audit()); !strings.Contains(string(b), `"canary.hit"`) || !strings.Contains(string(b), `"kind":"env"`) {
@@ -88,19 +88,19 @@ func TestCanariesPlantedAndScanned(t *testing.T) {
 	os.WriteFile(filepath.Join(repo, "m"), []byte(cs[1].Values[0]+"\n"), 0o600)
 	gitRun(t, repo, "add", "m")
 	gitRun(t, repo, "commit", "-qm", "merge")
-	gitRun(t, repo, "update-ref", "refs/curral-incoming/c1/merge", "HEAD")
+	gitRun(t, repo, "update-ref", "refs/catchpen-incoming/c1/merge", "HEAD")
 	gitRun(t, repo, "checkout", "-qb", "bin", "main")
 	os.WriteFile(filepath.Join(repo, "b"), []byte("\x00\x01"+cs[1].Values[0]), 0o600)
 	gitRun(t, repo, "add", "b")
 	gitRun(t, repo, "commit", "-qm", "binary")
-	gitRun(t, repo, "update-ref", "refs/curral-incoming/c1/bin", "HEAD")
+	gitRun(t, repo, "update-ref", "refs/catchpen-incoming/c1/bin", "HEAD")
 	gitRun(t, repo, "checkout", "-q", "main")
 	gitRun(t, repo, "branch", "-qD", "side", "top", "bin")
 	gitRun(t, repo, "checkout", "-qb", "who", "main")
 	os.WriteFile(filepath.Join(repo, "w"), []byte("w\n"), 0o600)
 	gitRun(t, repo, "add", "w")
 	gitRun(t, repo, "-c", "user.email="+cs[0].Values[1]+"@example.com", "commit", "-qm", "clean")
-	gitRun(t, repo, "update-ref", "refs/curral-incoming/c1/who", "HEAD")
+	gitRun(t, repo, "update-ref", "refs/catchpen-incoming/c1/who", "HEAD")
 	gitRun(t, repo, "checkout", "-q", "main")
 	gitRun(t, repo, "branch", "-qD", "who")
 
@@ -115,23 +115,23 @@ func TestCanariesPlantedAndScanned(t *testing.T) {
 		}
 		gitRun(t, repo, "reset", "-q", "--hard", "HEAD~1")
 	}
-	gitRun(t, repo, "update-ref", "refs/curral-incoming/c1/enc", "HEAD")
+	gitRun(t, repo, "update-ref", "refs/catchpen-incoming/c1/enc", "HEAD")
 	gitRun(t, repo, "checkout", "-q", "--orphan", "root")
 	os.WriteFile(filepath.Join(repo, "r"), []byte(cs[1].Values[0]+"\n"), 0o600)
 	gitRun(t, repo, "add", "r")
 	gitRun(t, repo, "commit", "-qm", "root")
-	gitRun(t, repo, "update-ref", "refs/curral-incoming/c1/root", "HEAD")
+	gitRun(t, repo, "update-ref", "refs/catchpen-incoming/c1/root", "HEAD")
 	gitRun(t, repo, "checkout", "-qf", "main")
 	gitRun(t, repo, "branch", "-qD", "enc", "root")
 	gcfg := filepath.Join(t.TempDir(), "gitconfig")
 	os.WriteFile(gcfg, []byte("[log]\n\tshowRoot = false\n[color]\n\tui = always\n"), 0o600)
 	t.Setenv("GIT_CONFIG_GLOBAL", gcfg)
 
-	// refs/curral/ holds earlier pulls, excluded from what's new; what's
-	// being pulled is under refs/curral-incoming/.
-	gitRun(t, repo, "update-ref", "refs/curral/c1/work", "refs/curral/c1/clean")
-	for _, ref := range []string{"refs/curral-incoming/c1/merge", "refs/curral-incoming/c1/bin", "refs/curral-incoming/c1/who",
-		"refs/curral-incoming/c1/enc", "refs/curral-incoming/c1/root"} {
+	// refs/catchpen/ holds earlier pulls, excluded from what's new; what's
+	// being pulled is under refs/catchpen-incoming/.
+	gitRun(t, repo, "update-ref", "refs/catchpen/c1/work", "refs/catchpen/c1/clean")
+	for _, ref := range []string{"refs/catchpen-incoming/c1/merge", "refs/catchpen-incoming/c1/bin", "refs/catchpen-incoming/c1/who",
+		"refs/catchpen-incoming/c1/enc", "refs/catchpen-incoming/c1/root"} {
 		if err := m.scanCommits(context.Background(), "c1", repo, ref); !errors.Is(err, ErrCanary) {
 			t.Errorf("%s: %v", ref, err)
 		}
@@ -139,7 +139,7 @@ func TestCanariesPlantedAndScanned(t *testing.T) {
 
 	// A binary file in a patch; a hit removes the file.
 	patch := filepath.Join(t.TempDir(), "p.mbox")
-	out, err := exec.Command("git", "-C", repo, "format-patch", "--stdout", "main..refs/curral-incoming/c1/bin").Output()
+	out, err := exec.Command("git", "-C", repo, "format-patch", "--stdout", "main..refs/catchpen-incoming/c1/bin").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,38 +158,38 @@ func TestCanariesPlantedAndScanned(t *testing.T) {
 	os.WriteFile(filepath.Join(repo, "d"), slices.Concat(fill[:1<<10], []byte(v[:len(v)/2]), fill[1<<10:2<<10], []byte(v[len(v)/2:]), fill[2<<10:]), 0o600)
 	gitRun(t, repo, "add", "d")
 	gitRun(t, repo, "commit", "-qm", "halves")
-	gitRun(t, repo, "update-ref", "refs/curral/c1/halves", "HEAD")
+	gitRun(t, repo, "update-ref", "refs/catchpen/c1/halves", "HEAD")
 	os.WriteFile(filepath.Join(repo, "d"), slices.Concat(fill[:1<<10], []byte(v), fill[1<<10:]), 0o600)
 	gitRun(t, repo, "commit", "-qam", "joined")
-	gitRun(t, repo, "update-ref", "refs/curral-incoming/c1/delta", "HEAD")
+	gitRun(t, repo, "update-ref", "refs/catchpen-incoming/c1/delta", "HEAD")
 	gitRun(t, repo, "checkout", "-q", "main")
 	gitRun(t, repo, "branch", "-qD", "delta")
-	out, err = exec.Command("git", "-C", repo, "format-patch", "--stdout", "refs/curral/c1/halves..refs/curral-incoming/c1/delta").Output()
+	out, err = exec.Command("git", "-C", repo, "format-patch", "--stdout", "refs/catchpen/c1/halves..refs/catchpen-incoming/c1/delta").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c, err := canary.ScanPatch(bytes.NewReader(out), cs); c != nil || err != nil || !bytes.Contains(out, []byte("\ndelta ")) {
 		t.Errorf("not a hidden delta: %v %v", c, err)
 	}
-	if err := m.scanCommits(context.Background(), "c1", repo, "refs/curral-incoming/c1/delta"); !errors.Is(err, ErrCanary) {
+	if err := m.scanCommits(context.Background(), "c1", repo, "refs/catchpen-incoming/c1/delta"); !errors.Is(err, ErrCanary) {
 		t.Errorf("delta commit: %v", err)
 	}
 	// FormatPatch scans the commits it exports itself, whatever else the
 	// host repository has.
-	halves, _ := exec.Command("git", "-C", repo, "rev-parse", "refs/curral/c1/halves").Output()
-	if err := m.FormatPatch(context.Background(), "c1", repo, "refs/curral-incoming/c1/delta", strings.Fields(string(halves)), patch, "in patches"); !errors.Is(err, ErrCanary) || fileExists(patch) {
+	halves, _ := exec.Command("git", "-C", repo, "rev-parse", "refs/catchpen/c1/halves").Output()
+	if err := m.FormatPatch(context.Background(), "c1", repo, "refs/catchpen-incoming/c1/delta", strings.Fields(string(halves)), patch, "in patches"); !errors.Is(err, ErrCanary) || fileExists(patch) {
 		t.Errorf("delta patch: %v, written %v", err, fileExists(patch))
 	}
 	mainID, _ := exec.Command("git", "-C", repo, "rev-parse", "main").Output()
-	if err := m.FormatPatch(context.Background(), "c1", repo, "refs/curral/c1/clean", strings.Fields(string(mainID)), patch, "in patches"); err != nil {
+	if err := m.FormatPatch(context.Background(), "c1", repo, "refs/catchpen/c1/clean", strings.Fields(string(mainID)), patch, "in patches"); err != nil {
 		t.Errorf("clean patch: %v", err)
 	} else if b, _ := os.ReadFile(patch); !bytes.Contains(b, []byte("Subject: [PATCH] clean change")) {
 		t.Errorf("clean patch:\n%s", b)
 	}
-	if err := m.FormatPatch(context.Background(), "c1", repo, "refs/curral/c1/clean", []string{"--output=x"}, patch, "in patches"); err == nil {
+	if err := m.FormatPatch(context.Background(), "c1", repo, "refs/catchpen/c1/clean", []string{"--output=x"}, patch, "in patches"); err == nil {
 		t.Error("took an option as the base")
 	}
-	if err := m.FormatPatch(context.Background(), "c1", repo, "refs/curral/c1/clean", nil, patch, "in patches"); err != nil {
+	if err := m.FormatPatch(context.Background(), "c1", repo, "refs/catchpen/c1/clean", nil, patch, "in patches"); err != nil {
 		t.Errorf("patch with no base: %v", err)
 	} else if b, _ := os.ReadFile(patch); !bytes.Contains(b, []byte("Subject: [PATCH 1/2] base")) {
 		t.Errorf("patch with no base:\n%s", b)
@@ -207,8 +207,8 @@ func TestCanariesPlantedAndScanned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gitRun(t, repo, "update-ref", "refs/curral-incoming/c1/iso2022", strings.TrimSpace(string(id)))
-	if err := m.scanCommits(context.Background(), "c1", repo, "refs/curral-incoming/c1/iso2022"); !errors.Is(err, ErrCanary) {
+	gitRun(t, repo, "update-ref", "refs/catchpen-incoming/c1/iso2022", strings.TrimSpace(string(id)))
+	if err := m.scanCommits(context.Background(), "c1", repo, "refs/catchpen-incoming/c1/iso2022"); !errors.Is(err, ErrCanary) {
 		t.Errorf("re-encoded message: %v", err)
 	}
 
@@ -238,7 +238,7 @@ func TestPausedVM(t *testing.T) {
 		t.Errorf("resume of a running VM: %v", err)
 	}
 	writeFile(t, m.vm("p1").path(pausedFile), `{"kind":"git"}`)
-	if _, err := m.SSHPort("p1"); err == nil || !strings.Contains(err.Error(), "curral resume p1") {
+	if _, err := m.SSHPort("p1"); err == nil || !strings.Contains(err.Error(), "catchpen resume p1") {
 		t.Errorf("ssh to a paused VM: %v", err)
 	}
 	if p, err := m.SSHPort("p2"); err != nil || p != 2222 {
@@ -307,12 +307,12 @@ func TestPruneIncoming(t *testing.T) {
 	repo := t.TempDir()
 	gitRun(t, repo, "init", "-q")
 	gitRun(t, repo, "commit", "-q", "--allow-empty", "-m", "x")
-	live := fmt.Sprintf("refs/curral-incoming/%d-1/vm/main", os.Getpid())
-	for _, ref := range []string{live, "refs/curral-incoming/999999999-1/vm/main", "refs/curral-incoming/vm/main"} {
+	live := fmt.Sprintf("refs/catchpen-incoming/%d-1/vm/main", os.Getpid())
+	for _, ref := range []string{live, "refs/catchpen-incoming/999999999-1/vm/main", "refs/catchpen-incoming/vm/main"} {
 		gitRun(t, repo, "update-ref", ref, "HEAD")
 	}
 	pruneIncoming(context.Background(), repo)
-	out, _ := exec.Command("git", "-C", repo, "for-each-ref", "--format=%(refname)", "refs/curral-incoming/").Output()
+	out, _ := exec.Command("git", "-C", repo, "for-each-ref", "--format=%(refname)", "refs/catchpen-incoming/").Output()
 	if strings.TrimSpace(string(out)) != live {
 		t.Errorf("left: %q", out)
 	}

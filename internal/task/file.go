@@ -10,7 +10,7 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// File is a batch of tasks (curral task run --file).
+// File is a batch of tasks (catchpen task run --file).
 type File struct {
 	Defaults Spec   `yaml:"defaults"`
 	Tasks    []Spec `yaml:"tasks"`

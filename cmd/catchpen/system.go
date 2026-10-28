@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/blackshieldpt/curral/internal/paths"
+	"github.com/blackshieldpt/catchpen/internal/paths"
 )
 
 func consoleCmd() *cobra.Command {
@@ -35,7 +35,7 @@ func consoleCmd() *cobra.Command {
 				return err
 			}
 			defer conn.Close()
-			fmt.Fprintln(os.Stderr, "connected to serial console; Ctrl-] to detach (no password login: use curral ssh)")
+			fmt.Fprintln(os.Stderr, "connected to serial console; Ctrl-] to detach (no password login: use catchpen ssh)")
 			if term.IsTerminal(int(os.Stdin.Fd())) {
 				st, err := term.MakeRaw(int(os.Stdin.Fd()))
 				if err != nil {
@@ -109,7 +109,7 @@ func doctorCmd() *cobra.Command {
 			if err == nil {
 				check("data dir", m.P.Ensure(), "check permissions of "+m.P.Data)
 				if strings.HasPrefix(m.Bin, os.TempDir()) {
-					warn("curral binary", "running from a temp dir (go run?); install it so QEMU and ssh can call it: "+m.Bin)
+					warn("catchpen binary", "running from a temp dir (go run?); install it so QEMU and ssh can call it: "+m.Bin)
 				}
 			}
 			if _, err := exec.LookPath("notify-send"); err != nil {

@@ -1,4 +1,4 @@
-// Package canary makes the decoy credentials curral plants in guests and
+// Package canary makes the decoy credentials catchpen plants in guests and
 // finds them in use. Each VM gets its own values, pointing at hosts that
 // exist nowhere: any connection to one, or a value seen on the host side
 // (plain HTTP requests, imported commits, PR bodies), means something in
@@ -25,7 +25,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
 )
 
 // Kinds a template can plant.

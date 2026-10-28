@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/safetar"
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/safetar"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 // Agent session stores copied as transcripts, relative to the guest home.

@@ -10,9 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blackshieldpt/curral/internal/creds"
-	"github.com/blackshieldpt/curral/internal/forge"
-	"github.com/blackshieldpt/curral/internal/vm"
+	"github.com/blackshieldpt/catchpen/internal/creds"
+	"github.com/blackshieldpt/catchpen/internal/forge"
+	"github.com/blackshieldpt/catchpen/internal/vm"
 )
 
 func forgeCmd() *cobra.Command {
@@ -64,7 +64,7 @@ func forgeCmd() *cobra.Command {
 			if reg, err := forge.Load(m.P.Forges()); err != nil {
 				return err
 			} else if _, ok := reg.Get(f.Name); ok {
-				return fmt.Errorf("forge %s exists (curral forge rm %s first)", f.Name, f.Name)
+				return fmt.Errorf("forge %s exists (catchpen forge rm %s first)", f.Name, f.Name)
 			}
 			keys, err := pinHostKeys(cmd.Context(), f, yes)
 			if err != nil {
@@ -85,7 +85,7 @@ func forgeCmd() *cobra.Command {
 			}); err != nil {
 				return err
 			}
-			fmt.Printf("added forge %s (%s); check credentials with: curral forge test %s\n", f.Name, f.WebURL(), f.Name)
+			fmt.Printf("added forge %s (%s); check credentials with: catchpen forge test %s\n", f.Name, f.WebURL(), f.Name)
 			return nil
 		},
 	}
@@ -223,7 +223,7 @@ func testForge(ctx context.Context, m *vm.Manager, f forge.Forge) error {
 		}
 		for _, k := range keys {
 			if !pinned[forge.FormatHostKey(k)] {
-				return fmt.Errorf("SSH host key changed: %s is not pinned (if expected: curral forge rm %s && curral forge add ...)", forge.Fingerprint(k), f.Name)
+				return fmt.Errorf("SSH host key changed: %s is not pinned (if expected: catchpen forge rm %s && catchpen forge add ...)", forge.Fingerprint(k), f.Name)
 			}
 		}
 		fmt.Println("SSH host keys match")
@@ -253,7 +253,7 @@ func pullCmd() *cobra.Command {
 	var o vm.PullOpts
 	c := &cobra.Command{
 		Use:   "pull <name>",
-		Short: "Fetch a branch from a VM's repo into refs/curral/<vm>/<branch> of a host repo",
+		Short: "Fetch a branch from a VM's repo into refs/catchpen/<vm>/<branch> of a host repo",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()
@@ -305,6 +305,6 @@ func prCmd() *cobra.Command {
 	f.StringVar(&o.BodyFile, "body-file", "", "PR description file")
 	f.BoolVar(&o.Draft, "draft", false, "open as draft (Gitea: WIP title)")
 	f.StringVar(&o.Base, "base", "", "target branch (default: the repo's default branch)")
-	f.StringVar(&o.Head, "head", "", "branch name on the forge (default curral/<vm>/<branch>)")
+	f.StringVar(&o.Head, "head", "", "branch name on the forge (default catchpen/<vm>/<branch>)")
 	return c
 }

@@ -13,9 +13,9 @@ func TestSession(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Skip("tmux not installed")
 	}
-	bin := filepath.Join(t.TempDir(), "fake-curral")
+	bin := filepath.Join(t.TempDir(), "fake-catchpen")
 	os.WriteFile(bin, []byte("#!/bin/sh\nexec sleep 300\n"), 0o755)
-	tm := Tmux{Socket: fmt.Sprintf("curral-test-%d", os.Getpid()), Bin: bin}
+	tm := Tmux{Socket: fmt.Sprintf("catchpen-test-%d", os.Getpid()), Bin: bin}
 	t.Cleanup(func() { _ = tm.cmd("kill-server").Run() })
 	t.Setenv("TMUX", "")
 
@@ -66,7 +66,7 @@ func TestSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	if ws, _ := tm.Windows(); len(ws) != 0 {
-		t.Errorf("curral windows left after syncing with no running VMs: %v", ws)
+		t.Errorf("catchpen windows left after syncing with no running VMs: %v", ws)
 	}
 	if !tm.Exists() {
 		t.Error("session with the user's window was killed")

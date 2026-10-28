@@ -12,12 +12,12 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/canary"
-	"github.com/blackshieldpt/curral/internal/config"
-	"github.com/blackshieldpt/curral/internal/notify"
-	"github.com/blackshieldpt/curral/internal/qemu"
-	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/notify"
+	"github.com/blackshieldpt/catchpen/internal/qemu"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
 )
 
 // pausedFile marks a VM a canary hit paused (removed by resume and stop);
@@ -32,7 +32,7 @@ const (
 func (m *Manager) CanaryHit(name string, c *canary.Canary, where string) {
 	action := cmp.Or(m.Cfg.CanaryAction, config.CanaryPause)
 	_ = writeJSON(m.vm(name).path(hitFile), map[string]any{"kind": c.Kind, "where": where, "time": time.Now().UTC()})
-	then := map[string]string{config.CanaryPause: "paused it (curral resume " + name + ")", config.CanaryStop: "stopped it", config.CanaryLog: "left it running"}[action]
+	then := map[string]string{config.CanaryPause: "paused it (catchpen resume " + name + ")", config.CanaryStop: "stopped it", config.CanaryLog: "left it running"}[action]
 	var err error
 	switch action {
 	case config.CanaryPause:
@@ -59,8 +59,8 @@ func (m *Manager) CanaryHit(name string, c *canary.Canary, where string) {
 	lim := notify.Limiter{Path: m.vm(name).path("canary.bucket"), Burst: 3, Every: time.Minute}
 	if ok, _ := lim.Allow(time.Now()); ok {
 		m.audit(audit.CanaryHit, name, map[string]any{"kind": c.Kind, "where": where, "action": action})
-		m.notify(notify.Event{Kind: notify.CanaryHit, VM: name, Title: "curral " + name + ": canary used",
-			Message: fmt.Sprintf("its %s decoy credentials were used (%s); curral %s", c.Kind, where, then)})
+		m.notify(notify.Event{Kind: notify.CanaryHit, VM: name, Title: "catchpen " + name + ": canary used",
+			Message: fmt.Sprintf("its %s decoy credentials were used (%s); catchpen %s", c.Kind, where, then)})
 	}
 }
 
@@ -179,7 +179,7 @@ func (m *Manager) scanWith(name, what string, scan func([]canary.Canary) (*canar
 // scanCommits scans the commits ref brings into the host repository dir
 // (headers, messages and diffs) for name's canaries.
 func (m *Manager) scanCommits(ctx context.Context, name, dir, ref string) error {
-	return m.scanRevs(ctx, name, dir, []string{ref, "--not", "--exclude=refs/curral*", "--all"})
+	return m.scanRevs(ctx, name, dir, []string{ref, "--not", "--exclude=refs/catchpen*", "--all"})
 }
 
 // scanRevs scans the commits revs (git log arguments) name in dir.

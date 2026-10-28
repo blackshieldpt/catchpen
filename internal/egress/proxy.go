@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/canary"
 )
 
 const (
@@ -78,7 +78,7 @@ func (p *Proxy) ServeConn(ctx context.Context, c io.ReadWriteCloser) error {
 
 	release, ok := AcquireSlot(p.Dir, "egress.slots")
 	if !ok {
-		writeStatus(c, http.StatusServiceUnavailable, "curral: too many concurrent proxy connections\n")
+		writeStatus(c, http.StatusServiceUnavailable, "catchpen: too many concurrent proxy connections\n")
 		return errors.New("connection limit reached")
 	}
 	defer release()
@@ -92,18 +92,18 @@ func (p *Proxy) ServeConn(ctx context.Context, c io.ReadWriteCloser) error {
 		return errors.New("timed out reading request")
 	}
 	if err != nil {
-		writeStatus(c, http.StatusBadRequest, "curral: malformed or oversized proxy request\n")
+		writeStatus(c, http.StatusBadRequest, "catchpen: malformed or oversized proxy request\n")
 		return err
 	}
 	lr.N = 1<<63 - 1
 
 	host, port, err := target(req)
 	if errors.Is(err, errMethod) {
-		writeStatus(c, http.StatusMethodNotAllowed, "curral: "+err.Error()+"\n")
+		writeStatus(c, http.StatusMethodNotAllowed, "catchpen: "+err.Error()+"\n")
 		return nil
 	}
 	if err != nil {
-		writeStatus(c, http.StatusBadRequest, "curral: "+err.Error()+"\n")
+		writeStatus(c, http.StatusBadRequest, "catchpen: "+err.Error()+"\n")
 		return nil
 	}
 	entry := LogEntry{VM: p.VM, Method: req.Method, Host: host, Port: port}
@@ -137,13 +137,13 @@ func (p *Proxy) ServeConn(ctx context.Context, c io.ReadWriteCloser) error {
 			return nil
 		}
 		_ = p.log(entry, ActionError, err.Error())
-		writeStatus(c, http.StatusBadGateway, fmt.Sprintf("curral: cannot reach %s: %v\n", hostPort(host, port), err))
+		writeStatus(c, http.StatusBadGateway, fmt.Sprintf("catchpen: cannot reach %s: %v\n", hostPort(host, port), err))
 		return nil
 	}
 	defer up.Close()
 	// No audit record, no connection.
 	if err := p.log(entry, action, reason); err != nil {
-		writeStatus(c, http.StatusServiceUnavailable, "curral: egress log unavailable; refusing connection\n")
+		writeStatus(c, http.StatusServiceUnavailable, "catchpen: egress log unavailable; refusing connection\n")
 		return fmt.Errorf("egress log: %w", err)
 	}
 	idle := p.Idle
@@ -431,7 +431,7 @@ func (p *Proxy) log(e LogEntry, action, reason string) error {
 
 func (p *Proxy) deny(c io.Writer, host string, port int, reason string) {
 	writeStatus(c, http.StatusForbidden,
-		fmt.Sprintf("curral: egress to %s blocked (%s); see: curral egress log %s\n", hostPort(host, port), reason, p.VM))
+		fmt.Sprintf("catchpen: egress to %s blocked (%s); see: catchpen egress log %s\n", hostPort(host, port), reason, p.VM))
 }
 
 func hostPort(host string, port int) string { return net.JoinHostPort(host, strconv.Itoa(port)) }

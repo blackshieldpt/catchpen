@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
 )
 
 // Append writes v as one JSON line. Writers serialize on a lock file next to

@@ -15,11 +15,11 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/fsutil"
-	"github.com/blackshieldpt/curral/internal/qemu"
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/task"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/qemu"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/task"
 )
 
 const (
@@ -84,7 +84,7 @@ func (m *Manager) findSnap(name, snap string) (*qemu.Snapshot, error) {
 			return &ss[i], nil
 		}
 	}
-	return nil, fmt.Errorf("%s has no snapshot %q (see: curral snapshots %s)", name, snap, name)
+	return nil, fmt.Errorf("%s has no snapshot %q (see: catchpen snapshots %s)", name, snap, name)
 }
 
 // qmp runs fn on the VM's QMP socket.
@@ -107,7 +107,7 @@ func (m *Manager) busyTask(s *State) error {
 	}
 	t, err := m.Tasks().Load(s.Task)
 	if err == nil && !task.Final(t.State) && t.Alive() {
-		return fmt.Errorf("%s runs task %s; cancel it first (curral task cancel %s)", s.Name, s.Task, s.Task)
+		return fmt.Errorf("%s runs task %s; cancel it first (catchpen task cancel %s)", s.Name, s.Task, s.Task)
 	}
 	return nil
 }
@@ -216,7 +216,7 @@ func (m *Manager) Restore(ctx context.Context, name, snap string, diskOnly bool)
 	}
 	meta, ok := m.snapMetas(name)[snap]
 	if !ok {
-		return fmt.Errorf("snapshot %q wasn't saved by curral (no record of its machine type); restore --disk-only uses just its disk", snap)
+		return fmt.Errorf("snapshot %q wasn't saved by catchpen (no record of its machine type); restore --disk-only uses just its disk", snap)
 	}
 	held, unlock, err := m.vm(name).lock()
 	if err != nil {
@@ -390,7 +390,7 @@ func (m *Manager) afterResume(ctx context.Context, name string) error {
 	c := g.Client
 	m.syncClock(ctx, c)
 	if err := m.push(ctx, g, s); err != nil {
-		return fmt.Errorf("%s was restored, but pushing credentials failed: %w (retry: curral creds push %s)", name, err, name)
+		return fmt.Errorf("%s was restored, but pushing credentials failed: %w (retry: catchpen creds push %s)", name, err, name)
 	}
 	m.logf("%s restored", name)
 	return nil
@@ -408,14 +408,14 @@ func (m *Manager) syncClock(ctx context.Context, c *ssh.Client) {
 // baseFor returns the template's current base, building it if needed.
 func (m *Manager) baseFor(ctx context.Context, s *State) (string, error) {
 	if !s.Picks {
-		return "", fmt.Errorf("%s was created with the old-style template %s, which curral no longer reads; create a new VM with -t picks (see curral template ls)", s.Name, s.Template)
+		return "", fmt.Errorf("%s was created with the old-style template %s, which catchpen no longer reads; create a new VM with -t picks (see catchpen template ls)", s.Name, s.Template)
 	}
 	r, err := m.Resolve(s.Template)
 	if err != nil {
 		return "", err
 	}
 	if r.Distro.Name != s.Distro {
-		return "", fmt.Errorf("%s runs %s, and -t %s now gives %s; a disk can't change distro, so create a new VM (curral reset without --latest keeps its current base)", s.Name, s.Distro, s.Template, r.Distro.Name)
+		return "", fmt.Errorf("%s runs %s, and -t %s now gives %s; a disk can't change distro, so create a new VM (catchpen reset without --latest keeps its current base)", s.Name, s.Distro, s.Template, r.Distro.Name)
 	}
 	if r.baseGen(m.P) == 0 {
 		m.logf("template %s changed since its base was built: building the new base first (this can take a while)", s.Template)

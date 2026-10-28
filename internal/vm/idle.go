@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/notify"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/notify"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 const (
@@ -128,8 +128,8 @@ func (m *Manager) StopIdle(name string, idle time.Duration) error {
 	}
 	d := idle.Round(time.Minute).String()
 	m.audit(audit.VMIdleStop, name, map[string]any{"idle": d})
-	m.notify(notify.Event{Kind: notify.VMIdleStop, VM: name, Title: "curral " + name + " stopped",
-		Message: fmt.Sprintf("idle for %s (curral start %s)", d, name)})
+	m.notify(notify.Event{Kind: notify.VMIdleStop, VM: name, Title: "catchpen " + name + " stopped",
+		Message: fmt.Sprintf("idle for %s (catchpen start %s)", d, name)})
 	return nil
 }
 

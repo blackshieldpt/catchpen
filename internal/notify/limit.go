@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
 )
 
 // Limiter is a token bucket kept in a file, shared by the short-lived

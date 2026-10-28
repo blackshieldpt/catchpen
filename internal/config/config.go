@@ -1,4 +1,4 @@
-// Package config loads ~/.config/curral/config.yaml.
+// Package config loads ~/.config/catchpen/config.yaml.
 package config
 
 import (
@@ -14,10 +14,10 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/blackshieldpt/curral/internal/creds"
-	"github.com/blackshieldpt/curral/internal/image"
-	"github.com/blackshieldpt/curral/internal/notify"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/creds"
+	"github.com/blackshieldpt/catchpen/internal/image"
+	"github.com/blackshieldpt/catchpen/internal/notify"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 type Defaults struct {
@@ -33,9 +33,9 @@ type Config struct {
 	Record *bool         `yaml:"record"`
 	Notify notify.Config `yaml:"notify"`
 	Tasks  TaskLimits    `yaml:"tasks"`
-	// IdleStop stops VMs idle this long (curral daemon); templates may override it.
+	// IdleStop stops VMs idle this long (catchpen daemon); templates may override it.
 	IdleStop string `yaml:"idle_stop"`
-	// Rebuild is how often curral daemon rebuilds the bases in use.
+	// Rebuild is how often catchpen daemon rebuilds the bases in use.
 	Rebuild string      `yaml:"rebuild"`
 	Pool    []PoolEntry `yaml:"pool"`
 	// CacheMax caps the package caches (default 20G); the least recently used objects go first.
@@ -52,7 +52,7 @@ type PoolEntry struct {
 }
 
 // TaskLimits is the budget headless tasks queue for: VMs running at once
-// (all curral VMs count) and their total memory.
+// (all catchpen VMs count) and their total memory.
 type TaskLimits struct {
 	MaxVMs    int    `yaml:"max_vms"`    // default 2
 	MaxMemory string `yaml:"max_memory"` // e.g. 16G; default: no limit

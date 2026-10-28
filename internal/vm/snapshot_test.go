@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
-	"github.com/blackshieldpt/curral/internal/image"
-	"github.com/blackshieldpt/curral/internal/task"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/image"
+	"github.com/blackshieldpt/catchpen/internal/task"
 )
 
 func TestValidSnap(t *testing.T) {

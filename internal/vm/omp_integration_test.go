@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/vmtest"
+	"github.com/blackshieldpt/catchpen/internal/vmtest"
 )
 
 // TestOMP builds a base with oh-my-pi and checks it is installed, set not to
@@ -48,7 +48,7 @@ func TestOMP(t *testing.T) {
 	if got := guest("stat -c %a ~/.omp/agent/.env && cat ~/.omp/agent/.env"); got != "600\nOPENROUTER_API_KEY=sk-or-v1-test" {
 		t.Errorf("omp keys: %q", got)
 	}
-	if got := guest(`grep -c 'pi.on("agent_end"' ~/.omp/agent/extensions/curral-notify.ts`); got != "1" {
+	if got := guest(`grep -c 'pi.on("agent_end"' ~/.omp/agent/extensions/catchpen-notify.ts`); got != "1" {
 		t.Errorf("omp extension: %q", got)
 	}
 }

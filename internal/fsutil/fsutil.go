@@ -1,4 +1,4 @@
-// Package fsutil holds the cross-process lock and durable atomic write used across curral.
+// Package fsutil holds the cross-process lock and durable atomic write used across catchpen.
 package fsutil
 
 import (

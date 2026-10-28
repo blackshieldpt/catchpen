@@ -1,9 +1,9 @@
-## curral configuration. Every setting is optional; the values shown are the defaults
+## catchpen configuration. Every setting is optional; the values shown are the defaults
 ## or examples. Uncomment a line to change it. Unknown keys are errors.
-## Reference: https://blackshieldpt.github.io/curral/configuration/
+## Reference: https://blackshieldpt.github.io/catchpen/configuration/
 
 ## What VMs contain (distro, size, runtimes, agents, network...) is set in the category
-## files in templates/, not here: curral init writes them too.
+## files in templates/, not here: catchpen init writes them too.
 
 # defaults:
 #   user: agent                   # the guest user; not root
@@ -27,11 +27,11 @@
 # notify:
 #   sinks:
 #     - desktop
-#     - { ntfy: { url: https://ntfy.sh, topic: my-curral, token: secret:NTFY_TOKEN } }
-#     - { webhook: { url: https://hooks.example/curral, headers: { Authorization: secret:HOOK_AUTH } } }
+#     - { ntfy: { url: https://ntfy.sh, topic: my-catchpen, token: secret:NTFY_TOKEN } }
+#     - { webhook: { url: https://hooks.example/catchpen, headers: { Authorization: secret:HOOK_AUTH } } }
 #   events: [task.done, task.failed, egress.prompt, agent.waiting, vm.idle_stop, canary.hit]
 
-## Budget for headless tasks: VMs running at once (all curral VMs count), total memory.
+## Budget for headless tasks: VMs running at once (all catchpen VMs count), total memory.
 # tasks: { max_vms: 2, max_memory: 24G }
 
 # idle_stop: off                  # stop idle VMs: off, daily, weekly or a duration >= 1m

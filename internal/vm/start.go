@@ -15,22 +15,22 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/blackshieldpt/curral/internal/agents"
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/cache"
-	"github.com/blackshieldpt/curral/internal/cloudinit"
-	"github.com/blackshieldpt/curral/internal/forge"
-	"github.com/blackshieldpt/curral/internal/gitsrc"
-	"github.com/blackshieldpt/curral/internal/hostherdr"
-	"github.com/blackshieldpt/curral/internal/hosttmux"
-	"github.com/blackshieldpt/curral/internal/qemu"
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/agents"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/cache"
+	"github.com/blackshieldpt/catchpen/internal/cloudinit"
+	"github.com/blackshieldpt/catchpen/internal/forge"
+	"github.com/blackshieldpt/catchpen/internal/gitsrc"
+	"github.com/blackshieldpt/catchpen/internal/hostherdr"
+	"github.com/blackshieldpt/catchpen/internal/hosttmux"
+	"github.com/blackshieldpt/catchpen/internal/qemu"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 func (m *Manager) Start(ctx context.Context, name string) (*Runtime, error) {
 	if s, err := m.Load(name); err == nil && s.Pool {
-		return nil, fmt.Errorf("%s is a warm pool VM; curral up claims one (curral pool drain removes them)", name)
+		return nil, fmt.Errorf("%s is a warm pool VM; catchpen up claims one (catchpen pool drain removes them)", name)
 	}
 	return m.start(ctx, name, nil)
 }
@@ -189,9 +189,9 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 		return rt, nil
 	}
 	if err := m.push(ctx, g, s); err != nil {
-		return rt, fmt.Errorf("%s is running, but pushing credentials failed: %w (retry: curral creds push %s)", name, err, name)
+		return rt, fmt.Errorf("%s is running, but pushing credentials failed: %w (retry: catchpen creds push %s)", name, err, name)
 	}
-	m.logf("%s is ready: curral ssh %s", name, name)
+	m.logf("%s is ready: catchpen ssh %s", name, name)
 	m.tmuxDo(func(t hosttmux.Tmux) error { return t.Add(name) })
 	if s.Task == "" { // a task's agent runs headless; a second one would only get in its way
 		m.herdrDo(func(h hostherdr.Herdr) error { return h.Add(name, s.DefaultAgent()) })
@@ -242,7 +242,7 @@ func (m *Manager) refreshEnv(name string) error {
 		m.logf("warning: %v; %s keeps the env, skills and plugins it was created with", err, name)
 		return nil
 	}
-	// The VM's Claude auth can differ from the template's (curral up --claude-auth).
+	// The VM's Claude auth can differ from the template's (catchpen up --claude-auth).
 	if c := s.Agents.Claude; c != nil && c.Auth != template.ClaudeAPIKey {
 		if _, ok := t.Env["ANTHROPIC_API_KEY"]; ok {
 			return fmt.Errorf("template %s: env.ANTHROPIC_API_KEY would override %s's Claude subscription token", s.Template, name)

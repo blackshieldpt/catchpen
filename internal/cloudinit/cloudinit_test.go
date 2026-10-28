@@ -10,8 +10,8 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/blackshieldpt/curral/internal/canary"
-	tpl "github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/canary"
+	tpl "github.com/blackshieldpt/catchpen/internal/template"
 )
 
 func load(t *testing.T, name string) *tpl.Template {
@@ -51,13 +51,13 @@ func TestBuildScriptSections(t *testing.T) {
 	if !strings.Contains(def, agents) || strings.Index(def, agents) < strings.Index(def, "installing node") {
 		t.Errorf("default build script must install the agents after node")
 	}
-	if strings.Contains(min, "/usr/local/lib/curral/claude") {
+	if strings.Contains(min, "/usr/local/lib/catchpen/claude") {
 		t.Error("claude wrapper without agents.claude")
 	}
 	for _, want := range []string{"DISABLE_AUTOUPDATER=1\n", "OPENCODE_DISABLE_AUTOUPDATE=1\n", "PI_OFFLINE=1\n", "\nclaude --version\n", "\npi --version\n",
-		`ln -sfn "$(readlink -f "$bin")" /usr/local/lib/curral/claude`, "\ncodex --version\n",
-		"exec /usr/local/lib/curral/with-env \"$HOME/.config/curral/claude.env\" /usr/local/lib/curral/claude \"$@\"",
-		"exec /usr/local/lib/curral/with-env \"$HOME/.ssh/environment\" \"$@\""} {
+		`ln -sfn "$(readlink -f "$bin")" /usr/local/lib/catchpen/claude`, "\ncodex --version\n",
+		"exec /usr/local/lib/catchpen/with-env \"$HOME/.config/catchpen/claude.env\" /usr/local/lib/catchpen/claude \"$@\"",
+		"exec /usr/local/lib/catchpen/with-env \"$HOME/.ssh/environment\" \"$@\""} {
 		if !strings.Contains(def, want) {
 			t.Errorf("default build script missing %q", want)
 		}
@@ -124,7 +124,7 @@ func TestInstanceUserData(t *testing.T) {
 	if ak, _ := u["ssh_authorized_keys"].([]any); u["name"] != "agent" || u["lock_passwd"] != true || len(ak) != 1 || ak[0] != "ssh-ed25519 AAAA c" {
 		t.Errorf("users = %v", m["users"])
 	}
-	for _, want := range []string{"KbdInteractiveAuthentication no", "PermitUserEnvironment yes", "PermitRootLogin no", "X11Forwarding no", "PasswordAuthentication no", "AllowUsers agent", "https_proxy=http://10.0.2.100:3128", "Acquire::https::Proxy", "docker.service.d/curral-proxy.conf", `"httpsProxy":"http://10.0.2.100:3128"`} {
+	for _, want := range []string{"KbdInteractiveAuthentication no", "PermitUserEnvironment yes", "PermitRootLogin no", "X11Forwarding no", "PasswordAuthentication no", "AllowUsers agent", "https_proxy=http://10.0.2.100:3128", "Acquire::https::Proxy", "docker.service.d/catchpen-proxy.conf", `"httpsProxy":"http://10.0.2.100:3128"`} {
 		if !strings.Contains(raw, want) {
 			t.Errorf("instance user-data missing %q", want)
 		}
@@ -162,7 +162,7 @@ func TestInstanceUserDataCaches(t *testing.T) {
 			t.Errorf("/etc/environment missing %q:\n%s", want, env)
 		}
 	}
-	if apt := files["/etc/apt/apt.conf.d/94curral-cache"]; !strings.Contains(apt, `Acquire::http::Proxy::deb.debian.org "http://10.0.2.102";`) ||
+	if apt := files["/etc/apt/apt.conf.d/94catchpen-cache"]; !strings.Contains(apt, `Acquire::http::Proxy::deb.debian.org "http://10.0.2.102";`) ||
 		!strings.Contains(apt, `Acquire::http::Proxy::archive.ubuntu.com "http://10.0.2.102";`) {
 		t.Errorf("apt cache config %q", apt)
 	}
@@ -171,7 +171,7 @@ func TestInstanceUserDataCaches(t *testing.T) {
 		strings.Join(toStrings(run[len(run)-1].([]any)), " ") != "systemctl try-restart containerd docker" {
 		t.Errorf("runcmd %v", run)
 	}
-	if !strings.Contains(files["/etc/systemd/system/docker.service.d/curral-proxy.conf"], "NO_PROXY=localhost,127.0.0.1,::1,10.0.2.102") {
+	if !strings.Contains(files["/etc/systemd/system/docker.service.d/catchpen-proxy.conf"], "NO_PROXY=localhost,127.0.0.1,::1,10.0.2.102") {
 		t.Error("docker must reach the mirror directly")
 	}
 
@@ -182,7 +182,7 @@ func TestInstanceUserDataCaches(t *testing.T) {
 	if env := files["/etc/environment"]; strings.Contains(env, "10.0.2.100") || !strings.Contains(env, "npm_config_registry=") || strings.Contains(env, "GOPROXY") {
 		t.Errorf("open /etc/environment %q", env)
 	}
-	if _, ok := files["/etc/apt/apt.conf.d/94curral-cache"]; ok {
+	if _, ok := files["/etc/apt/apt.conf.d/94catchpen-cache"]; ok {
 		t.Error("apt cache configured without apt")
 	}
 	if run := m["runcmd"].([]any); len(run) != 2 || strings.Join(toStrings(run[1].([]any)), " ") != "systemctl try-restart docker" {
@@ -209,13 +209,13 @@ func TestBuildScriptCaches(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{"export no_proxy=localhost,127.0.0.1,10.0.2.102 ", "\nexport npm_config_registry=http://10.0.2.102/npm/\n",
-		"<<'CURRAL_CACHE'\nAcquire::http::Proxy::archive.ubuntu.com \"http://10.0.2.102\";\n", "\nCURRAL_CACHE\n",
-		"\nrm -f /etc/apt/apt.conf.d/94curral-build-cache\n"} {
+		"<<'CATCHPEN_CACHE'\nAcquire::http::Proxy::archive.ubuntu.com \"http://10.0.2.102\";\n", "\nCATCHPEN_CACHE\n",
+		"\nrm -f /etc/apt/apt.conf.d/94catchpen-build-cache\n"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("build script with caches missing %q", want)
 		}
 	}
-	if strings.Contains(plain, "10.0.2.102") || strings.Contains(plain, "CURRAL_CACHE") {
+	if strings.Contains(plain, "10.0.2.102") || strings.Contains(plain, "CATCHPEN_CACHE") {
 		t.Error("build script without caches mentions them")
 	}
 	if out, err := exec.Command("bash", "-n", "-c", s).CombinedOutput(); err != nil {
@@ -280,8 +280,8 @@ func TestWithEnvScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, body, ok := strings.Cut(s, "cat > "+withEnv+" <<'CURRAL_SCRIPT'\n")
-	body, _, ok2 := strings.Cut(body, "\nCURRAL_SCRIPT\n")
+	_, body, ok := strings.Cut(s, "cat > "+withEnv+" <<'CATCHPEN_SCRIPT'\n")
+	body, _, ok2 := strings.Cut(body, "\nCATCHPEN_SCRIPT\n")
 	if !ok || !ok2 {
 		t.Fatal("no with-env script")
 	}

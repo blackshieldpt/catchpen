@@ -16,7 +16,7 @@ claude-api-key:
   agents: { claude: { auth: api-key } }
   runtimes: { node: "24" }
 claude-yolo:
-  description: curral run starts Claude Code without permission prompts
+  description: catchpen run starts Claude Code without permission prompts
   agents: { claude: { yolo: true } }
   runtimes: { node: "24" }
 opencode:

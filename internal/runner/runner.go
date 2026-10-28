@@ -13,14 +13,14 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/blackshieldpt/curral/internal/agents"
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/fsutil"
-	"github.com/blackshieldpt/curral/internal/notify"
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/task"
-	"github.com/blackshieldpt/curral/internal/template"
-	"github.com/blackshieldpt/curral/internal/vm"
+	"github.com/blackshieldpt/catchpen/internal/agents"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/notify"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/task"
+	"github.com/blackshieldpt/catchpen/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/vm"
 )
 
 const maxTaskOutput = 512 << 20
@@ -36,7 +36,7 @@ func lastLine(s string) string {
 
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
-// Submit records a task and starts its supervisor (curral task-supervise)
+// Submit records a task and starts its supervisor (catchpen task-supervise)
 // in the background. The spec must be normalized.
 func (r *Runner) Submit(spec task.Spec) (*task.Task, error) {
 	spec.Template = template.NormalizeSpec(spec.Template)
@@ -187,7 +187,7 @@ func (r *Runner) Run(ctx context.Context, id string) (err error) {
 		paused := created && r.M.Paused(t.VM)
 		switch {
 		case paused:
-			state, msg = task.Failed, fmt.Sprintf("a canary hit paused %s; kept it (curral resume %[1]s, or curral destroy %[1]s)", t.VM)
+			state, msg = task.Failed, fmt.Sprintf("a canary hit paused %s; kept it (catchpen resume %[1]s, or catchpen destroy %[1]s)", t.VM)
 		case ctx.Err() != nil:
 			state, msg = task.Cancelled, "cancelled"
 		case err != nil:
@@ -198,10 +198,10 @@ func (r *Runner) Run(ctx context.Context, id string) (err error) {
 		hit := created && r.M.Hit(t.VM)
 		keep := t.Spec.Keep || (unexported && state == task.Failed) || hit
 		if unexported && state == task.Failed && !t.Spec.Keep && !paused {
-			msg += fmt.Sprintf("; kept %s because its %d commit(s) weren't exported (curral pull %s --branch %s, then curral destroy %s)", t.VM, t.Commits, t.VM, t.Branch, t.VM)
+			msg += fmt.Sprintf("; kept %s because its %d commit(s) weren't exported (catchpen pull %s --branch %s, then catchpen destroy %s)", t.VM, t.Commits, t.VM, t.Branch, t.VM)
 		}
 		if hit && !paused {
-			msg = strings.TrimPrefix(msg+fmt.Sprintf("; its decoy credentials were used: kept %s (curral destroy %[1]s)", t.VM), "; ")
+			msg = strings.TrimPrefix(msg+fmt.Sprintf("; its decoy credentials were used: kept %s (catchpen destroy %[1]s)", t.VM), "; ")
 		}
 		if created && !paused { // a paused guest doesn't answer
 			// Copy transcripts and tear down without the signal's context.
@@ -225,7 +225,7 @@ func (r *Runner) Run(ctx context.Context, id string) (err error) {
 		} else if text == "" {
 			text = result
 		}
-		r.M.Notify(notify.Event{Kind: kind, VM: t.VM, Title: fmt.Sprintf("curral task %s %s", id, state), Message: text})
+		r.M.Notify(notify.Event{Kind: kind, VM: t.VM, Title: fmt.Sprintf("catchpen task %s %s", id, state), Message: text})
 		r.M.Logf("task %s %s %s", id, state, msg)
 	}()
 
@@ -278,7 +278,7 @@ func (r *Runner) Run(ctx context.Context, id string) (err error) {
 	}
 	branch, base := "", ""
 	if t.Spec.Repo != "" {
-		branch = "curral/" + id
+		branch = "catchpen/" + id
 		out, err := run(cd + "git rev-parse HEAD && git checkout -q -b " + shQuote(branch))
 		if err != nil {
 			return fmt.Errorf("preparing the repo: %w: %s", err, out)
@@ -309,9 +309,9 @@ func (r *Runner) Run(ctx context.Context, id string) (err error) {
 		// branch at HEAD (wherever the agent left it).
 		base = strings.SplitN(base, "\n", 2)[0]
 		commit := cd + `git add -A && if ! git diff --cached --quiet; then ` +
-			`git config user.email >/dev/null || git config user.email curral@localhost; ` +
-			`git config user.name >/dev/null || git config user.name curral; ` +
-			`git commit -q -m ` + shQuote("curral task "+id+": uncommitted changes") + `; fi && ` +
+			`git config user.email >/dev/null || git config user.email catchpen@localhost; ` +
+			`git config user.name >/dev/null || git config user.name catchpen; ` +
+			`git commit -q -m ` + shQuote("catchpen task "+id+": uncommitted changes") + `; fi && ` +
 			`git checkout -q -B ` + shQuote(branch)
 		if out, err := run(commit); err != nil {
 			unexported = true // there may be commits; don't destroy them
@@ -357,7 +357,7 @@ func (r *Runner) runAgent(ctx context.Context, c *ssh.Client, t *task.Task, cd s
 	}
 	defer out.Close()
 	secs := int(t.Spec.Timeout.Seconds())
-	cmd := cd + "timeout -k 30 " + strconv.Itoa(secs) + " curral-env bash -c " + shQuote(task.Command(t.Spec))
+	cmd := cd + "timeout -k 30 " + strconv.Itoa(secs) + " catchpen-env bash -c " + shQuote(task.Command(t.Spec))
 	actx, cancel := context.WithTimeout(ctx, t.Spec.Timeout+2*time.Minute)
 	defer cancel()
 	r.M.Logf("task %s: running %s", t.ID, t.Spec.Agent)
@@ -392,12 +392,12 @@ func (r *Runner) exportTask(ctx context.Context, c *ssh.Client, t *task.Task, cd
 		if !vm.IsCommitID(base) {
 			return "", fmt.Errorf("bad base commit %q", sshx.Printable(base))
 		}
-		dir, err := os.MkdirTemp("", "curral-patch-*")
+		dir, err := os.MkdirTemp("", "catchpen-patch-*")
 		if err != nil {
 			return "", err
 		}
 		defer os.RemoveAll(dir)
-		incoming := "refs/curral-incoming/" + t.VM + "/" + t.Branch
+		incoming := "refs/catchpen-incoming/" + t.VM + "/" + t.Branch
 		if _, err := vm.HostGit(ctx, dir, "init", "-q", "--bare"); err != nil {
 			return "", err
 		}
@@ -415,13 +415,13 @@ func (r *Runner) exportTask(ctx context.Context, c *ssh.Client, t *task.Task, cd
 	}
 	title := t.Spec.Title
 	if title == "" {
-		title = "curral task " + t.ID + ": " + firstLine(readFile(st.Path(t.ID, "prompt.md")))
+		title = "catchpen task " + t.ID + ": " + firstLine(readFile(st.Path(t.ID, "prompt.md")))
 		if r := []rune(title); len(r) > 72 {
 			title = string(r[:71]) + "…"
 		}
 	}
 	// Forges cap PR bodies (GitHub: 65,536 characters).
-	body := fmt.Sprintf("Opened by curral task `%s` (%s, VM `%s`).\n\n## Prompt\n\n%s\n\n## Result\n\n%s\n",
+	body := fmt.Sprintf("Opened by catchpen task `%s` (%s, VM `%s`).\n\n## Prompt\n\n%s\n\n## Result\n\n%s\n",
 		t.ID, t.Spec.Agent, t.VM, cut(readFile(st.Path(t.ID, "prompt.md")), 20000), cut(readFile(st.Path(t.ID, "result.md")), 35000))
 	bodyFile := st.Path(t.ID, "pr-body.md")
 	if err := os.WriteFile(bodyFile, []byte(body), 0o600); err != nil {

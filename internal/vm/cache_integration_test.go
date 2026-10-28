@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/vmtest"
+	"github.com/blackshieldpt/catchpen/internal/vmtest"
 
-	"github.com/blackshieldpt/curral/internal/cache"
-	"github.com/blackshieldpt/curral/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/cache"
+	"github.com/blackshieldpt/catchpen/internal/egress"
 )
 
 // TestCaches installs packages with each client in a VM whose allowlist

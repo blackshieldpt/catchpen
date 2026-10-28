@@ -1,6 +1,6 @@
 # Security policy
 
-curral is a security tool: it exists to keep coding agents, and anything they run or
+catchpen is a security tool: it exists to keep coding agents, and anything they run or
 download, away from your host, your credentials and your network. Bugs that weaken
 that boundary are the ones we most want to hear about.
 
@@ -8,12 +8,12 @@ that boundary are the ones we most want to hear about.
 
 Please report vulnerabilities privately, not in a public issue or pull request.
 Use GitHub's private vulnerability reporting on
-[blackshieldpt/curral](https://github.com/blackshieldpt/curral/security/advisories/new)
+[blackshieldpt/catchpen](https://github.com/blackshieldpt/catchpen/security/advisories/new)
 (the repository's **Security** tab, then **Report a vulnerability**).
 
 Include what you can of:
 
-- the curral commit (`git rev-parse HEAD`), host distro, QEMU version and guest distro;
+- the catchpen commit (`git rev-parse HEAD`), host distro, QEMU version and guest distro;
 - the template and `config.yaml` settings involved (with secrets removed);
 - the steps to reproduce, and what the guest or attacker gains;
 - whether you've seen it exploited.
@@ -29,15 +29,15 @@ release. Release candidates (`-rc` tags) are for testing and aren't supported.
 
 ## Threat model
 
-curral assumes the **guest is hostile**: the agent, the code it writes and the
+catchpen assumes the **guest is hostile**: the agent, the code it writes and the
 packages it installs may all try to escape, read host secrets, exfiltrate data or
-reach your network. The host user running curral, the host kernel, QEMU/KVM and the
+reach your network. The host user running catchpen, the host kernel, QEMU/KVM and the
 forges you configure are trusted.
 
 In scope (please report):
 
 - escaping the VM, or running code on the host from inside it (including through
-  curral's host-side processes: the egress proxy, package caches, notification relay,
+  catchpen's host-side processes: the egress proxy, package caches, notification relay,
   bundle and patch import, transcript and recording handling);
 - reaching the network, the host's `127.0.0.1` services or private addresses past the
   egress policy;
@@ -55,14 +55,14 @@ Out of scope:
 - anything a guest can do inside its own VM (the agent user has passwordless sudo
   there; the VM is the boundary);
 - what a VM does with network access you granted it (`egress: open`, allowlisted hosts,
-  `curral forward -R`, `ssh.agent: host`), and domain fronting through allowlisted CDNs;
+  `catchpen forward -R`, `ssh.agent: host`), and domain fronting through allowlisted CDNs;
 - local attackers already running as your host user;
 - spotting the decoys: careful attackers can tell canaries from real credentials.
 
 ## Hardening and known limits
 
-The protections curral applies, and the limits it doesn't cover (unsigned checksum
+The protections catchpen applies, and the limits it doesn't cover (unsigned checksum
 files, allowlists that match names rather than addresses, what canaries can't see,
 memory snapshots holding guest secrets, and more), are in
-[docs/security-model.md](docs/security-model.md). Read it before you rely on curral
+[docs/security-model.md](docs/security-model.md). Read it before you rely on catchpen
 for anything sensitive.

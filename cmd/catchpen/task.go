@@ -12,10 +12,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blackshieldpt/curral/internal/jsonl"
-	"github.com/blackshieldpt/curral/internal/runner"
-	"github.com/blackshieldpt/curral/internal/task"
-	"github.com/blackshieldpt/curral/internal/vm"
+	"github.com/blackshieldpt/catchpen/internal/jsonl"
+	"github.com/blackshieldpt/catchpen/internal/runner"
+	"github.com/blackshieldpt/catchpen/internal/task"
+	"github.com/blackshieldpt/catchpen/internal/vm"
 )
 
 func taskCmd() *cobra.Command {
@@ -33,7 +33,7 @@ func taskRunCmd() *cobra.Command {
 		Use:   "run [--file tasks.yaml] | run --prompt TEXT|--prompt-file F [--repo R] [--agent A]",
 		Short: "Queue headless tasks; each runs in its own VM, which is destroyed afterwards",
 		Long: `Each task gets a new VM (read-only deploy keys unless --rw), runs the agent on branch
-curral/<id> without permission prompts, commits what it leaves, exports the work from the
+catchpen/<id> without permission prompts, commits what it leaves, exports the work from the
 host (--out pr: push with your credentials and open a PR; bundle: fetch into the host
 repo; patch: an mbox in the task directory) and destroys the VM unless --keep.
 Tasks wait for the budget in config.yaml tasks: (max_vms, max_memory).
@@ -61,7 +61,7 @@ Tasks wait for the budget in config.yaml tasks: (max_vms, max_memory).
 					specs[i].Batch, specs[i].Parallel = batch, parallel
 				}
 				if follow && len(specs) > 1 {
-					return errors.New("-f follows one task; use curral task logs -f <id> per task")
+					return errors.New("-f follows one task; use catchpen task logs -f <id> per task")
 				}
 			} else {
 				if cmd.Flags().Changed("parallel") {
@@ -84,7 +84,7 @@ Tasks wait for the budget in config.yaml tasks: (max_vms, max_memory).
 			if follow && len(ids) == 1 {
 				return followTask(cmd.Context(), m, ids[0], false)
 			}
-			fmt.Fprintf(os.Stderr, "follow with: curral task logs -f %s\n", ids[0])
+			fmt.Fprintf(os.Stderr, "follow with: catchpen task logs -f %s\n", ids[0])
 			return nil
 		},
 	}
@@ -92,7 +92,7 @@ Tasks wait for the budget in config.yaml tasks: (max_vms, max_memory).
 	f.StringVarP(&s.Template, "template", "t", "", templateFlagHelp)
 	f.StringVar(&s.Repo, "repo", "", "repo to clone and work on (forge:owner/repo or URL)")
 	f.StringVar(&s.Agent, "agent", "claude", strings.Join(task.Agents, " | "))
-	f.StringVar(&s.Cmd, "cmd", "", "shell command for --agent cmd (prompt on stdin, path in $CURRAL_PROMPT_FILE)")
+	f.StringVar(&s.Cmd, "cmd", "", "shell command for --agent cmd (prompt on stdin, path in $CATCHPEN_PROMPT_FILE)")
 	f.StringVar(&s.Prompt, "prompt", "", "the task")
 	f.StringVar(&s.PromptFile, "prompt-file", "", "read the task from a file")
 	f.DurationVar(&s.Timeout, "timeout", 2*time.Hour, "stop the agent after this long")

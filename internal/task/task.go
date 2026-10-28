@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 // Agents a task can run; "cmd" runs Spec.Cmd with the prompt on stdin.
@@ -27,7 +27,7 @@ var Agents = append(template.AgentNames(), "cmd")
 // Output modes.
 const (
 	OutPR     = "pr"
-	OutBundle = "bundle" // fetch into refs/curral/<vm>/<branch> of the host repo
+	OutBundle = "bundle" // fetch into refs/catchpen/<vm>/<branch> of the host repo
 	OutPatch  = "patch"  // format-patch mbox in the task directory
 	OutNone   = "none"
 )
@@ -215,7 +215,7 @@ func (s Store) Load(id string) (*Task, error) {
 	}
 	b, err := os.ReadFile(s.Path(id, "task.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("no task %s (see: curral task ls)", id)
+		return nil, fmt.Errorf("no task %s (see: catchpen task ls)", id)
 	}
 	if err != nil {
 		return nil, err

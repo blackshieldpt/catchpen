@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackshieldpt/curral/internal/template"
-	"github.com/blackshieldpt/curral/internal/vmtest"
+	"github.com/blackshieldpt/catchpen/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/vmtest"
 )
 
 // envVM saves a VM created from template gh with env, and writes gh.yaml.

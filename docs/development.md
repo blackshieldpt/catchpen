@@ -1,7 +1,7 @@
 # Development
 
 ```
-go build -o ~/.local/bin/curral ./cmd/curral
+go build -o ~/.local/bin/catchpen ./cmd/catchpen
 go vet ./...
 go test -race ./...                                           # unit tests
 go test -p 1 -tags integration -timeout 60m ./internal/vm/ ./internal/runner/   # boots real VMs (KVM and network)
@@ -18,10 +18,10 @@ Docker).
 
 | Path | Contents |
 |---|---|
-| `cmd/curral/` | The CLI (spf13/cobra), one file per area. |
+| `cmd/catchpen/` | The CLI (spf13/cobra), one file per area. |
 | `internal/vm/` | The VM manager: lifecycle, sessions, exports, snapshots, pool, idle stop, gc, canary handling. A VM's files, state and lock go through `vmDir` (`vmdir.go`, which also gives the lock order). |
 | `internal/runner/` | Headless tasks: submit, schedule on the VM budget, supervise, export. |
-| `internal/vmtest/` | What the tests of `vm` and `runner` share: fake QEMU and supervisor processes, a curral home, a throwaway Gitea. |
+| `internal/vmtest/` | What the tests of `vm` and `runner` share: fake QEMU and supervisor processes, a catchpen home, a throwaway Gitea. |
 | `internal/template/` | Templates: category files, `-t` composition (`compose.go`), merging and validation; built-in category files in `builtin/`. |
 | `internal/cloudinit/` | Cloud-init and base build script generation, and the seed ISO. |
 | `internal/qemu/` | QEMU command lines, QMP and `qemu-img`. |
@@ -66,7 +66,7 @@ Check the release locally with `goreleaser release --snapshot --clean --skip=pub
 1. Add its field to `Agents` (`internal/template/agents.go`) and its entry to `AgentDefs`
    (`internal/template/registry.go`): npm package and environment, whether it needs Node,
    its auth modes (or provider keys), its yolo flag and its transcript paths. Merging,
-   validation, the install, `curral run`, tasks' agent list, transcripts and the CLI
+   validation, the install, `catchpen run`, tasks' agent list, transcripts and the CLI
    help follow from it.
 2. Add a section for it to `internal/template/builtin/agents.yaml` (with the `runtimes`
    it needs), and to that file's `default:` if every VM should get it. A default agent
@@ -95,5 +95,5 @@ out of step.
 - Connect to a guest with `DialGuest` or `waitGuest` only: their connections close when
   a canary hit pauses the VM.
 - Tests run against real git, real files and `httptest` servers rather than mocks.
-- Document user-visible changes in the [changelog](https://github.com/blackshieldpt/curral/blob/master/CHANGELOG.md) and the relevant page
+- Document user-visible changes in the [changelog](https://github.com/blackshieldpt/catchpen/blob/master/CHANGELOG.md) and the relevant page
   under `docs/`.

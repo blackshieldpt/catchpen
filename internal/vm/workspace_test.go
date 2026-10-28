@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/blackshieldpt/curral/internal/forge"
+	"github.com/blackshieldpt/catchpen/internal/forge"
 )
 
 // fakeGitea answers the deploy-key and token endpoints and records calls.
@@ -102,10 +102,10 @@ func TestCreateProvisionsAndReleasesForges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(s.Repos) != 3 || s.Repos[0].DeployKeyID != 5 || s.Repos[0].Alias != "curral-gd-o-app" || !s.Repos[0].ReadOnly || s.ForgeUsers["gt"] != "tok-owner" {
+	if len(s.Repos) != 3 || s.Repos[0].DeployKeyID != 5 || s.Repos[0].Alias != "catchpen-gd-o-app" || !s.Repos[0].ReadOnly || s.ForgeUsers["gt"] != "tok-owner" {
 		t.Errorf("state: %+v users %v", s.Repos, s.ForgeUsers)
 	}
-	if st, err := os.Stat(filepath.Join(m.vm("a").path(forgeDir), "curral-gd-o-app")); err != nil || st.Mode().Perm() != 0o600 {
+	if st, err := os.Stat(filepath.Join(m.vm("a").path(forgeDir), "catchpen-gd-o-app")); err != nil || st.Mode().Perm() != 0o600 {
 		t.Errorf("deploy key file: %v", err)
 	}
 	b, _ := os.ReadFile(m.vm("a").path("allowlist"))
@@ -154,7 +154,7 @@ func TestPlanReposErrors(t *testing.T) {
 	if _, err := m.Create(context.Background(), "a", CreateOpts{Template: "minimal", Repos: []string{"gd:o/app", "gm:other/app"}}); err == nil || !strings.Contains(err.Error(), "/workspace/app") {
 		t.Errorf("clashing dirs: %v", err)
 	}
-	if _, err := m.Create(context.Background(), "a", CreateOpts{Template: "minimal", Repos: []string{"https://nowhere.test/o/r"}}); err == nil || !strings.Contains(err.Error(), "curral forge add") {
+	if _, err := m.Create(context.Background(), "a", CreateOpts{Template: "minimal", Repos: []string{"https://nowhere.test/o/r"}}); err == nil || !strings.Contains(err.Error(), "catchpen forge add") {
 		t.Errorf("unknown forge: %v", err)
 	}
 	if len(api.calls) != 0 {

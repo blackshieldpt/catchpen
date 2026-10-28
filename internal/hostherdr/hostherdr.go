@@ -1,5 +1,5 @@
 // Package hostherdr keeps a herdr workspace per running VM, each running an
-// agent through curral run so herdr can track it and resume it after a
+// agent through catchpen run so herdr can track it and resume it after a
 // restart. herdr runs on the host only: nothing in a guest reaches its socket.
 package hostherdr
 
@@ -16,17 +16,17 @@ import (
 	"time"
 )
 
-// labelPrefix marks the workspaces curral created; others are the user's and
+// labelPrefix marks the workspaces catchpen created; others are the user's and
 // are left alone.
-const labelPrefix = "curral:"
+const labelPrefix = "catchpen:"
 
-// source is how curral identifies itself to herdr when it reports a pane.
-const source = "custom:curral"
+// source is how catchpen identifies itself to herdr when it reports a pane.
+const source = "custom:catchpen"
 
 // Herdr drives the host herdr server.
 type Herdr struct {
 	Session string        // named herdr session; "": the default one
-	Bin     string        // curral binary run in each workspace
+	Bin     string        // catchpen binary run in each workspace
 	Wait    time.Duration // how long herdr gets to recognise an agent (0: 15s)
 }
 
@@ -78,7 +78,7 @@ func (h Herdr) StartServer() error {
 		return nil
 	}
 	c := h.cmd("server")
-	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // outlives curral
+	c.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // outlives catchpen
 	if err := c.Start(); err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func (h Herdr) StartServer() error {
 	return errors.New("the herdr server didn't start")
 }
 
-// workspaces maps each VM with a curral workspace to its workspace ID.
+// workspaces maps each VM with a catchpen workspace to its workspace ID.
 func (h Herdr) workspaces() (map[string]string, error) {
 	out, err := h.run("workspace", "list")
 	if err != nil {
@@ -118,7 +118,7 @@ func (h Herdr) workspaces() (map[string]string, error) {
 	return ws, nil
 }
 
-// Workspaces lists the VMs that have a curral workspace, sorted.
+// Workspaces lists the VMs that have a catchpen workspace, sorted.
 func (h Herdr) Workspaces() ([]string, error) {
 	ws, err := h.workspaces()
 	if err != nil {
@@ -133,7 +133,7 @@ func (h Herdr) Workspaces() ([]string, error) {
 }
 
 // argv runs agent in vm (a shell in its main tmux session when agent is "").
-// HERDR_AGENT tells herdr which agent runs behind curral; env keeps it a
+// HERDR_AGENT tells herdr which agent runs behind catchpen; env keeps it a
 // plain command, as herdr requires of a resume command.
 func (h Herdr) argv(vm, agent string) []string {
 	if agent == "" {
@@ -218,8 +218,8 @@ func (h Herdr) paneAgent(pane string) string {
 	return r.Result.Pane.Agent
 }
 
-// Add adds a workspace for vm if herdr is running and already has curral
-// workspaces (used by curral start).
+// Add adds a workspace for vm if herdr is running and already has catchpen
+// workspaces (used by catchpen start).
 func (h Herdr) Add(vm, agent string) error {
 	if !h.Running() {
 		return nil
@@ -231,7 +231,7 @@ func (h Herdr) Add(vm, agent string) error {
 	return h.Ensure([]string{vm}, func(string) string { return agent })
 }
 
-// Close closes vm's curral workspace if there is one.
+// Close closes vm's catchpen workspace if there is one.
 func (h Herdr) Close(vm string) error {
 	if !h.Running() {
 		return nil
@@ -248,7 +248,7 @@ func (h Herdr) Close(vm string) error {
 	return err
 }
 
-// Sync adds workspaces for running VMs and closes curral workspaces of the
+// Sync adds workspaces for running VMs and closes catchpen workspaces of the
 // others.
 func (h Herdr) Sync(running []string, agentOf func(vm string) string) error {
 	if err := h.Ensure(running, agentOf); err != nil {

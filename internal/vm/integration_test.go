@@ -1,7 +1,7 @@
 //go:build integration
 
 // Boots a real VM from the minimal template. Needs KVM and network access.
-// Reuses downloaded cloud images from CURRAL_TEST_IMAGES (default ~/.local/share/curral/images).
+// Reuses downloaded cloud images from CATCHPEN_TEST_IMAGES (default ~/.local/share/catchpen/images).
 //
 //	go test -tags integration -timeout 30m ./internal/vm/
 package vm
@@ -19,14 +19,14 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/blackshieldpt/curral/internal/config"
-	"github.com/blackshieldpt/curral/internal/egress"
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/template"
-	"github.com/blackshieldpt/curral/internal/vmtest"
+	"github.com/blackshieldpt/catchpen/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/vmtest"
 )
 
-// integrationManager sets up a throwaway CURRAL_HOME (reusing downloaded images) and builds curral.
+// integrationManager sets up a throwaway CATCHPEN_HOME (reusing downloaded images) and builds catchpen.
 func integrationManager(t *testing.T) *Manager {
 	t.Helper()
 	p, bin := vmtest.Home(t)
@@ -101,9 +101,9 @@ func TestLifecycle(t *testing.T) {
 	if got := run(`getent ahosts example.com >/dev/null && echo resolved || echo none`); got != "none" {
 		t.Errorf("guest DNS resolves names directly: %q", got)
 	}
-	// The generated ssh_config (ProxyCommand through the curral binary) works.
+	// The generated ssh_config (ProxyCommand through the catchpen binary) works.
 	if _, err := exec.LookPath("ssh"); err == nil {
-		out, err := exec.CommandContext(ctx, "ssh", "-F", m.P.SSHConfig(), "-o", "BatchMode=yes", "curral-it1", "echo", "via-config").CombinedOutput()
+		out, err := exec.CommandContext(ctx, "ssh", "-F", m.P.SSHConfig(), "-o", "BatchMode=yes", "catchpen-it1", "echo", "via-config").CombinedOutput()
 		if err != nil || strings.TrimSpace(string(out)) != "via-config" {
 			t.Errorf("ssh via ssh_config: %v: %s", err, out)
 		}
@@ -139,7 +139,7 @@ env: { FOO: "literal value", BAR: "secret:IT_BAR" }
 mcp:
   - { name: fs, type: stdio, command: [npx, -y, "@modelcontextprotocol/server-filesystem", /tmp] }
 `)
-	const oauth, key = "sk-ant-oat01-curral-integration-fake", "sk-ant-api03-curral-integration-fake-key"
+	const oauth, key = "sk-ant-oat01-catchpen-integration-fake", "sk-ant-api03-catchpen-integration-fake-key"
 	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", oauth)
 	t.Setenv("ANTHROPIC_API_KEY", key)
 	t.Setenv("IT_BAR", "bar from host")
@@ -171,10 +171,10 @@ mcp:
 			t.Errorf("guest %s = %q, want %q", name, got, want)
 		}
 	}
-	if got := run("curral-env printenv CLAUDE_CODE_OAUTH_TOKEN || true"); got != "" {
-		t.Errorf("agents curral run starts get Claude's token: %q", got)
+	if got := run("catchpen-env printenv CLAUDE_CODE_OAUTH_TOKEN || true"); got != "" {
+		t.Errorf("agents catchpen run starts get Claude's token: %q", got)
 	}
-	if got := run("stat -c %a ~/.ssh/environment ~/.config/curral/claude.env ~/.claude.json ~/.local/share/opencode/auth.json ~/.pi/agent/auth.json | sort -u"); got != "600" {
+	if got := run("stat -c %a ~/.ssh/environment ~/.config/catchpen/claude.env ~/.claude.json ~/.local/share/opencode/auth.json ~/.pi/agent/auth.json | sort -u"); got != "600" {
 		t.Errorf("modes: %q", got)
 	}
 	if got := run("jq -r .anthropic.key ~/.local/share/opencode/auth.json ~/.pi/agent/auth.json | sort -u"); got != key {
@@ -198,7 +198,7 @@ mcp:
 		t.Errorf("removed secret still in the VM env file")
 	}
 	// claude itself gets the token: point the wrapper at printenv.
-	run("sudo ln -sfn /usr/bin/printenv /usr/local/lib/curral/claude")
+	run("sudo ln -sfn /usr/bin/printenv /usr/local/lib/catchpen/claude")
 	if got := run("claude CLAUDE_CODE_OAUTH_TOKEN"); got != oauth {
 		t.Errorf("claude's token = %q", got)
 	}

@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/blackshieldpt/curral/internal/forge"
+	"github.com/blackshieldpt/catchpen/internal/forge"
 )
 
 func keyPair(t *testing.T) (privPEM []byte, pub string) {
@@ -44,10 +44,10 @@ func TestStartStop(t *testing.T) {
 	_, vmKey := keyPair(t)
 	_, forgeKey := keyPair(t)
 	vmKH := filepath.Join(dir, "known_hosts")
-	os.WriteFile(vmKH, []byte("curral-vm "+vmKey+"\n"), 0o600)
+	os.WriteFile(vmKH, []byte("catchpen-vm "+vmKey+"\n"), 0o600)
 
 	a := Agent{Dir: dir}
-	s := Spec{VMAlias: "curral-vm", VMKnownHosts: vmKH, Keys: []string{keyFile}, Confirm: true,
+	s := Spec{VMAlias: "catchpen-vm", VMKnownHosts: vmKH, Keys: []string{keyFile}, Confirm: true,
 		Forges: []forge.Forge{{Name: "g", Host: "git.test", HostKeys: []string{forgeKey}}}}
 	if err := a.Start(context.Background(), Spec{VMAlias: "x", VMKnownHosts: vmKH, Keys: []string{keyFile}}); err == nil {
 		t.Error("agent without forges started")
@@ -66,7 +66,7 @@ func TestStartStop(t *testing.T) {
 		t.Fatalf("ssh-add -l: %v\n%s", err, out)
 	}
 	kh, _ := os.ReadFile(a.knownHosts())
-	if !strings.Contains(string(kh), "curral-forge-g "+forgeKey) || !strings.Contains(string(kh), "curral-vm "+vmKey) {
+	if !strings.Contains(string(kh), "catchpen-forge-g "+forgeKey) || !strings.Contains(string(kh), "catchpen-vm "+vmKey) {
 		t.Errorf("constraint known_hosts:\n%s", kh)
 	}
 	// A restart replaces the agent.
@@ -85,7 +85,7 @@ func TestStartStop(t *testing.T) {
 	if _, err := os.Stat(a.Socket()); !os.IsNotExist(err) {
 		t.Error("socket left behind")
 	}
-	if err := a.Start(context.Background(), Spec{VMAlias: "curral-vm", VMKnownHosts: vmKH, Forges: s.Forges, Keys: []string{filepath.Join(dir, "missing")}}); err == nil {
+	if err := a.Start(context.Background(), Spec{VMAlias: "catchpen-vm", VMKnownHosts: vmKH, Forges: s.Forges, Keys: []string{filepath.Join(dir, "missing")}}); err == nil {
 		t.Error("missing key accepted")
 	}
 	if _, ok := a.Running(); ok {

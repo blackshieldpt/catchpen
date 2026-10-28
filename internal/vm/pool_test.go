@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackshieldpt/curral/internal/vmtest"
+	"github.com/blackshieldpt/catchpen/internal/vmtest"
 
-	"github.com/blackshieldpt/curral/internal/config"
-	"github.com/blackshieldpt/curral/internal/egress"
-	"github.com/blackshieldpt/curral/internal/qemu"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/qemu"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 // poolManager has template "ag" (agents, a repo-less allowlist) with a fake
@@ -116,7 +116,7 @@ func TestCreateClaimsMatchingPoolVM(t *testing.T) {
 	if s.Pool || !s.Booted || s.Resume != poolSnap || s.Instance != pool.Instance || s.Agents.Claude == nil || s.IdleStop != "2h" {
 		t.Errorf("claimed state = %+v", s)
 	}
-	if b, _ := os.ReadFile(m.keys("work").KnownHosts()); !strings.HasPrefix(string(b), "curral-work ssh-ed25519 ") {
+	if b, _ := os.ReadFile(m.keys("work").KnownHosts()); !strings.HasPrefix(string(b), "catchpen-work ssh-ed25519 ") {
 		t.Errorf("known_hosts = %q", b)
 	}
 	seed, _ := os.ReadFile(m.vm("work").path(seedFile))
@@ -126,7 +126,7 @@ func TestCreateClaimsMatchingPoolVM(t *testing.T) {
 	if b, _ := os.ReadFile(m.vm("work").path("allowlist")); !strings.Contains(string(b), "api.anthropic.com:443") {
 		t.Errorf("claimed allowlist = %q", b)
 	}
-	if b, _ := os.ReadFile(m.P.SSHConfig()); !strings.Contains(string(b), "Host curral-work\n") {
+	if b, _ := os.ReadFile(m.P.SSHConfig()); !strings.Contains(string(b), "Host catchpen-work\n") {
 		t.Error("claimed VM missing from ssh_config")
 	}
 	// The pool is empty now.

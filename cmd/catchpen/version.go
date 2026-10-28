@@ -19,7 +19,7 @@ var (
 func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Print curral's version, commit and commit date",
+		Short: "Print catchpen's version, commit and commit date",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			v, c, d, dirty := version, commit, date, false
@@ -47,7 +47,7 @@ func versionCmd() *cobra.Command {
 			if d == "" {
 				d = "unknown"
 			}
-			fmt.Printf("curral %s\ncommit %s\ndate   %s\n%s %s/%s\n", v, c, d, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+			fmt.Printf("catchpen %s\ncommit %s\ndate   %s\n%s %s/%s\n", v, c, d, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 		},
 	}
 }

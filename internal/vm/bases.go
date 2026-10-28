@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"slices"
 
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 // CurrentBase is the base a new VM of this template (a -t spec) would use.

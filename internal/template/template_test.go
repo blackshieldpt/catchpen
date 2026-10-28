@@ -712,7 +712,7 @@ func TestSkillsValidation(t *testing.T) {
 		{entry(pinGit, pinRef, "path: skills/x, name: a/b"), "", `name "a/b" must be`},
 		{entry(pinGit, pinRef, `path: skills/x, name: "$(x)"`), "", `name "$(x)" must be`},
 		{entry(pinGit, pinRef, "path: skills/x, name: "+strings.Repeat("a", 65)), "", `name "` + strings.Repeat("a", 65) + `" must be`},
-		{entry(pinGit, pinRef, "path: skills/x, name: curral-x"), "", `name "curral-x" is reserved`},
+		{entry(pinGit, pinRef, "path: skills/x, name: catchpen-x"), "", `name "catchpen-x" is reserved`},
 		{entry(pinGit, pinRef, `path: ":(exclude)x"`), "", `got ":(exclude)x"`},
 		{entry(pinGit, pinRef, "path: -x"), "", `got "-x"`},
 		{entry(pinGit, pinRef, `path: "skills/*"`), "", `got "skills/*"`},

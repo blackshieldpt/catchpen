@@ -1,4 +1,4 @@
-// Package paths resolves curral's XDG directories.
+// Package paths resolves catchpen's XDG directories.
 package paths
 
 import (
@@ -7,9 +7,9 @@ import (
 )
 
 type Paths struct {
-	Config string // ~/.config/curral
-	Data   string // ~/.local/share/curral
-	Cache  string // ~/.cache/curral
+	Config string // ~/.config/catchpen
+	Data   string // ~/.local/share/catchpen
+	Cache  string // ~/.cache/catchpen
 }
 
 func xdg(env, fallback string) string {
@@ -20,9 +20,9 @@ func xdg(env, fallback string) string {
 	return filepath.Join(home, fallback)
 }
 
-// Default honours CURRAL_HOME (all dirs under one root, used by tests) and XDG vars.
+// Default honours CATCHPEN_HOME (all dirs under one root, used by tests) and XDG vars.
 func Default() Paths {
-	if root := os.Getenv("CURRAL_HOME"); root != "" {
+	if root := os.Getenv("CATCHPEN_HOME"); root != "" {
 		return Paths{
 			Config: filepath.Join(root, "config"),
 			Data:   filepath.Join(root, "data"),
@@ -30,9 +30,9 @@ func Default() Paths {
 		}
 	}
 	return Paths{
-		Config: filepath.Join(xdg("XDG_CONFIG_HOME", ".config"), "curral"),
-		Data:   filepath.Join(xdg("XDG_DATA_HOME", ".local/share"), "curral"),
-		Cache:  filepath.Join(xdg("XDG_CACHE_HOME", ".cache"), "curral"),
+		Config: filepath.Join(xdg("XDG_CONFIG_HOME", ".config"), "catchpen"),
+		Data:   filepath.Join(xdg("XDG_DATA_HOME", ".local/share"), "catchpen"),
+		Cache:  filepath.Join(xdg("XDG_CACHE_HOME", ".cache"), "catchpen"),
 	}
 }
 

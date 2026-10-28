@@ -23,7 +23,7 @@ func TestFollowPrintsProgressWithoutSpinnerOffTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	followOut(t, out, "noise\nx curral-build: packages\n")
+	followOut(t, out, "noise\nx catchpen-build: packages\n")
 	b, _ := os.ReadFile(out.Name())
 	if string(b) != "  packages\n" {
 		t.Fatalf("output %q", b)

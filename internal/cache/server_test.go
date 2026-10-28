@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/canary"
-	"github.com/blackshieldpt/curral/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/egress"
 )
 
 // upstream fakes every upstream host: plain HTTP on :80, TLS on :443.

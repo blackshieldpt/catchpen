@@ -8,8 +8,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
-	"github.com/blackshieldpt/curral/internal/qemu"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/qemu"
 )
 
 // vmDir is one VM's directory (vms/<name>) and the state kept in it: its
@@ -54,7 +54,7 @@ func (d vmDir) tryLock() (h heldVM, unlock func(), ok bool, err error) {
 func (d vmDir) load() (*State, error) {
 	b, err := os.ReadFile(d.path(stateFile))
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("no VM named %q (see: curral ls)", d.name)
+		return nil, fmt.Errorf("no VM named %q (see: catchpen ls)", d.name)
 	}
 	if err != nil {
 		return nil, err

@@ -4,15 +4,15 @@ Each VM's network access is set by `network.egress`, from its `network.yaml` sec
 
 | Mode | Section | What the guest can reach |
 |---|---|---|
-| `allowlist` (default) | `allowlist` | Only hosts on the VM's allowlist, through curral's proxy. |
+| `allowlist` (default) | `allowlist` | Only hosts on the VM's allowlist, through catchpen's proxy. |
 | `none` | `offline` | No network. The notification relay still carries agents' short notification texts to your sinks. |
-| `open` | `open` | The internet, unfiltered, and the host's `127.0.0.1` services. `curral up` requires `--allow-open`. |
+| `open` | `open` | The internet, unfiltered, and the host's `127.0.0.1` services. `catchpen up` requires `--allow-open`. |
 
 ## How allowlist mode works
 
 The VM has no direct network access: QEMU's user network runs with `restrict=on`, and
-the exit for network traffic is an HTTP proxy at `10.0.2.100:3128`. curral serves it on
-the host, one short-lived `curral egress-stdio` process per connection. The guest is preconfigured to
+the exit for network traffic is an HTTP proxy at `10.0.2.100:3128`. catchpen serves it on
+the host, one short-lived `catchpen egress-stdio` process per connection. The guest is preconfigured to
 use it: the environment, apt, and the Docker daemon and containers. DNS resolves on the
 host. Allowlisted names that resolve to private or loopback addresses are blocked
 unless `allow_private` is set.
@@ -28,16 +28,16 @@ host lists): `anthropic`, `github`, `npm`, `pypi`, `go`, `apt-ubuntu`, `apt-debi
 `docker-apt`, `docker-hub`, `ghcr`. Picks add to it, and `-name` drops a preset:
 
 ```
-curral up dev -t prompt                  # on_deny: prompt
-curral up dev -t -docker-hub,-ghcr       # no Docker Hub or GHCR
-curral up dev -t offline                 # egress: none
-curral up dev -t open --allow-open       # egress: open
+catchpen up dev -t prompt                  # on_deny: prompt
+catchpen up dev -t -docker-hub,-ghcr       # no Docker Hub or GHCR
+catchpen up dev -t offline                 # egress: none
+catchpen up dev -t open --allow-open       # egress: open
 ```
 
-Hosts of your own go in a section of `~/.config/curral/templates/network.yaml`:
+Hosts of your own go in a section of `~/.config/catchpen/templates/network.yaml`:
 
 ```yaml
-# ~/.config/curral/templates/network.yaml
+# ~/.config/catchpen/templates/network.yaml
 registry:
   network:
     allow: [registry.example.com:443]
@@ -45,7 +45,7 @@ registry:
 ```
 
 ```
-curral up dev -t registry
+catchpen up dev -t registry
 ```
 
 Entries are `host`, `host:port`, `*.example.com` (subdomains) or IP addresses. An entry
@@ -53,17 +53,17 @@ without a port means ports 80 and 443. A `default:` in your `network.yaml` repla
 built-in one, such as `default: [allowlist, anthropic, github, go]` for fewer presets on
 every VM.
 
-curral adds hosts the VM needs on its own: Claude Code's and Codex's API hosts, the API
+catchpen adds hosts the VM needs on its own: Claude Code's and Codex's API hosts, the API
 hosts of the agents' provider keys, remote MCP servers and the VM's forges.
 
 ## Changing a running VM
 
 ```
-curral egress show dev                      # lists and settings
-curral egress log dev -f                    # allowed and blocked requests
-curral egress allow dev pypi.org files.pythonhosted.org   # applies immediately
-curral egress deny dev evil.example.com     # the denylist wins over the allowlist
-curral egress config dev --on-deny prompt   # ask instead of just logging
+catchpen egress show dev                      # lists and settings
+catchpen egress log dev -f                    # allowed and blocked requests
+catchpen egress allow dev pypi.org files.pythonhosted.org   # applies immediately
+catchpen egress deny dev evil.example.com     # the denylist wins over the allowlist
+catchpen egress config dev --on-deny prompt   # ask instead of just logging
 ```
 
 Allowlist edits are recorded in the audit log.
@@ -74,11 +74,11 @@ With `on_deny: prompt`, a blocked request waits up to `prompt_timeout` (30 s by 
 for your decision. Answer prompts in a terminal or through desktop notifications:
 
 ```
-curral egress watch [--desktop]
+catchpen egress watch [--desktop]
 ```
 
 The daemon also answers prompts through desktop notifications, for every VM that no
-`curral egress watch` already serves; a `watch` started after the daemon fails for the
+`catchpen egress watch` already serves; a `watch` started after the daemon fails for the
 VMs it serves. Without `notify-send`, the daemon's prompts are denied at once. With
 nobody watching, blocked requests are denied immediately.
 

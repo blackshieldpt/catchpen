@@ -1,4 +1,4 @@
-module github.com/blackshieldpt/curral
+module github.com/blackshieldpt/catchpen
 
 go 1.27
 

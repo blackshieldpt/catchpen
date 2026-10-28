@@ -20,15 +20,15 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/blackshieldpt/curral/internal/cache"
-	"github.com/blackshieldpt/curral/internal/cloudinit"
-	"github.com/blackshieldpt/curral/internal/egress"
-	"github.com/blackshieldpt/curral/internal/fsutil"
-	"github.com/blackshieldpt/curral/internal/image"
-	"github.com/blackshieldpt/curral/internal/paths"
-	"github.com/blackshieldpt/curral/internal/qemu"
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/cache"
+	"github.com/blackshieldpt/catchpen/internal/cloudinit"
+	"github.com/blackshieldpt/catchpen/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/image"
+	"github.com/blackshieldpt/catchpen/internal/paths"
+	"github.com/blackshieldpt/catchpen/internal/qemu"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 type Resolved struct {
@@ -179,7 +179,7 @@ func (m *Manager) EnsureBase(ctx context.Context, r *Resolved, rebuild bool) (st
 	}
 	if err := cloudinit.WriteSeed(seed, map[string][]byte{
 		"user-data": ud,
-		"meta-data": cloudinit.MetaData("curral-build-"+r.Hash, "curral-build"),
+		"meta-data": cloudinit.MetaData("catchpen-build-"+r.Hash, "catchpen-build"),
 	}); err != nil {
 		return "", err
 	}
@@ -325,7 +325,7 @@ func capLogs(done <-chan struct{}, abort context.CancelCauseFunc, files ...strin
 	}
 }
 
-// follow tails a serial log, printing curral-build lines (or everything in debug mode).
+// follow tails a serial log, printing catchpen-build lines (or everything in debug mode).
 // On a terminal, the current step shows with a spinner and its elapsed time, and each
 // step ends as a line with the time it took.
 func (m *Manager) follow(path string, done <-chan struct{}) {
@@ -369,9 +369,9 @@ func (m *Manager) follow(path string, done <-chan struct{}) {
 		if err == nil {
 			l := strings.TrimRight(partial, "\r\n")
 			partial = ""
-			if m.Debug || strings.Contains(l, "curral-build:") {
-				if i := strings.Index(l, "curral-build:"); i >= 0 && !m.Debug {
-					l = "  " + strings.TrimSpace(l[i+len("curral-build:"):])
+			if m.Debug || strings.Contains(l, "catchpen-build:") {
+				if i := strings.Index(l, "catchpen-build:"); i >= 0 && !m.Debug {
+					l = "  " + strings.TrimSpace(l[i+len("catchpen-build:"):])
 				}
 				if tty {
 					endStep()

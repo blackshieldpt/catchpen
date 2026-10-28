@@ -1,5 +1,5 @@
 // Package gitsrc fetches folders of public git repos at pinned commits, on the
-// host, for skills and plugins that curral copies into VMs. Each repo URL has
+// host, for skills and plugins that catchpen copies into VMs. Each repo URL has
 // its own cached bare repo; a commit already fetched needs no network. Files
 // are read from git's object store (ls-tree, cat-file), never through archive
 // or checkout, so the repo's .gitattributes can't change them.
@@ -27,8 +27,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/fsutil"
-	"github.com/blackshieldpt/curral/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
 )
 
 type Fetcher struct {
@@ -115,7 +115,7 @@ func (f Fetcher) git(ctx context.Context, gitDir string, args ...string) *exec.C
 	}
 	cmd.Stderr = &tail{}
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
-	// curral watches a fetch's size: git doesn't outlive it.
+	// catchpen watches a fetch's size: git doesn't outlive it.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 	cmd.WaitDelay = 10 * time.Second
 	return cmd
@@ -204,7 +204,7 @@ func (f Fetcher) Files(ctx context.Context, url, ref, dir string) ([]File, error
 	}
 	defer unlock()
 	// A git killed mid-fetch leaves lock files that fail every later fetch,
-	// and unfinished packs. Holding the flock, no other curral git runs in repo.
+	// and unfinished packs. Holding the flock, no other catchpen git runs in repo.
 	err = filepath.WalkDir(repo, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -397,9 +397,9 @@ func parseList(r *bufio.Reader, url, ref, dir string) ([]listed, error) {
 		case "100755":
 			fl.Exec = true
 		case "120000":
-			return nil, fmt.Errorf("%q at %s: %q is a symlink, which curral doesn't copy", url, ref, p)
+			return nil, fmt.Errorf("%q at %s: %q is a symlink, which catchpen doesn't copy", url, ref, p)
 		case "160000":
-			return nil, fmt.Errorf("%q at %s: %q is a submodule, which curral doesn't copy", url, ref, p)
+			return nil, fmt.Errorf("%q at %s: %q is a submodule, which catchpen doesn't copy", url, ref, p)
 		default:
 			return nil, fmt.Errorf("%q at %s: %q has unsupported mode %s", url, ref, p, fields[0])
 		}

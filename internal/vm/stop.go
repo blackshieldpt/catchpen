@@ -8,10 +8,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/blackshieldpt/curral/internal/audit"
-	"github.com/blackshieldpt/curral/internal/hostherdr"
-	"github.com/blackshieldpt/curral/internal/hosttmux"
-	"github.com/blackshieldpt/curral/internal/qemu"
+	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/hostherdr"
+	"github.com/blackshieldpt/catchpen/internal/hosttmux"
+	"github.com/blackshieldpt/catchpen/internal/qemu"
 )
 
 func (m *Manager) Stop(name string, force bool) error {
@@ -92,7 +92,7 @@ func (m *Manager) destroy(name string, transcripts bool) error {
 		return err
 	}
 	if _, err := os.Stat(m.dir(name)); err != nil {
-		return fmt.Errorf("no VM named %q (see: curral ls)", name)
+		return fmt.Errorf("no VM named %q (see: catchpen ls)", name)
 	}
 	if transcripts {
 		m.saveTranscripts(name)

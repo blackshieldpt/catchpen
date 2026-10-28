@@ -300,9 +300,9 @@ func TerminalDecider(in io.Reader, out io.Writer) Decider {
 // Errors, dismissal and timeouts deny.
 func DesktopDecider() Decider {
 	return func(ctx context.Context, r Request) Decision {
-		cmd := exec.CommandContext(ctx, "notify-send", "--app-name=curral", "--wait",
+		cmd := exec.CommandContext(ctx, "notify-send", "--app-name=catchpen", "--wait",
 			"--action=allow-once=Allow", "--action=allow-always=Always allow", "--action=deny=Deny",
-			"curral: "+hostPort(r.Host, r.Port), r.VM+" "+r.Method)
+			"catchpen: "+hostPort(r.Host, r.Port), r.VM+" "+r.Method)
 		cmd.WaitDelay = time.Second
 		out, err := cmd.Output()
 		if err != nil {

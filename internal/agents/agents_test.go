@@ -14,8 +14,8 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
-	"github.com/blackshieldpt/curral/internal/sshx"
-	"github.com/blackshieldpt/curral/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
+	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
 // localRemote runs the guest-side commands in a local shell with HOME set to
@@ -221,10 +221,10 @@ func TestPushAPIKeyModeAndRepush(t *testing.T) {
 	}
 }
 
-// The tests run on the host (or in a curral VM, whose base has the real
+// The tests run on the host (or in a catchpen VM, whose base has the real
 // path): bases without the claude wrapper, unless a test says otherwise.
 func TestMain(m *testing.M) {
-	claudeReal = "/nonexistent/curral-test/claude"
+	claudeReal = "/nonexistent/catchpen-test/claude"
 	os.Exit(m.Run())
 }
 
@@ -304,7 +304,7 @@ func TestPushReplacesInvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := os.ReadFile(filepath.Join(home, ".claude.json.curral-bak")); string(b) != "{not json" {
+	if b, _ := os.ReadFile(filepath.Join(home, ".claude.json.catchpen-bak")); string(b) != "{not json" {
 		t.Errorf("backup = %q", b)
 	}
 	if readJSON(t, filepath.Join(home, claudeJSON))["hasCompletedOnboarding"] != true {
@@ -412,7 +412,7 @@ func TestClaudeConfigSkipsCredentialsUnderSyncedParent(t *testing.T) {
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
 	write(t, filepath.Join(fakeHome, ".config", "gh", "hosts.yml"), "oauth_token: x")
-	write(t, filepath.Join(fakeHome, ".config", "curral", "secrets.env"), "K=v")
+	write(t, filepath.Join(fakeHome, ".config", "catchpen", "secrets.env"), "K=v")
 	write(t, filepath.Join(fakeHome, ".config", "tool", "conf"), "fine")
 	host := t.TempDir()
 	os.Symlink(filepath.Join(fakeHome, ".config"), filepath.Join(host, "skills")) // parent of credential dirs
@@ -427,7 +427,7 @@ func TestClaudeConfigSkipsCredentialsUnderSyncedParent(t *testing.T) {
 	if b, err := os.ReadFile(filepath.Join(g, "skills", "tool", "conf")); err != nil || string(b) != "fine" {
 		t.Errorf("ordinary file not synced: %v", err)
 	}
-	for _, f := range []string{"skills/gh/hosts.yml", "skills/curral/secrets.env", "agents"} {
+	for _, f := range []string{"skills/gh/hosts.yml", "skills/catchpen/secrets.env", "agents"} {
 		if _, err := os.Stat(filepath.Join(g, f)); err == nil {
 			t.Errorf("%s copied into the VM", f)
 		}
@@ -440,7 +440,7 @@ func TestClaudeConfigSkipsCredentialsUnderSyncedParent(t *testing.T) {
 func TestPushHooks(t *testing.T) {
 	home := t.TempDir()
 	write(t, filepath.Join(home, claudeSettings), `{"model":"opus","hooks":{"Stop":[{"hooks":[{"type":"command","command":"mine"}]}]}}`)
-	for i := 0; i < 2; i++ { // pushing again must not duplicate curral's hooks
+	for i := 0; i < 2; i++ { // pushing again must not duplicate catchpen's hooks
 		if _, err := Push(context.Background(), localRemote{home}, fullSpec(), fakeSecrets{}); err != nil {
 			t.Fatal(err)
 		}
@@ -516,7 +516,7 @@ func TestPushCodex(t *testing.T) {
 	}
 	if cfg["check_for_update_on_startup"] != false || cfg["cli_auth_credentials_store"] != "file" || get(cfg, "analytics", "enabled") != false ||
 		get(cfg, "feedback", "enabled") != false || get(cfg, "otel", "metrics_exporter") != "none" {
-		t.Errorf("curral settings:\n%s", b)
+		t.Errorf("catchpen settings:\n%s", b)
 	}
 	if n, _ := cfg["notify"].([]any); len(n) != 4 || n[0] != "sh" || !strings.Contains(n[2].(string), notifyURL) || !strings.Contains(n[2].(string), `"agent":"codex"`) {
 		t.Errorf("notify = %v", cfg["notify"])
@@ -580,7 +580,7 @@ func TestPushCodex(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 		w := strings.Join(res.Warnings, "\n")
-		_, backedUp := os.Stat(filepath.Join(home, codexConfig+".curral-bak"))
+		_, backedUp := os.Stat(filepath.Join(home, codexConfig+".catchpen-bak"))
 		switch name {
 		case "notify":
 			if !strings.Contains(w, "replaced notify") {
@@ -609,7 +609,7 @@ func TestPushCodex(t *testing.T) {
 	}
 }
 
-// Every registered agent is configured by Push and gets curral's
+// Every registered agent is configured by Push and gets catchpen's
 // notification hook.
 func TestEveryAgentPushedWithHook(t *testing.T) {
 	if len(pushers) != len(template.AgentDefs) {
