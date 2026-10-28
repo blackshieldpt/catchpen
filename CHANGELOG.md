@@ -73,6 +73,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
   run `catchpen template rebuild -t <template>`, then `catchpen reset --latest <vm>`
   (this gives the VM a fresh disk; its repos are cloned again) or recreate the VM. A
   rebuild alone doesn't change existing VMs, which keep their base.
+- The warm pool works for templates whose `env` sets an `AWS_*` variable. Their pool
+  VMs never matched, so the daemon kept creating and discarding them.
 
 ## [0.1.1] - 2026-10-25
 

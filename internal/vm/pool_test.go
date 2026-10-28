@@ -11,6 +11,7 @@ import (
 
 	"github.com/blackshieldpt/catchpen/internal/vmtest"
 
+	"github.com/blackshieldpt/catchpen/internal/canary"
 	"github.com/blackshieldpt/catchpen/internal/config"
 	"github.com/blackshieldpt/catchpen/internal/egress"
 	"github.com/blackshieldpt/catchpen/internal/qemu"
@@ -350,5 +351,59 @@ func TestPoolVMWithCanaryHitNotClaimed(t *testing.T) {
 	}
 	if vms, _ := m.PoolVMs(); len(vms) != 0 {
 		t.Errorf("after drain: %+v", vms)
+	}
+}
+
+// A pooled template whose env sets AWS_* drops the aws decoy; its pool VMs,
+// made without the env, must still match it and be claimed.
+func TestPoolTemplateWithAWSEnv(t *testing.T) {
+	m := poolManager(t)
+	vmtest.Template(t, m.P.Templates(), "ag", "", "runtimes: { node: \"24\" }\nagents:\n  claude: {}\nidle_stop: 2h\ncanaries: [aws, git]\nenv: { AWS_REGION: eu-west-1 }\n")
+	s, err := m.Create(context.Background(), "pool-a", CreateOpts{Template: "ag", pool: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(s.Canaries, []string{"git"}) {
+		t.Errorf("pool VM canaries %v, want [git]", s.Canaries)
+	}
+	cs, err := canary.Load(m.dir("pool-a"))
+	var planted []string
+	for _, c := range cs {
+		planted = append(planted, c.Kind)
+	}
+	if err != nil || !slices.Equal(planted, []string{"git"}) {
+		t.Errorf("pool VM planted %v (%v), want only the git decoy", planted, err)
+	}
+	s.Booted, s.Resume = true, poolSnap
+	if err := m.save(s); err != nil {
+		t.Fatal(err)
+	}
+	wants, err := m.poolWants()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wants) != 1 || keyOf(s) != wants[0].key {
+		t.Fatalf("pool VM key %+v, wanted %+v", keyOf(s), wants)
+	}
+	if err := m.recyclePool(wants, true); err != nil {
+		t.Fatal(err)
+	}
+	if vms, _ := m.PoolVMs(); len(vms) != 1 {
+		t.Fatalf("after recycling: %d pool VMs, want 1", len(vms))
+	}
+	w, err := m.Create(context.Background(), "work", CreateOpts{Template: "ag"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Resume != poolSnap || !slices.Equal(w.Canaries, []string{"git"}) {
+		t.Errorf("work: resume %q, canaries %v; want it claimed from the pool", w.Resume, w.Canaries)
+	}
+	cs, err = canary.Load(m.dir("work"))
+	planted = nil
+	for _, c := range cs {
+		planted = append(planted, c.Kind)
+	}
+	if err != nil || !slices.Equal(planted, []string{"git"}) {
+		t.Errorf("claimed VM carries %v (%v), want only the git decoy", planted, err)
 	}
 }

@@ -89,6 +89,8 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 			return nil, err
 		}
 	}
+	// Before the pool strip: env decides the aws decoy.
+	kinds := canaryKinds(r.T)
 	build := r // the base is shared by every VM of the template: built from all of it
 	if o.pool {
 		t := *r.T
@@ -154,7 +156,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 	var pooled *State
 	if !o.pool && !o.Rebuild {
 		key := poolKey{r.T.Name, r.Distro.Name, base, res.CPUs, memMB, max(diskMB, baseMB), egressMode, r.User, r.T.HasDocker(),
-			strings.Join(vmCaches(r.T), ","), strings.Join(canaryKinds(r.T), ",")}
+			strings.Join(vmCaches(r.T), ","), strings.Join(kinds, ",")}
 		if pooled, err = m.claimPool(name, key); err != nil {
 			return nil, err
 		}
@@ -164,7 +166,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		if err := m.keys(name).Generate(name); err != nil {
 			return nil, err
 		}
-		if kinds := canaryKinds(r.T); len(kinds) > 0 {
+		if len(kinds) > 0 {
 			if err := canary.Save(m.dir(name), canary.Generate(kinds)); err != nil {
 				return nil, err
 			}
@@ -211,7 +213,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		Egress: egressMode, Docker: r.T.HasDocker(), Created: time.Now().UTC(),
 		Agents: r.T.Agents, Env: r.T.Env, MCP: r.T.MCP, Skills: r.T.Skills, Plugins: r.T.Plugins, Sync: r.T.Sync,
 		Repos: s.Repos, Forges: s.Forges, ForgeUsers: s.ForgeUsers, SSH: r.T.SSH, Ephemeral: o.Ephemeral, Task: o.Task,
-		IdleStop: r.T.IdleStop, Instance: instance, Pool: o.pool, Cache: vmCaches(r.T), Canaries: canaryKinds(r.T),
+		IdleStop: r.T.IdleStop, Instance: instance, Pool: o.pool, Cache: vmCaches(r.T), Canaries: kinds,
 	}
 	if pooled != nil {
 		s.Booted, s.Resume = true, pooled.Resume
