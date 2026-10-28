@@ -89,9 +89,14 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 			return nil, err
 		}
 	}
+	build := r // the base is shared by every VM of the template: built from all of it
 	if o.pool {
-		r.T.Repos, r.T.Agents, r.T.Env, r.T.MCP, r.T.Sync, r.T.SSH = nil, template.Agents{}, nil, nil, template.Sync{}, template.SSH{}
-		r.T.Skills, r.T.Plugins = nil, nil
+		t := *r.T
+		t.Repos, t.Agents, t.Env, t.MCP, t.Sync, t.SSH = nil, template.Agents{}, nil, nil, template.Sync{}, template.SSH{}
+		t.Skills, t.Plugins = nil, nil
+		stripped := *r
+		stripped.T = &t
+		r = &stripped
 	}
 	repos, forges, err := m.planRepos(append(append([]string(nil), r.T.Repos...), o.Repos...), o.ReadOnly)
 	if err != nil {
@@ -114,7 +119,7 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		allow = append(allow, agentHosts(r.T)...)
 		allow = append(allow, forgeHosts(forges)...)
 	}
-	base, err := m.EnsureBase(ctx, r, o.Rebuild)
+	base, err := m.EnsureBase(ctx, build, o.Rebuild)
 	if err != nil {
 		return nil, err
 	}

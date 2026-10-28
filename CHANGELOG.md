@@ -65,6 +65,15 @@ before 0.1.0 describe work on `master` before the first tagged release.
 - A `--repo` whose host has no forge says that repos clone only from added forges, lists
   the configured ones, and prints a complete `catchpen forge add` command for the host.
 
+### Fixed
+
+- A template's base built by a warm-pool fill now includes the template's coding agents.
+  Before, if the daemon's pool fill was the first to build a template's base, the base
+  had no agents, and every VM of that template used it. If a VM is missing its agent,
+  run `catchpen template rebuild -t <template>`, then `catchpen reset --latest <vm>`
+  (this gives the VM a fresh disk; its repos are cloned again) or recreate the VM. A
+  rebuild alone doesn't change existing VMs, which keep their base.
+
 ## [0.1.1] - 2026-10-25
 
 ### Added
