@@ -162,7 +162,7 @@ func Load(path string) (Config, error) {
 			return c, fmt.Errorf("%s: secrets.%s: set exactly one of command or env", path, name)
 		}
 	}
-	if err := validUser(c.Defaults.User); err != nil {
+	if err := ValidUser(c.Defaults.User); err != nil {
 		return c, fmt.Errorf("%s: defaults.user: %w", path, err)
 	}
 	return c, nil
@@ -170,7 +170,8 @@ func Load(path string) (Config, error) {
 
 var userRe = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 
-func validUser(u string) error {
+// ValidUser checks a VM user name: a Linux login name, not root.
+func ValidUser(u string) error {
 	if !userRe.MatchString(u) || u == "root" {
 		return fmt.Errorf("invalid user name %q", u)
 	}

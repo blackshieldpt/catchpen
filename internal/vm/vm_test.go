@@ -291,3 +291,34 @@ func fakeQEMU(t *testing.T, m *Manager, name string, memMB int) {
 }
 
 func fakeSupervisor(t *testing.T, id string) int { t.Helper(); return vmtest.FakeSupervisor(t, id) }
+
+func TestSSHConfigLeavesOutBadStates(t *testing.T) {
+	m := testManager(t)
+	var out strings.Builder
+	m.Out = &out
+	writeFile(t, filepath.Join(m.dir("good"), stateFile), `{"name":"good","user":"agent"}`)
+	writeFile(t, filepath.Join(m.dir("baduser"), stateFile), `{"name":"baduser","user":"a b"}`)
+	// A state whose own name isn't a VM name, in a directory that is.
+	writeFile(t, filepath.Join(m.dir("badname"), stateFile), `{"name":"bad name","user":"agent"}`)
+	if err := m.WriteSSHConfig(); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(m.P.SSHConfig())
+	cfg := string(b)
+	_, bad, _ := strings.Cut(cfg, "Host catchpen-baduser\n")
+	bad, _, _ = strings.Cut(bad, "\nHost ")
+	if !strings.Contains(cfg, "Host catchpen-good\n  User agent\n") || strings.Contains(cfg, "bad name") ||
+		!strings.Contains(bad, "PreferredAuthentications publickey") || strings.Contains(bad, "  User ") {
+		t.Errorf("ssh_config:\n%s", cfg)
+	}
+	for _, w := range []string{`warning: left out of ssh_config: invalid VM name "bad name"`, `warning: baduser: invalid user name "a b"; its ssh_config entry has no user`} {
+		if !strings.Contains(out.String(), w) {
+			t.Errorf("log lacks %q:\n%s", w, out.String())
+		}
+	}
+	if _, err := exec.LookPath("ssh"); err == nil { // ssh refuses the whole file over one bad line
+		if b, err := exec.Command("ssh", "-G", "-F", m.P.SSHConfig(), "catchpen-good").CombinedOutput(); err != nil {
+			t.Errorf("ssh -G: %v: %s", err, b)
+		}
+	}
+}

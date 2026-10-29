@@ -137,7 +137,9 @@ login; use `catchpen ssh`.
 ### `catchpen setup-ssh [--remove]`
 
 Add (or remove) an `Include` of catchpen's `ssh_config` in `~/.ssh/config`, so
-`ssh catchpen-<name>`, `scp` and editors' remote SSH work directly.
+`ssh catchpen-<name>`, `scp` and editors' remote SSH work directly. It then warns about
+settings in your ssh config that override catchpen's for a VM, or that send it identity
+files, certificates or environment variables.
 
 ## Templates
 

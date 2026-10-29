@@ -30,8 +30,15 @@ the agent user has passwordless sudo inside it.
 - SSH and port forwards bind to `127.0.0.1`. Other local users can connect to the port
   but cannot authenticate.
 - The generated `ssh_config` disables agent forwarding (unless `ssh.agent` is set), X11,
-  port forwarding and tunnels for VM hosts, overriding a `Host *` block in your own
-  config. `catchpen forward` turns port forwarding back on only for its own sessions.
+  port forwarding and tunnels for VM hosts, allows only public-key login (no password,
+  keyboard-interactive or PKCS#11 keys), and keeps the VM from updating its pinned host key
+  and catchpen's key from being added to an agent. catchpen's own `ssh`, `run`, `attach`,
+  `cp` and `forward` read only that file; `catchpen forward` turns port forwarding back on
+  only for its own sessions. A manual `ssh catchpen-<vm>` (after `catchpen setup-ssh`) reads
+  your own ssh config too: catchpen's settings beat a block after its Include but not one
+  before it, and a block's `IdentityFile`, `CertificateFile`, `SendEnv` and `SetEnv` still
+  apply, so the VM's sshd sees those public keys and variables. `catchpen setup-ssh` reports
+  both; `Host * !catchpen-*` or `Match !host catchpen-*` keeps a block off catchpen's hosts.
 - `ssh.agent: restricted` gives the VM a per-VM `ssh-agent` holding only the keys you
   list, each destination-constrained so it signs only for that VM's `agent`-mode forges,
   and asking for confirmation on each use by default. `ssh.agent: host` forwards your

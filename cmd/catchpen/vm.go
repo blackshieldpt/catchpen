@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -312,11 +314,43 @@ func setupSSHCmd() *cobra.Command {
 			default:
 				fmt.Printf("added Include %s to %s\n", m.P.SSHConfig(), userCfg)
 			}
+			if !remove {
+				warnSSHConfig(cmd.Context(), m)
+			}
 			return nil
 		},
 	}
 	c.Flags().BoolVar(&remove, "remove", false, "remove the Include line")
 	return c
+}
+
+// warnSSHConfig says what the user's ssh config does to `ssh catchpen-<vm>`
+// besides catchpen's own settings.
+func warnSSHConfig(ctx context.Context, m *vm.Manager) {
+	checks, err := m.CheckSSHConfig(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not check your ssh config: %v\n", err)
+		return
+	}
+	names := slices.Sorted(maps.Keys(checks))
+	for _, n := range names {
+		c := checks[n]
+		switch {
+		case c.NotRead:
+			fmt.Fprintf(os.Stderr, "warning: ssh doesn't read catchpen's ssh_config for catchpen-%s: is the Include in the config ssh reads?\n", n)
+		case len(c.Overridden) > 0:
+			fmt.Fprintf(os.Stderr, "warning: a block read before catchpen's Include overrides these for catchpen-%s:\n  %s\n", n, strings.Join(c.Overridden, "\n  "))
+		}
+		if len(c.Added) > 0 {
+			fmt.Fprintf(os.Stderr, "warning: your ssh config also applies these to catchpen-%s, so its sshd sees them:\n  %s\n", n, strings.Join(c.Added, "\n  "))
+		}
+	}
+	for _, n := range names {
+		if c := checks[n]; len(c.Overridden) > 0 || len(c.Added) > 0 {
+			fmt.Fprintln(os.Stderr, "keep those blocks off catchpen's hosts (`Host * !catchpen-*`, `Match !host catchpen-*`), and keep the Include first")
+			break
+		}
+	}
 }
 
 // templateFlagHelp describes -t on every command that takes it.

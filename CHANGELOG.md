@@ -127,6 +127,13 @@ before 0.1.0 describe work on `master` before the first tagged release.
   attached session forwarded the VM's SSH agent (with `ssh.agent: host` or `restricted`)
   into the guest for the whole unattended run. `catchpen tmux --sync` closes any such
   window left over.
+- catchpen's `ssh_config` allows only public-key login to VM hosts, so a VM's sshd can't
+  show a password or keyboard-interactive prompt, even in `catchpen ssh`, `run` and
+  `attach`. It also turns off PKCS#11 keys, host-key updates from the VM and adding
+  catchpen's key to an agent, against a `Host *` block in your own config.
+  `catchpen setup-ssh` reports settings of yours that still reach a VM's sshd (identity
+  files, certificates, `SendEnv`, `SetEnv`) or that override catchpen's. A VM whose state
+  has an unusable name or user no longer breaks `ssh` for every host.
 
 ## [0.1.1] - 2026-10-25
 

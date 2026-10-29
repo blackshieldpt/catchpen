@@ -21,7 +21,8 @@ the remote shell yourself.
 
 With `catchpen setup-ssh`, `ssh catchpen-<vm>`, `scp` and editors' remote SSH (VS Code
 Remote-SSH, for example) work directly. Those connections aren't recorded; `catchpen ssh`,
-`run` and `attach` are.
+`run` and `attach` are. They also read your own ssh config: `catchpen setup-ssh` warns
+about settings of yours that reach the VM's sshd (see [security-model.md](security-model.md)).
 
 ## Host tmux
 

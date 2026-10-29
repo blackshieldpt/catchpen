@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -331,5 +333,89 @@ func TestGuestOutput(t *testing.T) {
 	}
 	if string(g.Raw()) != " a\x1b]0;x\x07b\n" {
 		t.Errorf("raw %q", g.Raw())
+	}
+}
+
+// sshG runs `ssh -G -F cfg host` and returns its lines; it skips without ssh.
+func sshG(t *testing.T, cfg, host string) []string {
+	t.Helper()
+	if _, err := exec.LookPath("ssh"); err != nil {
+		t.Skip("no ssh client")
+	}
+	out, err := exec.Command("ssh", "-G", "-F", cfg, host).Output()
+	if err != nil {
+		t.Fatalf("ssh -G: %v", err)
+	}
+	return strings.Split(string(out), "\n")
+}
+
+func TestWriteConfigPins(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "ssh_config")
+	if err := WriteConfig(p, "/usr/bin/catchpen", []Entry{{Name: "a", User: "agent", Keys: Keys{Dir: "/k/a"}}, {Name: "b", Keys: Keys{Dir: "/k/b"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); strings.Count(string(b), "User ") != 1 {
+		t.Errorf("an entry without a user has a User line:\n%s", b)
+	}
+	// catchpen's own ssh calls read only this file (-F); a manual ssh reads it
+	// first through setup-ssh's Include, then the user's own blocks.
+	user := filepath.Join(dir, "config")
+	cfg := "Include \"" + p + "\"\n\nHost *\n  PreferredAuthentications keyboard-interactive,password\n" +
+		"  UpdateHostKeys yes\n  AddKeysToAgent yes\n  PKCS11Provider /usr/lib/x/p11.so\n"
+	if err := os.WriteFile(user, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{p, user} {
+		got := sshG(t, f, "catchpen-a")
+		for _, want := range []string{"preferredauthentications publickey", "updatehostkeys false", "addkeystoagent false"} {
+			if !slices.Contains(got, want) {
+				t.Errorf("%s: no %q", filepath.Base(f), want)
+			}
+		}
+		for _, l := range got {
+			if strings.HasPrefix(l, "pkcs11provider ") {
+				t.Errorf("%s: %s", filepath.Base(f), l)
+			}
+		}
+	}
+}
+
+func TestCheckConfig(t *testing.T) {
+	if _, err := exec.LookPath("ssh"); err != nil {
+		t.Skip("no ssh client")
+	}
+	dir := t.TempDir()
+	p := filepath.Join(dir, "ssh_config")
+	e := Entry{Name: "a", User: "agent", Keys: Keys{Dir: filepath.Join(dir, "k")}}
+	if err := WriteConfig(p, "/usr/bin/catchpen", []Entry{e}); err != nil {
+		t.Fatal(err)
+	}
+	inc := "Include \"" + p + "\"\n"
+	for _, c := range []struct {
+		name, cfg         string
+		added, overridden []string
+		notRead           bool
+	}{
+		{name: "none", cfg: inc},
+		{name: "after", cfg: inc + "Host *\n  IdentityFile ~/.ssh/id_personal\n  CertificateFile ~/.ssh/c-cert.pub\n" +
+			"  SendEnv MY_TOKEN LANG LC_CTYPE\n  SetEnv FOO=bar\n  PreferredAuthentications password\n  PKCS11Provider /x.so\n",
+			added: []string{"certificatefile ~/.ssh/c-cert.pub", "identityfile ~/.ssh/id_personal", "sendenv MY_TOKEN", "setenv FOO=bar"}},
+		{name: "before", cfg: "Host *\n  PreferredAuthentications password\n  ForwardX11 yes\n  PKCS11Provider /x.so\n" + inc,
+			overridden: []string{"forwardx11 yes", "pkcs11provider /x.so", "preferredauthentications password"}},
+		{name: "match user", cfg: inc + "Match user agent\n  SendEnv MY_TOKEN\n", added: []string{"sendenv MY_TOKEN"}},
+		{name: "excluded", cfg: inc + "Host * !catchpen-*\n  IdentityFile ~/.ssh/id_personal\n  SendEnv MY_TOKEN\n"},
+		{name: "not read", cfg: "Host *\n  SendEnv MY_TOKEN\n", notRead: true},
+	} {
+		f := filepath.Join(dir, strings.ReplaceAll(c.name, " ", "_"))
+		if err := os.WriteFile(f, []byte(c.cfg), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		got, err := CheckConfig(context.Background(), f, e)
+		slices.Sort(got.Added)
+		slices.Sort(got.Overridden)
+		if err != nil || got.NotRead != c.notRead || !slices.Equal(got.Added, c.added) || !slices.Equal(got.Overridden, c.overridden) {
+			t.Errorf("%s: %+v, %v; want added %q, overridden %q, not read %v", c.name, got, err, c.added, c.overridden, c.notRead)
+		}
 	}
 }

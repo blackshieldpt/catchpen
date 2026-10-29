@@ -340,12 +340,28 @@ func (m *Manager) WriteSSHConfig() error {
 	if err != nil {
 		return err
 	}
+	return sshx.WriteConfig(m.P.SSHConfig(), m.Bin, m.sshEntries(vms))
+}
+
+// sshEntries are the ssh_config entries of vms. A name or user that can't be
+// written is left out: one bad line makes ssh refuse the whole file, and
+// through setup-ssh's Include, ~/.ssh/config too. A VM without a user keeps
+// its block, so its other settings still apply; logging in then fails.
+func (m *Manager) sshEntries(vms []Info) []sshx.Entry {
 	var es []sshx.Entry
 	for _, v := range vms {
 		if v.Pool {
 			continue
 		}
+		if err := ValidName(v.Name); err != nil {
+			m.logf("warning: left out of ssh_config: %v", err)
+			continue
+		}
 		e := sshx.Entry{Name: v.Name, User: v.User, Keys: m.keys(v.Name)}
+		if err := config.ValidUser(v.User); err != nil {
+			m.logf("warning: %s: %v; its ssh_config entry has no user", v.Name, err)
+			e.User = ""
+		}
 		switch v.SSH.Mode() {
 		case template.AgentRestricted:
 			e.ForwardAgent = m.agent(v.Name).Socket()
@@ -354,7 +370,25 @@ func (m *Manager) WriteSSHConfig() error {
 		}
 		es = append(es, e)
 	}
-	return sshx.WriteConfig(m.P.SSHConfig(), m.Bin, es)
+	return es
+}
+
+// CheckSSHConfig reports, per VM, what the ssh config ssh reads does to a
+// manual `ssh catchpen-<vm>` besides catchpen's own block.
+func (m *Manager) CheckSSHConfig(ctx context.Context) (map[string]sshx.ConfigCheck, error) {
+	vms, err := m.List()
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]sshx.ConfigCheck{}
+	for _, e := range m.sshEntries(vms) {
+		c, err := sshx.CheckConfig(ctx, "", e)
+		if err != nil {
+			return nil, err
+		}
+		out[e.Name] = c
+	}
+	return out, nil
 }
 
 // SSHPort returns the loopback port of a running VM's sshd.

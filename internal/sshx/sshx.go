@@ -3,6 +3,7 @@ package sshx
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -12,7 +13,9 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -383,7 +386,9 @@ func WriteConfig(path, catchpenBin string, entries []Entry) error {
 	for _, e := range entries {
 		alias := AliasPrefix + e.Name
 		fmt.Fprintf(&b, "\nHost %s\n", alias)
-		fmt.Fprintf(&b, "  User %s\n", e.User)
+		if e.User != "" {
+			fmt.Fprintf(&b, "  User %s\n", e.User)
+		}
 		id, err := cfgQuote(e.Keys.Identity())
 		if err != nil {
 			return err
@@ -422,12 +427,96 @@ func WriteConfig(path, catchpenBin string, entries []Entry) error {
 		b.WriteString("  StrictHostKeyChecking yes\n")
 		b.WriteString("  HostKeyAlgorithms ssh-ed25519\n")
 		b.WriteString("  PasswordAuthentication no\n")
+		// The first value wins, so these also beat a `Host *` block that a manual
+		// `ssh catchpen-<vm>` reads after this file. A PKCS#11 provider's keys
+		// would be offered despite IdentitiesOnly.
+		b.WriteString("  PreferredAuthentications publickey\n")
+		b.WriteString("  UpdateHostKeys no\n")
+		b.WriteString("  AddKeysToAgent no\n")
+		b.WriteString("  PKCS11Provider none\n")
 		fmt.Fprintf(&b, "  ProxyCommand %s ssh-proxy %s\n", shQuote(catchpenBin), e.Name)
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	return fsutil.WriteFileAtomic(path, []byte(b.String()), 0o600)
+}
+
+// ConfigCheck is what the ssh config does to `ssh catchpen-<vm>` besides
+// catchpen's own Host block, as `ssh -G` resolves it.
+type ConfigCheck struct {
+	NotRead    bool     // ssh doesn't read catchpen's block for this VM
+	Added      []string // identity and certificate files, SendEnv and SetEnv from other blocks
+	Overridden []string // catchpen's settings that a block read before it replaced
+}
+
+// localeEnv are SendEnv patterns distributions set by default; LC_ prefixes too.
+var localeEnv = []string{"LANG", "LANGUAGE", "COLORTERM", "NO_COLOR", "XMODIFIERS"}
+
+// pins are the settings WriteConfig writes for e, as `ssh -G` prints them.
+func pins(e Entry) []string {
+	fwd := "no"
+	if e.ForwardAgent != "" {
+		fwd = e.ForwardAgent
+	}
+	return []string{"identitiesonly yes", "passwordauthentication no", "preferredauthentications publickey",
+		"updatehostkeys false", "addkeystoagent false", "forwardagent " + fwd, "forwardx11 no",
+		"forwardx11trusted no", "clearallforwardings yes", "tunnel false", "stricthostkeychecking true",
+		"hostkeyalias " + AliasPrefix + e.Name, "userknownhostsfile " + e.Keys.KnownHosts()}
+}
+
+// CheckConfig runs `ssh -G` for e's alias with the ssh config ssh itself reads
+// (cfg "" means ~/.ssh/config and /etc/ssh/ssh_config) and reports what other
+// blocks add or override. Identity and certificate files and SendEnv add up,
+// so no setting of catchpen's can stop them; the others first-value-win, so
+// they are lost only to a block read before catchpen's Include. It returns a
+// zero ConfigCheck when ssh isn't installed.
+func CheckConfig(ctx context.Context, cfg string, e Entry) (ConfigCheck, error) {
+	var c ConfigCheck
+	bin, err := exec.LookPath("ssh")
+	if err != nil {
+		return c, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second) // a Match exec can hang
+	defer cancel()
+	args := []string{"-G"}
+	if cfg != "" {
+		args = append(args, "-F", cfg)
+	}
+	out, err := exec.CommandContext(ctx, bin, append(args, AliasPrefix+e.Name)...).Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && len(ee.Stderr) > 0 {
+			err = fmt.Errorf("%w: %s", err, Printable(strings.TrimSpace(string(ee.Stderr))))
+		}
+		return c, fmt.Errorf("ssh -G %s%s: %w", AliasPrefix, e.Name, err)
+	}
+	lines := strings.Split(string(out), "\n")
+	if !slices.Contains(lines, "identityfile "+e.Keys.Identity()) {
+		return ConfigCheck{NotRead: true}, nil
+	}
+	got := map[string]string{}
+	for _, l := range lines {
+		k, v, _ := strings.Cut(l, " ")
+		got[k] = l
+		switch {
+		case (k == "identityfile" || k == "certificatefile") && v != e.Keys.Identity(),
+			k == "sendenv" && !slices.Contains(localeEnv, v) && !strings.HasPrefix(v, "LC_"),
+			k == "setenv":
+			if !slices.Contains(c.Added, l) {
+				c.Added = append(c.Added, l)
+			}
+		}
+	}
+	for _, p := range pins(e) {
+		if k, _, _ := strings.Cut(p, " "); got[k] != p {
+			c.Overridden = append(c.Overridden, cmp.Or(got[k], k+" (unset)"))
+		}
+	}
+	if l, ok := got["pkcs11provider"]; ok {
+		c.Overridden = append(c.Overridden, l)
+	}
+	return c, nil
 }
 
 // Proxy pipes stdin/stdout to 127.0.0.1:port (ssh ProxyCommand).
