@@ -45,15 +45,24 @@ type Summary struct {
 
 const maxResult = 64 << 10
 
+// tailBuffer keeps the last maxResult bytes written to it.
+type tailBuffer struct{ b []byte }
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.b = append(t.b, p...)
+	if len(t.b) > maxResult {
+		t.b = append(t.b[:0], t.b[len(t.b)-maxResult:]...)
+	}
+	return len(p), nil
+}
+
 // Summarize reads an agent's event stream.
 func Summarize(agent string, r io.Reader) Summary {
 	var s Summary
 	if agent == "cmd" {
-		b, _ := io.ReadAll(r)
-		if len(b) > maxResult {
-			b = b[len(b)-maxResult:]
-		}
-		s.Result = string(b)
+		var t tailBuffer
+		_, _ = io.Copy(&t, r)
+		s.Result = string(t.b)
 		return s
 	}
 	sc := bufio.NewScanner(r)

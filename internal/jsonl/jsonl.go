@@ -46,8 +46,13 @@ func Append(path string, v any, max int64) error {
 	return werr
 }
 
+// maxLine bounds the lines Tail passes on: a line of maxLine bytes or more,
+// counting its line ending, is skipped.
+const maxLine = 16 << 20
+
 // Tail calls fn for each non-empty line; with follow it keeps reading new
-// lines (across rotations) until ctx is done.
+// lines (across rotations) until ctx is done. Lines over maxLine are skipped
+// without being held in memory.
 func Tail(ctx context.Context, path string, follow bool, fn func(line string) error) error {
 	const poll = 250 * time.Millisecond
 	f, err := openWhenExists(ctx, path, follow, poll)
@@ -56,34 +61,46 @@ func Tail(ctx context.Context, path string, follow bool, fn func(line string) er
 	}
 	defer func() { f.Close() }()
 	r := bufio.NewReader(f)
-	var partial string
+	var partial []byte
+	skip := false          // inside a line over maxLine
+	emit := func() error { // a skipped line left partial empty
+		line := strings.TrimSpace(string(partial))
+		partial, skip = partial[:0], false
+		if line != "" {
+			return fn(line)
+		}
+		return nil
+	}
 	for {
-		chunk, err := r.ReadString('\n')
-		partial += chunk
-		if err == nil {
-			if line := strings.TrimSpace(partial); line != "" {
-				if err := fn(line); err != nil {
-					return err
-				}
+		chunk, err := r.ReadSlice('\n')
+		if !skip {
+			if len(partial)+len(chunk) > maxLine {
+				partial, skip = partial[:0], true
+			} else {
+				partial = append(partial, chunk...)
 			}
-			partial = ""
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if err == nil {
+			if err := emit(); err != nil {
+				return err
+			}
 			continue
 		}
 		if err != io.EOF {
 			return err
 		}
 		if !follow {
-			if line := strings.TrimSpace(partial); line != "" {
-				return fn(line)
-			}
-			return nil
+			return emit()
 		}
 		if rotated(f, path) {
 			// Old file fully read: continue with the new one from its start.
 			nf, err := os.Open(path)
 			if err == nil {
 				f.Close()
-				f, r, partial = nf, bufio.NewReader(nf), ""
+				f, r, partial, skip = nf, bufio.NewReader(nf), partial[:0], false
 				continue
 			}
 		}

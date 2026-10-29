@@ -72,7 +72,7 @@ Everything is on the host in `~/.local/share/catchpen/tasks/<id>/`:
 The agents' transcripts are copied to `transcripts/task-<id>/` when the task ends.
 `task logs` renders the output; `--raw` prints the event stream with OSC, DCS and APC
 sequences (window title, clipboard) dropped. `task run -f` and `task logs -f` follow it,
-and exit 1 if the task didn't end `done`.
+and exit 1 if the task didn't end `done`. `task logs` skips any line of 16 MiB or more.
 
 ## Batch files
 
