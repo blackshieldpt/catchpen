@@ -10,6 +10,9 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 - `catchpen forge add --help` lists the `agent` mode, and the hint for a repo whose host
   has no forge lists `minted-token`.
+- New VMs, and VMs after `catchpen reset`, no longer finish booting with cloud-init
+  reporting `degraded done`: the user-data failed cloud-init's schema (`ssh_genkeytypes`
+  was empty).
 
 ## [0.1.2] - 2026-10-29
 

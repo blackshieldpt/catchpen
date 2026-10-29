@@ -318,7 +318,7 @@ func InstanceUserData(in Instance) ([]byte, error) {
 			SSHAuthorizedKeys: []string{strings.TrimSpace(in.AuthorizedKey)},
 		}},
 		"ssh_deletekeys":  true,
-		"ssh_genkeytypes": []string{},
+		"ssh_genkeytypes": []string{"ed25519"}, // unused while ssh_keys is set; the schema rejects []
 		"ssh_keys": map[string]string{
 			"ed25519_private": in.HostKey,
 			"ed25519_public":  strings.TrimSpace(in.HostPub),
