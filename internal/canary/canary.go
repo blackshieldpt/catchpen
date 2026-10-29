@@ -129,7 +129,28 @@ func Load(dir string) ([]Canary, error) {
 		return nil, err
 	}
 	var cs []Canary
-	return cs, json.Unmarshal(b, &cs)
+	if err := json.Unmarshal(b, &cs); err != nil {
+		return nil, err
+	}
+	for _, c := range cs {
+		if err := c.check(); err != nil {
+			return nil, err
+		}
+	}
+	return cs, nil
+}
+
+// shape is how many hosts and values Generate gives each kind, which Files uses.
+var shape = map[string][2]int{"aws": {1, 2}, "env": {2, 3}, "git": {1, 1}}
+
+// check refuses a canary Files can't plant, or with an empty host or value,
+// which would match everything.
+func (c Canary) check() error {
+	n, ok := shape[c.Kind]
+	if !ok || len(c.Hosts) != n[0] || len(c.Values) != n[1] || slices.Contains(c.Hosts, "") || slices.Contains(c.Values, "") {
+		return fmt.Errorf("canary %q: not as catchpen makes them", c.Kind)
+	}
+	return nil
 }
 
 // Host returns the canary host is one of.
@@ -154,6 +175,21 @@ func In(cs []Canary, s string) *Canary {
 		}
 		for _, h := range c.Hosts {
 			if strings.Contains(lower, h) {
+				return &cs[i]
+			}
+		}
+	}
+	return nil
+}
+
+// InHost returns the canary whose value host contains in any letter case, with
+// dots and hyphens ignored (values have neither): host names ignore case, and
+// a value can be split across labels.
+func InHost(cs []Canary, host string) *Canary {
+	host = strings.NewReplacer(".", "", "-", "").Replace(strings.ToLower(host))
+	for i, c := range cs {
+		for _, v := range c.Values {
+			if strings.Contains(host, strings.ToLower(v)) {
 				return &cs[i]
 			}
 		}

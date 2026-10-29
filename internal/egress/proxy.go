@@ -107,13 +107,16 @@ func (p *Proxy) ServeConn(ctx context.Context, c io.ReadWriteCloser) error {
 		return nil
 	}
 	entry := LogEntry{VM: p.VM, Method: req.Method, Host: host, Port: port}
-	hit, where, err := p.canary(req, host, port)
+	hit, where, inName, err := p.canary(req, host, port)
 	if err != nil { // fail closed: detection can't be skipped by breaking the file
 		_ = p.log(entry, ActionDeny, "canaries unreadable: "+err.Error())
 		p.deny(c, host, port, "not allowed")
 		return nil
 	}
 	if hit != nil {
+		if inName {
+			entry.Host = "(withheld)"
+		}
 		_ = p.log(entry, ActionDeny, "canary ("+hit.Kind+")")
 		if p.OnCanary != nil {
 			p.OnCanary(hit, where)
@@ -165,19 +168,24 @@ func (p *Proxy) ServeConn(ctx context.Context, c io.ReadWriteCloser) error {
 }
 
 // canary finds one of the VM's canaries in a request: its host, or a
-// value in the request line or headers (a body over plain HTTP isn't read).
-func (p *Proxy) canary(req *http.Request, host string, port int) (*canary.Canary, string, error) {
+// value in the host name (inName: the name isn't to be shown), the request
+// line or headers (a body over plain HTTP isn't read).
+func (p *Proxy) canary(req *http.Request, host string, port int) (c *canary.Canary, where string, inName bool, err error) {
 	cs, err := canary.Load(p.Dir)
 	if err != nil || len(cs) == 0 {
-		return nil, "", err
+		return nil, "", false, err
 	}
 	if c := canary.Host(cs, host); c != nil {
-		return c, "connection to " + hostPort(host, port), nil
+		return c, "connection to " + hostPort(host, port), false, nil
+	}
+	// Before InRequest, which would see the value in the Host and name it.
+	if c := canary.InHost(cs, host); c != nil {
+		return c, "in the name of a host it connected to", true, nil
 	}
 	if c := canary.InRequest(cs, req); c != nil {
-		return c, "in a request to " + hostPort(host, port), nil
+		return c, "in a request to " + hostPort(host, port), false, nil
 	}
-	return nil, "", nil
+	return nil, "", false, nil
 }
 
 var errMethod = errors.New("method not allowed")

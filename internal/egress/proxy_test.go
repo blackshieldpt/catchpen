@@ -388,6 +388,35 @@ type safeBuf struct {
 func (s *safeBuf) Write(p []byte) (int, error) { s.mu.Lock(); defer s.mu.Unlock(); return s.b.Write(p) }
 func (s *safeBuf) String() string              { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
 
+// A value in a host name, in any case, is a hit, and the name isn't logged.
+func TestCanaryValueInHostName(t *testing.T) {
+	cs := canary.Generate([]string{"aws"})
+	p := setup(t, Config{AllowPrivate: true}, []string{"*.example.com"}, nil)
+	if err := canary.Save(p.Dir, cs); err != nil {
+		t.Fatal(err)
+	}
+	var hits []string
+	p.OnCanary = func(c *canary.Canary, where string) { hits = append(hits, c.Kind+": "+where) }
+	v := cs[0].Values[0]
+	low := strings.ToLower(v)
+	// In its own case, lower-cased, and split across labels.
+	for _, label := range []string{v, low, low[:8] + "." + low[8:], low[:8] + "-" + low[8:]} {
+		c, _ := serve(t, p)
+		expect403(t, c, label+".example.com:443", "not allowed")
+	}
+	want := "aws: in the name of a host it connected to"
+	if strings.Join(hits, "|") != strings.Repeat(want+"|", 3)+want {
+		t.Errorf("hits %q", hits)
+	}
+	b, err := os.ReadFile(filepath.Join(p.Dir, LogFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logs := readLog(t, p.Dir); len(logs) != 4 || logs[0].Reason != "canary (aws)" || strings.Contains(string(b), "example.com") {
+		t.Errorf("log:\n%s", b)
+	}
+}
+
 func TestCanaryHits(t *testing.T) {
 	cs := canary.Generate([]string{"aws", "env"})
 	p := setup(t, Config{AllowPrivate: true}, []string{cs[0].Hosts[0], "example.com"}, nil)

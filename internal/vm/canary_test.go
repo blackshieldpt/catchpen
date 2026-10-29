@@ -302,6 +302,35 @@ func TestCanaryHitStops(t *testing.T) {
 	}
 }
 
+// The audit record of a hit doesn't wait for the VM's lock, which a snapshot
+// can hold for minutes.
+func TestCanaryHitAuditsFirst(t *testing.T) {
+	m := testManager(t)
+	m.Cfg.CanaryAction = config.CanaryStop
+	fakeQEMU(t, m, "h1", 512)
+	_, unlock, err := m.vm("h1").lock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { m.CanaryHit("h1", &canary.Canary{Kind: "git"}, "in a test"); close(done) }()
+	for end := time.Now().Add(3 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if b, _ := os.ReadFile(m.P.Audit()); strings.Contains(string(b), `"canary.hit"`) {
+			break
+		}
+		if time.Now().After(end) {
+			unlock()
+			<-done
+			t.Fatal("no canary.hit audit record while the VM's lock was held")
+		}
+	}
+	unlock()
+	<-done
+	if _, ok := m.Running("h1"); ok {
+		t.Error("the VM still runs")
+	}
+}
+
 // Incoming refs of dead pulls and older versions go; a live pull's stays.
 func TestPruneIncoming(t *testing.T) {
 	repo := t.TempDir()

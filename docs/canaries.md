@@ -27,6 +27,9 @@ The host keeps each VM's values in `vms/<name>/canaries.json`.
 ## What counts as a hit
 
 - a connection to a canary host through the egress proxy, allowlisted or not;
+- a canary value in the name of a host the VM connects to through the egress proxy, in
+  any letter case (host names ignore case) and split by dots or hyphens; that name is
+  kept out of the egress log, the audit log and notifications;
 - a canary value in a plain-HTTP request's line or headers (not its body), or in a
   package cache request, including percent-encoded in the URL, in URL user info and in
   `Basic` credentials;
@@ -46,7 +49,8 @@ The host keeps each VM's values in `vms/<name>/canaries.json`.
 1. The request or export is refused. A notification is sent with the offending text
    withheld.
 2. `canary.hit` is written to the audit log and sent to notifications, each at most a
-   few times per minute.
+   few times per minute. The audit record comes before step 3, the notification after
+   it (it says what was done).
 3. The VM is dealt with according to `canary_action` in `config.yaml`:
 
    ```yaml
@@ -71,8 +75,8 @@ Tasks and the pool react on top of that:
   inspection, shown in `catchpen pool ls` as `canary hit`, until you destroy it or run
   `catchpen pool drain`.
 
-If a VM's `canaries.json` can't be read, its proxy, cache and exports refuse everything,
-and its notifications and task results are withheld.
+If a VM's `canaries.json` can't be read, or isn't as catchpen wrote it, its proxy, cache
+and exports refuse everything, and its notifications and task results are withheld.
 
 ## Responding to a hit
 

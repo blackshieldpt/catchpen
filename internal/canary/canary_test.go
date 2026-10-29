@@ -62,6 +62,36 @@ func TestSaveLoad(t *testing.T) {
 	if got, err := Load(dir); err != nil || len(got) != 1 || got[0].Values[0] != cs[0].Values[0] {
 		t.Fatalf("loaded %+v %v", got, err)
 	}
+	// A broken file is an error, never a canary that matches everything or
+	// that Files can't plant.
+	for _, bad := range []string{
+		`[{"kind":"git","hosts":["h"],"values":[]}]`,
+		`[{"kind":"git","hosts":["h"],"values":[""]}]`,
+		`[{"kind":"git","hosts":[""],"values":["v"]}]`,
+		`[{"kind":"aws","hosts":["h"],"values":["v"]}]`,
+		`[{"kind":"ssh","hosts":["h"],"values":["v"]}]`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, File), []byte(bad), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := Load(dir); err == nil {
+			t.Errorf("%s: loaded %+v", bad, got)
+		}
+	}
+}
+
+// A host name is case-insensitive, so a value in one counts in any case.
+func TestInHost(t *testing.T) {
+	cs := Generate(Kinds)
+	v := strings.ToLower(cs[0].Values[0])
+	for _, h := range []string{v + ".example.com", v[:8] + "." + v[8:] + ".example.com", v[:8] + "-" + v[8:] + ".example.com"} {
+		if c := InHost(cs, h); c == nil || c.Kind != "aws" {
+			t.Errorf("%s: %+v", h, c)
+		}
+	}
+	if c := InHost(cs, "example.com"); c != nil {
+		t.Errorf("example.com: %+v", c)
+	}
 }
 
 type oneByte struct{ r io.Reader }

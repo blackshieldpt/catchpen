@@ -89,6 +89,13 @@ before 0.1.0 describe work on `master` before the first tagged release.
   Debian 12) took objects from the guest's bundle without checking them, as did any git
   with `fetch.fsckObjects=false` configured. If you pulled from a VM in that setup, run
   `git fsck` in the repository: objects already present are not checked again.
+- A canary value in the name of a host a VM connects to through the egress proxy is
+  now a hit in any letter case, and split by dots or hyphens. Before, it was matched only
+  whole and in its own case, so a VM could send a decoy out in a host name, through the
+  host's DNS. That host name is now kept out of the egress log, the audit log and
+  notifications. A canary hit's audit record is written before the VM is paused or
+  stopped, so a running snapshot no longer delays it, and a `canaries.json` that isn't
+  as catchpen wrote it is refused like an unreadable one.
 
 ## [0.1.1] - 2026-10-25
 

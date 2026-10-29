@@ -32,6 +32,13 @@ const (
 func (m *Manager) CanaryHit(name string, c *canary.Canary, where string) {
 	action := cmp.Or(m.Cfg.CanaryAction, config.CanaryPause)
 	_ = writeJSON(m.vm(name).path(hitFile), map[string]any{"kind": c.Kind, "where": where, "time": time.Now().UTC()})
+	// A guest retrying in a loop (action log) gets a few records, not one each
+	// (the audit log is shared and rotates).
+	lim := notify.Limiter{Path: m.vm(name).path("canary.bucket"), Burst: 3, Every: time.Minute}
+	record, _ := lim.Allow(time.Now())
+	if record { // before acting: stopping waits for the VM's lock, which a snapshot holds
+		m.audit(audit.CanaryHit, name, map[string]any{"kind": c.Kind, "where": where, "action": action})
+	}
 	then := map[string]string{config.CanaryPause: "paused it (catchpen resume " + name + ")", config.CanaryStop: "stopped it", config.CanaryLog: "left it running"}[action]
 	var err error
 	switch action {
@@ -54,11 +61,7 @@ func (m *Manager) CanaryHit(name string, c *canary.Canary, where string) {
 		then = "failed to " + action + " it: " + err.Error()
 		m.logf("warning: canary hit in %s: %v", name, err)
 	}
-	// A guest retrying in a loop (action log) gets a few records, not one each
-	// (the audit log is shared and rotates).
-	lim := notify.Limiter{Path: m.vm(name).path("canary.bucket"), Burst: 3, Every: time.Minute}
-	if ok, _ := lim.Allow(time.Now()); ok {
-		m.audit(audit.CanaryHit, name, map[string]any{"kind": c.Kind, "where": where, "action": action})
+	if record {
 		m.notify(notify.Event{Kind: notify.CanaryHit, VM: name, Title: "catchpen " + name + ": canary used",
 			Message: fmt.Sprintf("its %s decoy credentials were used (%s); catchpen %s", c.Kind, where, then)})
 	}

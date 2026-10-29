@@ -290,8 +290,8 @@ Investigate first (`catchpen audit <name>`, `catchpen egress log <name>`, see
 **`... refused: it contains the VM's decoy credentials`**: an export carried a decoy and
 was refused.
 
-**`canaries unreadable`**: `vms/<name>/canaries.json` is damaged. The VM's proxy, cache
-and exports refuse everything until it's fixed. There is no repair command: restore the
+**`canaries unreadable`**: `vms/<name>/canaries.json` is damaged, or isn't as catchpen
+wrote it. The VM's proxy, cache and exports refuse everything until it's fixed. There is no repair command: restore the
 file from a backup, or destroy and recreate the VM. Deleting the file turns detection off
 for that VM while the guest keeps the old decoys.
 
