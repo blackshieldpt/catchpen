@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/blackshieldpt/catchpen/internal/audit"
 	"github.com/blackshieldpt/catchpen/internal/record"
@@ -98,6 +100,32 @@ func attachCmd() *cobra.Command {
 	}
 }
 
+// termReset undoes what replayed guest output may have left set: colours or
+// hidden text, a line-drawing character set, a hidden cursor, the alternate
+// screen. Its leading ESC also ends a sequence the guest left unfinished.
+const termReset = "\x1b[0m\x1b(B\x0f\x1b[?25h\x1b[?1047l"
+
+// playRecording replays r on out through the terminal filter, then says on
+// errw whether the recording is complete. That line is the host's, written
+// after the replay and outside the filter, so the guest can't hide or fake
+// it (a string it left open would swallow anything sent through the filter).
+func playRecording(r io.Reader, out, errw io.Writer, tty bool, speed float64, idle time.Duration) error {
+	fw := &termFilter{w: out}
+	truncated, err := record.Play(r, fw, speed, idle)
+	if tty {
+		_, _ = io.WriteString(out, termReset)
+	}
+	if err != nil {
+		return err
+	}
+	if truncated {
+		fmt.Fprintln(errw, "catchpen: the recording stops here: it reached its size limit; the rest of the session was not recorded")
+	} else {
+		fmt.Fprintln(errw, "catchpen: end of recording")
+	}
+	return nil
+}
+
 func recordingsCmd() *cobra.Command {
 	var speed float64
 	var idle time.Duration
@@ -128,7 +156,7 @@ func recordingsCmd() *cobra.Command {
 				}
 				defer f.Close()
 				// Guest output: drop sequences that reach beyond the screen (title, clipboard).
-				return record.Play(f, &termFilter{w: os.Stdout}, speed, idle)
+				return playRecording(f, os.Stdout, os.Stderr, term.IsTerminal(int(os.Stdout.Fd())), speed, idle)
 			}
 			ids, err := m.Recordings(name)
 			if err != nil {
@@ -143,8 +171,12 @@ func recordingsCmd() *cobra.Command {
 					fmt.Fprintf(tw, "%s\t-\t-\t-\t%s\n", id, p)
 					continue
 				}
+				dur := in.Duration.Round(time.Second).String()
+				if in.Truncated {
+					dur += " (truncated)"
+				}
 				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", id, time.Unix(in.Timestamp, 0).Format("2006-01-02 15:04"),
-					in.Duration.Round(time.Second), humanBytes(in.Size), p)
+					dur, humanBytes(in.Size), p)
 			}
 			return tw.Flush()
 		},

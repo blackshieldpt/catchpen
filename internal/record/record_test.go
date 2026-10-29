@@ -88,7 +88,7 @@ func TestCast(t *testing.T) {
 		t.Errorf("no resize event: %v", evs)
 	}
 	in, err := Stat(p)
-	if err != nil || in.Width != 100 || in.Size != st.Size() {
+	if err != nil || in.Width != 100 || in.Size != st.Size() || in.Truncated {
 		t.Errorf("Stat = %+v, %v", in, err)
 	}
 }
@@ -103,13 +103,17 @@ func TestCastSizeLimit(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		c.Write(bytes.Repeat([]byte("\x01"), 50)) // 6 bytes each once JSON-escaped
 	}
+	// The marker is on disk before Close: a session can run on for hours.
+	if in, err := Stat(p); err != nil || !in.Truncated {
+		t.Errorf("Stat before Close = %+v, %v; want Truncated", in, err)
+	}
 	c.Close()
 	if st, _ := os.Stat(p); st.Size() > c.max+100 {
 		t.Errorf("recording is %d bytes, cap %d", st.Size(), c.max)
 	}
 	_, evs := readCast(t, p)
 	last := evs[len(evs)-1]
-	if last[1] != "m" || !strings.Contains(last[2].(string), "size limit") {
+	if last[1] != "m" || last[2] != "recording stopped: size limit reached" {
 		t.Errorf("last event %v", last)
 	}
 	if n := len(output(evs)); n == 0 || n >= 500 {
@@ -126,7 +130,7 @@ func TestPlay(t *testing.T) {
 `
 	var out bytes.Buffer
 	start := time.Now()
-	if err := Play(strings.NewReader(cast), &out, 1, 50*time.Millisecond); err != nil {
+	if _, err := Play(strings.NewReader(cast), &out, 1, 50*time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
 	if out.String() != "ab\x1b[0m" {
@@ -135,8 +139,43 @@ func TestPlay(t *testing.T) {
 	if d := time.Since(start); d > time.Second {
 		t.Errorf("idle not capped: %v", d)
 	}
-	if err := Play(strings.NewReader("{\"version\":1}\n"), &out, 1, 0); err == nil {
+	if _, err := Play(strings.NewReader("{\"version\":1}\n"), &out, 1, 0); err == nil {
 		t.Error("v1 recording accepted")
+	}
+}
+
+// The marker text is literal on purpose: recordings already on disk carry it.
+// The guest writes only "o" events; "m" events come from the host.
+var truncationCasts = []struct {
+	name, last string
+	truncated  bool
+}{
+	{"size-limit marker", `[0.2,"m","recording stopped: size limit reached"]`, true},
+	{"other marker", `[0.2,"m","marker"]`, false},
+	{"guest output with the marker text", `[0.2,"o","recording stopped: size limit reached"]`, false},
+}
+
+func TestPlayReportsTruncation(t *testing.T) {
+	for _, c := range truncationCasts {
+		cast := "{\"version\":2,\"width\":80,\"height\":24,\"timestamp\":1}\n[0.1,\"o\",\"a\"]\n" + c.last + "\n"
+		var out bytes.Buffer
+		truncated, err := Play(strings.NewReader(cast), &out, 1, 0)
+		if err != nil || truncated != c.truncated {
+			t.Errorf("%s: Play = %v, %v; want %v", c.name, truncated, err, c.truncated)
+		}
+	}
+}
+
+func TestStatTruncated(t *testing.T) {
+	for _, c := range truncationCasts {
+		p := filepath.Join(t.TempDir(), "a.cast")
+		cast := "{\"version\":2,\"width\":80,\"height\":24,\"timestamp\":1}\n[0.1,\"o\",\"a\"]\n" + c.last + "\n"
+		if err := os.WriteFile(p, []byte(cast), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if in, err := Stat(p); err != nil || in.Truncated != c.truncated {
+			t.Errorf("%s: Stat = %+v, %v; want Truncated %v", c.name, in, err, c.truncated)
+		}
 	}
 }
 

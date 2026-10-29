@@ -12,19 +12,20 @@ import (
 )
 
 // Play writes a recording's output to w with its original timing (idle
-// gaps capped at maxIdle, sped up by speed).
-func Play(r io.Reader, w io.Writer, speed float64, maxIdle time.Duration) error {
+// gaps capped at maxIdle, sped up by speed). It reports whether the
+// recording stopped at MaxBytes.
+func Play(r io.Reader, w io.Writer, speed float64, maxIdle time.Duration) (truncated bool, err error) {
 	if speed <= 0 {
 		speed = 1
 	}
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 1<<20), MaxBytes)
 	if !sc.Scan() {
-		return errors.New("empty recording")
+		return false, errors.New("empty recording")
 	}
 	var h Header
 	if err := json.Unmarshal(sc.Bytes(), &h); err != nil || h.Version != 2 {
-		return fmt.Errorf("not an asciicast v2 recording")
+		return false, fmt.Errorf("not an asciicast v2 recording")
 	}
 	var last float64
 	for sc.Scan() {
@@ -45,11 +46,14 @@ func Play(r io.Reader, w io.Writer, speed float64, maxIdle time.Duration) error 
 		last = t
 		if kind == "o" {
 			if _, err := io.WriteString(w, data); err != nil {
-				return err
+				return false, err
 			}
 		}
+		if kind == "m" && data == Truncated {
+			truncated = true
+		}
 	}
-	return sc.Err()
+	return truncated, sc.Err()
 }
 
 // Info summarizes a recording file.
@@ -57,6 +61,8 @@ type Info struct {
 	Header
 	Duration time.Duration
 	Size     int64
+	// Truncated: the recording stopped at MaxBytes; the session went on.
+	Truncated bool
 }
 
 // Stat reads a recording's header and its last event time.
@@ -93,6 +99,7 @@ func Stat(path string) (Info, error) {
 		if json.Unmarshal(lines[i], &ev) == nil && len(ev) == 3 {
 			if t, ok := ev[0].(float64); ok {
 				in.Duration = time.Duration(t * float64(time.Second))
+				in.Truncated = ev[1] == "m" && ev[2] == Truncated
 				break
 			}
 		}

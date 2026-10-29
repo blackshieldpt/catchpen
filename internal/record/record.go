@@ -26,6 +26,9 @@ import (
 // MaxBytes caps one recording; later output is shown but not recorded.
 const MaxBytes = 256 << 20
 
+// Truncated is the marker event that ends a recording which reached MaxBytes.
+const Truncated = "recording stopped: size limit reached"
+
 // Header is the asciicast v2 header line.
 type Header struct {
 	Version   int               `json:"version"`
@@ -100,7 +103,10 @@ func (c *Cast) event(kind, data string) {
 	// The cap applies to the encoded size: escaping can make a line ~6x its input.
 	if c.n+int64(len(b))+1 > c.max {
 		c.full = true
-		c.line([]any{t, "m", "recording stopped: size limit reached"})
+		c.line([]any{t, "m", Truncated})
+		if c.err == nil { // on disk now, not at Close: the session may go on for hours
+			c.err = c.w.Flush()
+		}
 		return
 	}
 	c.write(b)
