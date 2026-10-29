@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"><title>catchpen</title><defs><clipPath id="s"><path d="M128 22 L214 54 V122 C214 178 178 214 128 234 C78 214 42 178 42 122 V54 Z"/></clipPath></defs>
+<path d="M128 22 L214 54 V122 C214 178 178 214 128 234 C78 214 42 178 42 122 V54 Z" fill="#0f172a"/>
+<g clip-path="url(#s)" fill="#f59e0b"><rect x="30" y="182" width="200" height="9" rx="4.5"/><rect x="30" y="206" width="200" height="9" rx="4.5"/><path d="M47 172 l9 -12 l9 12 v70 h-18 z"/><path d="M83 172 l9 -12 l9 12 v70 h-18 z"/><path d="M119 172 l9 -12 l9 12 v70 h-18 z"/><path d="M155 172 l9 -12 l9 12 v70 h-18 z"/><path d="M191 172 l9 -12 l9 12 v70 h-18 z"/></g>
+<path d="M128 22 L214 54 V122 C214 178 178 214 128 234 C78 214 42 178 42 122 V54 Z" fill="none" stroke="#f59e0b" stroke-width="9" stroke-linejoin="round"/>
+<polyline points="90,76 128,104 90,132" fill="none" stroke="#e2e8f0" stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="138" y="120" width="40" height="15" rx="7.5" fill="#e2e8f0"/></svg>

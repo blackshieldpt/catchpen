@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/catchpen-logo-dark.svg">
+    <img alt="catchpen" src="docs/assets/catchpen-logo.svg" width="420">
+  </picture>
+</p>
+
 # catchpen
 
 **KVM sandboxes for coding agents.**

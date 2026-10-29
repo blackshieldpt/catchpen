@@ -8,6 +8,8 @@ copyright: Licensed under AGPL-3.0
 
 theme:
   name: material
+  logo: assets/catchpen-icon.svg
+  favicon: assets/catchpen-icon.svg
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
