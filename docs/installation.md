@@ -24,10 +24,10 @@ macOS, Windows, libvirt and multi-host setups aren't supported.
 ## Install
 
 Each [release](https://github.com/blackshieldpt/catchpen/releases) has an amd64 `.deb` for
-Debian and Ubuntu, and a static linux/amd64 binary (also as a `.tar.gz` with the license
-and changelog). Each file is listed in `SHA256SUMS`, signed with cosign keyless by this
-repository's release workflow at that tag (a `.sigstore.json` bundle), and has a build
-provenance attestation. Checking them needs
+Debian and Ubuntu, and a static linux/amd64 binary (also as a `.tar.gz` with the license,
+README and changelog). Each file is listed in `SHA256SUMS`, signed with cosign keyless by
+this repository's release workflow at that tag (a `.sigstore.json` bundle), and has a
+build provenance attestation. Checking them needs
 [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) v3, and the `gh`
 CLI for the optional provenance check. Or [build from source](#building-from-source).
 

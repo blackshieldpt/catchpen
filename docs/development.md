@@ -36,6 +36,9 @@ Docker).
 | `internal/daemon/` | The daemon's jobs and systemd unit. |
 | `internal/hosttmux/`, `internal/hostherdr/` | Keeping host tmux windows and herdr workspaces in step with running VMs. |
 | `internal/notify/`, `internal/audit/`, `internal/record/` | Notifications, the audit log and recordings. |
+| `internal/config/`, `internal/paths/` | `config.yaml`, and where catchpen keeps its files. |
+| `internal/image/` | Downloading and verifying cloud images. |
+| `internal/fsutil/`, `internal/jsonl/`, `internal/safetar/` | Cross-process locks and atomic writes, size-rotated JSON-lines logs, unpacking a guest's tar stream. |
 
 ## CI and releases
 

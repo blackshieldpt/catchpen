@@ -104,6 +104,7 @@ and exports refuse everything, and its notifications and task results are withhe
 - Commits the guest pushed to a forge itself (with a deploy key or token). The host has
   them once it fetches them.
 - A careful attacker can tell the decoys from real credentials: the hosts don't
-  resolve, the GitHub token's checksum is wrong, and the seed's user-data lists them.
+  resolve, the GitHub token's checksum is wrong, and the seed's user-data lists them, as
+  do cloud-init's copies of it under `/var/lib/cloud/` in the guest.
 - If an agent prints the decoys, they end up in transcripts and recordings, where secret
   scanners may flag them.

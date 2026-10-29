@@ -337,7 +337,7 @@ func (r Registry) noForge(ref, host string) error {
 		}
 		have = "configured forges: " + strings.Join(hs, ", ")
 	}
-	add := "catchpen forge add <name> --type github|gitea --host " + host + " --mode deploy-key|token|agent|none"
+	add := "catchpen forge add <name> --type github|gitea --host " + host + " --mode deploy-key|minted-token|token|agent|none"
 	if strings.EqualFold(host, "github.com") {
 		add = "catchpen forge add github --type github --host github.com --mode deploy-key|token|agent|none"
 	}

@@ -14,8 +14,9 @@ the agent user has passwordless sudo inside it.
   inside it (`/workspace/<repo>`), and work leaves through the host (`pull`, `pr`,
   tasks), never by the VM pushing on its own unless you give it push credentials.
 - **QEMU sandbox.** QEMU runs under its seccomp sandbox
-  (`-sandbox on,obsolete=deny,resourcecontrol=deny`). IPv6 is disabled on the guest
-  network.
+  (`-sandbox on,obsolete=deny,resourcecontrol=deny`). QEMU's user network has IPv6 off,
+  so the guest has no IPv6 route out. catchpen doesn't turn IPv6 off inside the guest,
+  which keeps its link-local addresses.
 - **Base builds are isolated too.** The build VM gets out only through the proxy, which
   allows any public host but no private or loopback address, and the package caches. Its requests are logged to
   `bases/<base>.egress.log`, and once that passes 32 MiB, the older entries to
@@ -40,6 +41,9 @@ the agent user has passwordless sudo inside it.
   before it, and a block's `IdentityFile`, `CertificateFile`, `SendEnv` and `SetEnv` still
   apply, so the VM's sshd sees those public keys and variables. `catchpen setup-ssh` reports
   both; `Host * !catchpen-*` or `Match !host catchpen-*` keeps a block off catchpen's hosts.
+- catchpen's `ssh_config` settings are client-side. The guest's sshd allows TCP, agent and
+  Unix-socket forwarding (`catchpen forward` and `ssh.agent` rely on it), and the guest
+  has root, so nothing in the VM is relied on to refuse them.
 - `ssh.agent: restricted` gives the VM a per-VM `ssh-agent` holding only the keys you
   list, each destination-constrained so it signs only for that VM's `agent`-mode forges,
   and asking for confirmation on each use by default. `ssh.agent: host` forwards your
@@ -153,7 +157,8 @@ the agent user has passwordless sudo inside it.
 - Canaries don't see everything; [canaries.md](canaries.md#what-goes-unseen) lists the
   gaps.
 - Recordings, transcripts, task output and the audit log are kept after `destroy` and
-  never removed by `gc`. They can contain secrets an agent printed.
+  never removed by `gc`. They can contain secrets an agent printed. The audit log rotates
+  at 32 MiB, keeping one old file (`audit.jsonl.1`), so its oldest entries do go.
 
 ## Recommendations
 

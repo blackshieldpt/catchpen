@@ -6,6 +6,11 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ## [Unreleased]
 
+### Fixed
+
+- `catchpen forge add --help` lists the `agent` mode, and the hint for a repo whose host
+  has no forge lists `minted-token`.
+
 ## [0.1.2] - 2026-10-29
 
 ### Changed (breaking)

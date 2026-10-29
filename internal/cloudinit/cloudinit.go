@@ -303,7 +303,8 @@ func InstanceUserData(in Instance) ([]byte, error) {
 			dirs = append(dirs, d)
 		}
 	}
-	for _, d := range dirs { // cloud-init makes parent directories root's
+	// cloud-init before 23.1 (some custom images) made parent directories root's.
+	for _, d := range dirs {
 		run = append(run, []string{"chown", in.User + ":" + in.User, home + d})
 	}
 	doc := map[string]any{

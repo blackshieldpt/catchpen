@@ -43,7 +43,7 @@ func forgeCmd() *cobra.Command {
 	var tokenSecret, passwordSecret, scopes string
 	var yes bool
 	add := &cobra.Command{
-		Use:   "add <name> --type github|gitea --host H --mode deploy-key|minted-token|token|none",
+		Use:   "add <name> --type github|gitea --host H --mode deploy-key|minted-token|token|agent|none",
 		Short: "Add a forge, pinning its SSH host key",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -95,7 +95,7 @@ func forgeCmd() *cobra.Command {
 	fl.StringVar(&f.Host, "host", "", "forge host name, e.g. github.com")
 	fl.StringVar(&f.HTTPURL, "http-url", "", "web/API base URL (default https://<host>)")
 	fl.IntVar(&f.SSHPort, "ssh-port", 0, "SSH port (default 22)")
-	fl.StringVar(&f.Auth.Mode, "mode", "", "deploy-key | minted-token | token | none")
+	fl.StringVar(&f.Auth.Mode, "mode", "", "deploy-key | minted-token | token | agent | none")
 	fl.StringVar(&tokenSecret, "token-secret", "", "secret name holding the API token (deploy-key, token)")
 	fl.StringVar(&f.Auth.User, "user", "", "Gitea account to mint tokens for (minted-token)")
 	fl.StringVar(&passwordSecret, "password-secret", "", "secret name holding that account's password (minted-token)")

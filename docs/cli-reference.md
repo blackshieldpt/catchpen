@@ -179,7 +179,7 @@ created reaches it; it prints the env names it adds (`+`), changes (`~`) and dro
 | `--host` | Forge host name, e.g. `github.com` (required). |
 | `--http-url` | Web and API base URL (default `https://<host>`). |
 | `--ssh-port` | SSH port (default 22). |
-| `--mode` | `deploy-key`, `minted-token` (Gitea only), `token`, `agent` or `none` (required). `--help` doesn't list `agent`, but it's accepted. |
+| `--mode` | `deploy-key`, `minted-token` (Gitea only), `token`, `agent` or `none` (required). |
 | `--token-secret` | Secret holding the API token (`deploy-key`, `token`). |
 | `--user`, `--password-secret` | Gitea account and the secret holding its password (`minted-token`). |
 | `--scopes` | Minted token scopes (default `write:repository,read:user`). |
