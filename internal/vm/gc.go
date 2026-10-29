@@ -81,7 +81,7 @@ func (m *Manager) GC(dryRun bool) ([]GCItem, error) {
 			} else {
 				items = append(items, GCItem{Path: p, Bytes: sz, Why: "unused base"})
 				stem := strings.TrimSuffix(p, ".qcow2")
-				for _, sfx := range []string{".build.log", ".console.log", ".egress.log"} {
+				for _, sfx := range []string{".build.log", ".console.log", ".egress.log", ".egress.log.1"} {
 					if _, err := os.Lstat(stem + sfx); err == nil {
 						add(stem+sfx, "log of a removed base")
 					}
@@ -99,7 +99,7 @@ func (m *Manager) GC(dryRun bool) ([]GCItem, error) {
 			}
 			continue
 		}
-		for _, sfx := range []string{".building", ".seed.iso", ".egress", ".build.log", ".console.log", ".egress.log"} {
+		for _, sfx := range []string{".building", ".seed.iso", ".egress", ".build.log", ".console.log", ".egress.log", ".egress.log.1"} {
 			stem, ok := strings.CutSuffix(e.Name(), sfx)
 			if !ok {
 				continue

@@ -185,6 +185,8 @@ func (m *Manager) EnsureBase(ctx context.Context, r *Resolved, rebuild bool) (st
 	}
 	_ = os.Remove(logf)
 	_ = os.Remove(consolef)
+	_ = os.Remove(stem + ".egress.log")
+	_ = os.Remove(stem + ".egress.log.1")
 	// The build VM gets the same isolation as runtime VMs, but its proxy allows
 	// any public destination (package mirrors, installers). Private ranges stay blocked.
 	edir := stem + ".egress"
@@ -206,7 +208,12 @@ func (m *Manager) EnsureBase(ctx context.Context, r *Resolved, rebuild bool) (st
 		spec.CacheCmd, spec.CacheIP, spec.CachePort = m.cacheCmd(edir, "build-"+r.stem(), caches), cache.Addr, cache.Port
 	}
 	err = m.runForeground(ctx, spec, logf, consolef, buildTimeout)
+	// Keep the build's egress log, and the file its rotation moved aside, past
+	// edir. egress.log goes first: a helper qemu leaves behind can still append,
+	// and then only starts a new, small egress.log in edir instead of rotating
+	// the full one into egress.log.1.
 	_ = os.Rename(filepath.Join(edir, egress.LogFile), stem+".egress.log")
+	_ = os.Rename(filepath.Join(edir, egress.LogFile)+".1", stem+".egress.log.1")
 	if err != nil {
 		return "", fmt.Errorf("base build failed: %w (logs: %s, %s)", err, logf, consolef)
 	}
