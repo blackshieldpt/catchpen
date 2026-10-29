@@ -51,8 +51,12 @@ behind by a crash is easy to spot. Idle stop leaves them alone.
 
 Interactive `ssh`, `run` and `attach` sessions run the system ssh on a host pty and
 record its output (not your keystrokes) as asciicast v2 in
-`recordings/<vm>/<id>.cast`: mode 0600, capped at 256 MiB per session, kept after
-`destroy`. The guest can't alter them.
+`recordings/<vm>/<id>.cast`: mode 0600, kept after `destroy`. The guest can't alter
+them, but it can end one early: a recording stops at 256 MiB as stored, and output is
+stored JSON-escaped, where a control character, `<`, `>` or `&` takes 6 bytes (about
+43 MiB of invisible NUL bytes fill it). The session goes on unrecorded.
+`catchpen recordings` marks such a recording `(truncated)`, and `play` ends with a
+line saying whether the recording is complete; the guest can't fake either.
 
 ```
 catchpen recordings dev                         # list
@@ -60,7 +64,8 @@ catchpen recordings dev play <id> [--speed 2]   # replay, title and clipboard se
 ```
 
 `asciinema play` also reads them, but replays guest escape sequences (window title,
-clipboard writes) unfiltered. `record: false` in config.yaml turns recording off.
+clipboard writes) unfiltered and doesn't say when a recording was cut short.
+`record: false` in config.yaml turns recording off.
 
 ## Audit log
 

@@ -97,7 +97,9 @@ the agent user has passwordless sudo inside it.
   `catchpen console` and `catchpen recordings play` drop OSC, DCS and APC sequences
   (window title, clipboard). `asciinema play` does not filter them.
 - Session recordings are written on the host, from the host side of the pty, so the
-  guest can't alter them.
+  guest can't alter what they hold. It can end one early by filling its 256 MiB cap;
+  `catchpen recordings` marks such a recording `(truncated)` and `recordings play`
+  says so when the replay ends.
 - Live `ssh`, `run` and `attach` sessions pass guest output to your terminal unfiltered,
   as plain ssh does. Use a terminal you trust with untrusted output.
 

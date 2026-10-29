@@ -114,6 +114,11 @@ before 0.1.0 describe work on `master` before the first tagged release.
   output, line by line. Before, a title or clipboard sequence the agent never ended hid
   every later line of the output, with no sign, and carriage returns and cursor
   movement could overwrite earlier lines on screen. Colour codes now show as text.
+- A guest can end a session recording early by filling its 256 MiB cap (about 43 MiB of
+  invisible NUL bytes, stored 6 bytes each). `catchpen recordings` now marks such a
+  recording `(truncated)`, and `recordings play` ends with a line, outside the replayed
+  output, saying whether the recording is complete; before, the replay just ended. The
+  marker is written to disk when the cap is reached, not when the session ends.
 
 ## [0.1.1] - 2026-10-25
 
