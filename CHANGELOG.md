@@ -85,6 +85,10 @@ before 0.1.0 describe work on `master` before the first tagged release.
   any when the sync failed, left the VM with neither copy.
 - `task logs -f` and `task run -f` show the task's last line of output when it has no
   final newline.
+- `catchpen tmux` and `catchpen herdr` no longer open two windows or workspaces for a VM
+  named twice in one call. `catchpen herdr` checks its arguments before it starts a herdr
+  server, says when only headless task VMs are running, and prints a note for each VM that
+  keeps its default agent because it lacks the one `--agent` names.
 
 ### Security
 
@@ -119,6 +123,10 @@ before 0.1.0 describe work on `master` before the first tagged release.
   recording `(truncated)`, and `recordings play` ends with a line, outside the replayed
   output, saying whether the recording is complete; before, the replay just ended. The
   marker is written to disk when the cap is reached, not when the session ends.
+- Headless task VMs no longer get a window in the host tmux session. The window's
+  attached session forwarded the VM's SSH agent (with `ssh.agent: host` or `restricted`)
+  into the guest for the whole unattended run. `catchpen tmux --sync` closes any such
+  window left over.
 
 ## [0.1.1] - 2026-10-25
 

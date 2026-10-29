@@ -117,6 +117,7 @@ func (t Tmux) Ensure(vms []string) error {
 			if err := t.markWindow(id, vm); err != nil {
 				return err
 			}
+			have[vm] = true
 		}
 	}
 	return nil

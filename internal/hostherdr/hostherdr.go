@@ -158,6 +158,7 @@ func (h Herdr) Ensure(vms []string, agentOf func(vm string) string) error {
 		if err := h.add(vm, agentOf(vm), home); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", vm, err))
 		}
+		have[vm] = ""
 	}
 	return errors.Join(errs...)
 }

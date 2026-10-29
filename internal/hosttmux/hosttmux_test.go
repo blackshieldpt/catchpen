@@ -79,3 +79,25 @@ func TestSession(t *testing.T) {
 		t.Errorf("closing the last window should end the session: %v", err)
 	}
 }
+
+func TestEnsureDedupe(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+	bin := filepath.Join(t.TempDir(), "fake-catchpen")
+	os.WriteFile(bin, []byte("#!/bin/sh\nexec sleep 300\n"), 0o755)
+	tm := Tmux{Socket: fmt.Sprintf("catchpen-dup-%d", os.Getpid()), Bin: bin}
+	t.Cleanup(func() { _ = tm.cmd("kill-server").Run() })
+	t.Setenv("TMUX", "")
+	if err := tm.Ensure([]string{"a", "b", "b"}); err != nil { // a new session
+		t.Fatal(err)
+	}
+	if err := tm.Ensure([]string{"c", "c"}); err != nil { // an existing one
+		t.Fatal(err)
+	}
+	ws, _ := tm.Windows()
+	slices.Sort(ws)
+	if !slices.Equal(ws, []string{"a", "b", "c"}) {
+		t.Errorf("windows = %v, want [a b c]", ws)
+	}
+}

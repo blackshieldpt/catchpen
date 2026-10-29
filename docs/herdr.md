@@ -27,6 +27,8 @@ workspace instead of opening a second client.
 - The agent is Claude Code when the VM has it, else the VM's first agent in the order
   `claude`, `opencode`, `pi`, `omp`, `codex`; a VM with none gets a shell
   (`catchpen attach`). `--agent` picks another for new workspaces; existing ones are kept.
+  A VM without that agent keeps its default, and catchpen prints a note; naming such a VM
+  is an error.
 - catchpen registers that command with herdr as the pane's resume command, so after a
   herdr restart the pane runs it again and reattaches to the agent, which kept running
   in the VM's tmux.

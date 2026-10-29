@@ -192,11 +192,20 @@ func (m *Manager) start(ctx context.Context, name string, from *resume) (*Runtim
 		return rt, fmt.Errorf("%s is running, but pushing credentials failed: %w (retry: catchpen creds push %s)", name, err, name)
 	}
 	m.logf("%s is ready: catchpen ssh %s", name, name)
-	m.tmuxDo(func(t hosttmux.Tmux) error { return t.Add(name) })
-	if s.Task == "" { // a task's agent runs headless; a second one would only get in its way
-		m.herdrDo(func(h hostherdr.Herdr) error { return h.Add(name, s.DefaultAgent()) })
-	}
+	m.addToHostSessions(s)
 	return rt, nil
+}
+
+// addToHostSessions gives a started VM a window in the host tmux session and a
+// herdr workspace, where those exist. Never a task VM: its agent runs headless
+// and unattended, a second one would only get in its way, and an attached
+// session would forward the VM's SSH agent for the whole run.
+func (m *Manager) addToHostSessions(s *State) {
+	if s.Task != "" {
+		return
+	}
+	m.tmuxDo(func(t hosttmux.Tmux) error { return t.Add(s.Name) })
+	m.herdrDo(func(h hostherdr.Herdr) error { return h.Add(s.Name, s.DefaultAgent()) })
 }
 
 // Push delivers credentials, agent config, skills and plugins into a running VM,

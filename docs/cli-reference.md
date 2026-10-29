@@ -96,7 +96,8 @@ prefix is `C-a`.
 ### `catchpen tmux [<name>...|--all] | catchpen tmux --sync`
 
 Open a host tmux session `catchpen` with a window per VM, each running `catchpen attach`.
-With no names, or `--all`, every running VM gets one. `--sync` adds windows for running
+With no names, or `--all`, every running VM except task VMs gets one; naming a task
+VM is an error. `--sync` adds windows for running
 VMs and closes catchpen's windows for stopped ones, without attaching.
 
 ### `catchpen herdr [<name>...|--all] [--agent A] | catchpen herdr --sync`
@@ -105,7 +106,8 @@ Give each running VM a [herdr](herdr.md) workspace running an agent through
 `catchpen run`, then open herdr (or focus the workspace, inside herdr). Starts a herdr
 server if none is running. With no names, or `--all`, every running VM except task VMs
 gets one. `--agent` picks the agent for new workspaces (default: `claude` if installed,
-else the VM's first agent). `--sync` adds workspaces for running VMs and closes catchpen's
+else the VM's first agent); a VM without it keeps its default, with a note, and naming
+one is an error. `--sync` adds workspaces for running VMs and closes catchpen's
 workspaces for stopped ones, without opening herdr.
 
 ### `catchpen cp [-r] <src>... <dst>`

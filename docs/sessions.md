@@ -28,7 +28,9 @@ Remote-SSH, for example) work directly. Those connections aren't recorded; `catc
 `catchpen tmux [<vm>...]` opens a host tmux session `catchpen` with a window per running VM,
 each running `catchpen attach`. `start` and `stop` add and close windows while the session
 exists, and `catchpen tmux --sync` reconciles it. Windows you open there yourself are left
-alone.
+alone. Headless task VMs get no window: their agent runs unattended, and an attached
+session would forward the VM's SSH agent (`ssh.agent: host` or `restricted`) for the whole
+run.
 
 ## herdr
 

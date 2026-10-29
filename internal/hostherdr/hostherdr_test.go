@@ -147,3 +147,36 @@ func labels(t *testing.T, out []byte) []string {
 	}
 	return ls
 }
+
+func TestEnsureDedupe(t *testing.T) {
+	if !Installed() {
+		t.Skip("herdr not installed")
+	}
+	bin := filepath.Join(t.TempDir(), "fake-catchpen")
+	os.WriteFile(bin, []byte("#!/bin/sh\nexec sleep 300\n"), 0o755)
+	h := Herdr{Session: fmt.Sprintf("catchpen-dup-%d", os.Getpid()), Bin: bin} // not testHerdr's session
+	t.Cleanup(func() {
+		_ = h.cmd("session", "stop", h.Session).Run()
+		_ = h.cmd("session", "delete", h.Session).Run()
+	})
+	if err := h.StartServer(); err != nil {
+		t.Fatal(err)
+	}
+	of := func(string) string { return "" } // a shell: no wait for herdr to see an agent
+	if err := h.Ensure([]string{"d", "d"}, of); err != nil {
+		t.Fatal(err)
+	}
+	out, err := h.run("workspace", "list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, l := range labels(t, out) {
+		if l == labelPrefix+"d" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("%d workspaces for d, want 1", n)
+	}
+}

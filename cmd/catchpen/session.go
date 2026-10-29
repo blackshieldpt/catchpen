@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -221,27 +222,19 @@ func tmuxCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			running, err := runningVMs(m)
+			vms, err := loadRunning(m)
+			if err != nil {
+				return err
+			}
+			names, err := tmuxTargets(vms, args, all, sync)
 			if err != nil {
 				return err
 			}
 			if sync {
-				if len(args) > 0 || all {
-					return errors.New("--sync takes no VM names")
-				}
-				return m.Tmux.Sync(running)
-			}
-			names := args
-			if all || len(names) == 0 {
-				names = running
-			}
-			for _, n := range names {
-				if !contains(running, n) {
-					return fmt.Errorf("%s is not running (catchpen start %s)", n, n)
-				}
+				return m.Tmux.Sync(names)
 			}
 			if len(names) == 0 && !m.Tmux.Exists() {
-				return errors.New("no running VMs")
+				return noVMs(vms)
 			}
 			if len(names) > 0 {
 				if err := m.Tmux.Ensure(names); err != nil {
@@ -276,57 +269,23 @@ func herdrCmd() *cobra.Command {
 					return fmt.Errorf("unknown agent %q (%s)", agent, strings.Join(template.AgentNames(), ", "))
 				}
 			}
-			running, err := runningVMs(m)
+			vms, err := loadRunning(m)
 			if err != nil {
 				return err
 			}
-			// Task VMs run their agent headless; catchpen herdr leaves them out.
-			var interactive []string
-			agentOf := map[string]string{}
-			for _, n := range running {
-				s, err := m.Load(n)
-				if err != nil {
-					return err
-				}
-				if s.Task != "" {
-					continue
-				}
-				interactive = append(interactive, n)
-				agentOf[n] = s.DefaultAgent()
-				if agent != "" {
-					if s.Agents.Get(agent) == nil {
-						if contains(args, n) {
-							return fmt.Errorf("%s is not installed in %s (create a VM whose -t has it, e.g. -t %s)", agent, n, agent)
-						}
-					} else {
-						agentOf[n] = agent
-					}
-				}
+			names, agentOf, notes, err := herdrTargets(vms, args, all, sync, agent)
+			if err != nil {
+				return err
+			}
+			for _, n := range notes {
+				fmt.Fprintln(os.Stderr, "note: "+n)
 			}
 			of := func(vm string) string { return agentOf[vm] }
 			if err := m.Herdr.StartServer(); err != nil {
 				return err
 			}
 			if sync {
-				if len(args) > 0 || all || agent != "" {
-					return errors.New("--sync takes no VM names or --agent")
-				}
-				return m.Herdr.Sync(interactive, of)
-			}
-			names := args
-			if all || len(names) == 0 {
-				names = interactive
-			}
-			for _, n := range names {
-				if contains(running, n) && !contains(interactive, n) {
-					return fmt.Errorf("%s runs a headless task (catchpen task logs)", n)
-				}
-				if !contains(interactive, n) {
-					return fmt.Errorf("%s is not running (catchpen start %s)", n, n)
-				}
-			}
-			if len(names) == 0 {
-				return errors.New("no running VMs")
+				return m.Herdr.Sync(names, of)
 			}
 			if err := m.Herdr.Ensure(names, of); err != nil {
 				return err
@@ -342,6 +301,115 @@ func herdrCmd() *cobra.Command {
 	c.Flags().BoolVar(&sync, "sync", false, "add workspaces for running VMs and close catchpen workspaces of stopped ones, without attaching")
 	c.Flags().StringVar(&agent, "agent", "", "agent to run in new workspaces (default: claude if installed, else the VM's first agent)")
 	return c
+}
+
+// runningVM is what catchpen tmux and herdr need to know about a running VM.
+type runningVM struct {
+	Name    string
+	Task    bool     // runs a headless task: no window or workspace
+	Default string   // the agent its herdr workspace runs ("" for a shell)
+	Agents  []string // the agents installed in it
+}
+
+func loadRunning(m *vm.Manager) ([]runningVM, error) {
+	running, err := runningVMs(m)
+	if err != nil {
+		return nil, err
+	}
+	var vms []runningVM
+	for _, n := range running {
+		s, err := m.Load(n)
+		if err != nil {
+			return nil, err
+		}
+		v := runningVM{Name: n, Task: s.Task != "", Default: s.DefaultAgent()}
+		for _, a := range template.AgentNames() {
+			if s.Agents.Get(a) != nil {
+				v.Agents = append(v.Agents, a)
+			}
+		}
+		vms = append(vms, v)
+	}
+	return vms, nil
+}
+
+// pickVMs checks the VM names given to catchpen tmux or herdr. With none, or
+// all, it picks every running VM except task VMs: their agent runs headless
+// and unattended, and an attached session would forward the VM's SSH agent.
+func pickVMs(vms []runningVM, args []string, all bool) ([]string, error) {
+	byName := map[string]runningVM{}
+	var interactive []string
+	for _, v := range vms {
+		byName[v.Name] = v
+		if !v.Task {
+			interactive = append(interactive, v.Name)
+		}
+	}
+	if all || len(args) == 0 {
+		return interactive, nil
+	}
+	for _, n := range args {
+		v, ok := byName[n]
+		if !ok {
+			return nil, fmt.Errorf("%s is not running (catchpen start %s)", n, n)
+		}
+		if v.Task {
+			return nil, fmt.Errorf("%s runs a headless task (catchpen task logs)", n)
+		}
+	}
+	return args, nil
+}
+
+// noVMs is the error when pickVMs picked nothing.
+func noVMs(vms []runningVM) error {
+	if len(vms) > 0 {
+		return errors.New("only headless task VMs are running (catchpen task logs)")
+	}
+	return errors.New("no running VMs")
+}
+
+// tmuxTargets checks catchpen tmux's arguments and returns its VMs.
+func tmuxTargets(vms []runningVM, args []string, all, sync bool) ([]string, error) {
+	if sync && (len(args) > 0 || all) {
+		return nil, errors.New("--sync takes no VM names")
+	}
+	return pickVMs(vms, args, all || sync)
+}
+
+// herdrTargets checks catchpen herdr's arguments, before anything starts,
+// and returns its VMs, the agent for each, and a note for each VM that
+// keeps its default because it lacks --agent.
+func herdrTargets(vms []runningVM, args []string, all, sync bool, agent string) ([]string, map[string]string, []string, error) {
+	if sync && (len(args) > 0 || all || agent != "") {
+		return nil, nil, nil, errors.New("--sync takes no VM names or --agent")
+	}
+	names, err := pickVMs(vms, args, all || sync)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if len(names) == 0 && !sync {
+		return nil, nil, nil, noVMs(vms)
+	}
+	byName := map[string]runningVM{}
+	for _, v := range vms {
+		byName[v.Name] = v
+	}
+	agentOf := map[string]string{}
+	var notes []string
+	for _, n := range names {
+		v := byName[n]
+		agentOf[n] = v.Default
+		switch {
+		case agent == "":
+		case contains(v.Agents, agent):
+			agentOf[n] = agent
+		case contains(args, n):
+			return nil, nil, nil, fmt.Errorf("%s is not installed in %s (create a VM whose -t has it, e.g. -t %s)", agent, n, agent)
+		default:
+			notes = append(notes, fmt.Sprintf("%s has no %s; if it gets a new workspace, that runs %s", n, agent, cmp.Or(v.Default, "a shell")))
+		}
+	}
+	return names, agentOf, notes, nil
 }
 
 func runningVMs(m *vm.Manager) ([]string, error) {
