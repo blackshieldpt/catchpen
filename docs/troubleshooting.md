@@ -11,7 +11,7 @@ printed as `catchpen: <error>` and usually name the log or command that helps.
 | QEMU output | `~/.local/share/catchpen/vms/<name>/qemu.log` (one `--- <time> start` line per start) |
 | Boot log | `catchpen console <name>` (live; `Ctrl-]` detaches), or `vms/<name>/serial.sock.log` with `--debug` |
 | Network requests | `catchpen egress log <name> [-f]` (`vms/<name>/egress.log`) |
-| Base builds | `~/.local/share/catchpen/bases/<base>.build.log`, `.console.log`, `.egress.log` |
+| Base builds | `~/.local/share/catchpen/bases/<base>.build.log`, `.console.log`, `.egress.log`, `.egress.log.1` |
 | Port forwards | `vms/<name>/forward.log` |
 | Agent notifications | `vms/<name>/notify.log` |
 | Tasks | `catchpen task show <id>`, `catchpen task logs <id>`; `tasks/<id>/supervisor.log`, `stderr.log`, `output.jsonl` |
@@ -106,8 +106,9 @@ failed; see <build.log>`**:
 
 1. Read the end of `<base>.build.log`; it holds the build script's output.
 2. If the script never started, read `<base>.console.log` (kernel and cloud-init).
-3. Check `<base>.egress.log` for blocked downloads. The build VM can reach any public
-   host but no private address, so a package mirror on your LAN won't work.
+3. Check `<base>.egress.log` for blocked downloads, and `<base>.egress.log.1` for older
+   requests of a build that logged over 32 MiB. The build VM can reach any public host
+   but no private address, so a package mirror on your LAN won't work.
 4. Retry with `catchpen --debug template build -t <picks> --rebuild` to watch it live.
 
 **`timed out after 45m0s`**: the build took too long, usually a slow mirror or a script

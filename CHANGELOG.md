@@ -101,6 +101,9 @@ before 0.1.0 describe work on `master` before the first tagged release.
   `egress.log.1` or `audit.jsonl.1` first. Before, right after a rotation they showed only
   the newest entries. With `-f`, they no longer lose entries when the log rotates (once or
   twice) while they follow it.
+- A base build keeps the file its egress log's rotation moved aside, as
+  `bases/<base>.egress.log.1`, and `catchpen gc` removes it with the base's other logs.
+  Before, a build that logged over 32 MiB lost its older requests when it ended.
 
 ### Security
 

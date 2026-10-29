@@ -18,7 +18,8 @@ the agent user has passwordless sudo inside it.
   network.
 - **Base builds are isolated too.** The build VM gets out only through the proxy, which
   allows any public host but no private or loopback address, and the package caches. Its requests are logged to
-  `bases/<base>.egress.log`.
+  `bases/<base>.egress.log`, and once that passes 32 MiB, the older entries to
+  `bases/<base>.egress.log.1`.
 
 ## SSH
 
