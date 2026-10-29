@@ -261,7 +261,10 @@ without the mark is yours: catchpen leaves it, doesn't turn it on as a plugin, a
 When catchpen can't delete part of its old copy (files made with `sudo`, say), it leaves
 it in a `.catchpen-new.*` folder next to it and warns you to remove that with `sudo rm -rf`. A skill of the same name in
 your host `~/.claude/skills`, synced with `claude_config` (`-t claude-config`), is used
-instead of catchpen's.
+instead of catchpen's, if the sync brings it: one it leaves out (a link out of
+`~/.claude/skills`, say) doesn't replace catchpen's copy, and neither does any skill when
+the sync fails. A host copy an earlier sync already put in the VM stays, though: catchpen
+never replaces a folder without its mark.
 
 **Isolation.** Each agent gets its own skills. opencode is told not to read
 `~/.claude/skills` (`OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1`, set at each start) unless

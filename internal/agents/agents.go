@@ -97,7 +97,8 @@ type pusher struct {
 	res    Result
 	missed map[string]bool
 
-	claudeKey string // Claude's API key, in api-key mode
+	claudeKey string          // Claude's API key, in api-key mode
+	synced    map[string]bool // skills the claude config sync brings
 }
 
 // pushers configure each agent in the guest: its settings, MCP servers and,
@@ -218,6 +219,14 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 			}
 		}
 	}
+	// Packed first: catchpen's copy of a skill gives way only to one it holds.
+	var tarball []byte
+	var skipped []string
+	var tarErr error
+	if s.Sync.Claude() && s.ClaudeDir != "" {
+		tarball, skipped, tarErr = claudeConfigTar(s.ClaudeDir)
+		p.synced = tarSkills(tarball) // none if it failed
+	}
 	// Before the claude config sync, which brings the host's own skills.
 	p.agentFiles(s)
 	if s.Sync.Git() && (s.GitName != "" || s.GitEmail != "") {
@@ -233,9 +242,8 @@ func Push(ctx context.Context, r Remote, s Spec, sec Secrets) (Result, error) {
 		}
 	}
 	if s.Sync.Claude() && s.ClaudeDir != "" {
-		tarball, skipped, err := claudeConfigTar(s.ClaudeDir)
-		if err != nil {
-			return p.res, fmt.Errorf("claude config: %w", err)
+		if tarErr != nil {
+			return p.res, fmt.Errorf("claude config: %w", tarErr)
 		}
 		for _, k := range skipped {
 			p.warn("claude config: not synced: %s", k)

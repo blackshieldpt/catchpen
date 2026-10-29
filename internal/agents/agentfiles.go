@@ -4,8 +4,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
@@ -147,11 +145,9 @@ func (p *pusher) agentSkills(s Spec, agent string) {
 		if b.Agent != agent && b.Agent != "" {
 			continue
 		}
-		if agent == "claude" && s.Sync.Claude() && s.ClaudeDir != "" {
-			if _, err := os.Stat(filepath.Join(s.ClaudeDir, "skills", b.Name)); err == nil {
-				p.warn("skill %s: your synced ~/.claude/skills/%s is used instead", b.Name, b.Name)
-				continue
-			}
+		if agent == "claude" && p.synced[b.Name] {
+			p.warn("skill %s: your synced ~/.claude/skills/%s is used instead", b.Name, b.Name)
+			continue
 		}
 		keep = append(keep, b.Name)
 		if !b.Failed {

@@ -94,6 +94,24 @@ func claudeConfigTar(dir string) ([]byte, []string, error) {
 	return buf.Bytes(), dropped, nil
 }
 
+// tarSkills returns the skills a claudeConfigTar tarball brings whole enough
+// to use: a folder with its SKILL.md, or a plain file.
+func tarSkills(tarball []byte) map[string]bool {
+	names := map[string]bool{}
+	tr := tar.NewReader(bytes.NewReader(tarball))
+	for {
+		h, err := tr.Next()
+		if err != nil {
+			return names
+		}
+		if rest, ok := strings.CutPrefix(h.Name, "skills/"); ok {
+			if n, f, inDir := strings.Cut(rest, "/"); !inDir || f == "SKILL.md" {
+				names[n] = true
+			}
+		}
+	}
+}
+
 // sensitiveDirs (relative to the host home) are never copied, even via a symlink.
 var sensitiveDirs = []string{".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".password-store",
 	".config/gh", ".config/gcloud", ".config/catchpen", ".local/share/catchpen"}

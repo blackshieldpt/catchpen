@@ -79,6 +79,10 @@ before 0.1.0 describe work on `master` before the first tagged release.
   pool recycling) now cleans up its restricted ssh-agent, port forwards, tmux and herdr
   entries and runtime files. Before, the ssh-agent kept running until the next start, or
   for good after `destroy`.
+- With `claude_config` sync on, a host skill of the same name replaces catchpen's copy
+  only if the sync brings it, with its `SKILL.md`. Before, a host skill the sync left
+  out (one linking outside `~/.claude/skills`, say), or whose `SKILL.md` it left out, or
+  any when the sync failed, left the VM with neither copy.
 
 ### Security
 

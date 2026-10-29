@@ -311,6 +311,43 @@ func TestAgentFilesClaudePlugin(t *testing.T) {
 	if !warned(res, "your synced ~/.claude/skills/a is used instead") {
 		t.Errorf("warnings %v", res.Warnings)
 	}
+
+	// A host skill the sync leaves out (a link outside ~/.claude/skills) doesn't
+	// count: catchpen's copy stays.
+	elsewhere := t.TempDir()
+	write(t, filepath.Join(elsewhere, "SKILL.md"), "linked b")
+	if err := os.Symlink(elsewhere, filepath.Join(host, "skills/b")); err != nil {
+		t.Fatal(err)
+	}
+	home = t.TempDir()
+	s.Skills = []Bundle{{Name: "b", Files: skillFiles("catchpen's b")}}
+	res = pushFiles(t, home, s)
+	if got := readFile(t, filepath.Join(home, ".claude/skills/b/SKILL.md")); got != "catchpen's b" || warned(res, "skills/b is used instead") {
+		t.Errorf("b/SKILL.md = %q; warnings %v", got, res.Warnings)
+	}
+
+	// Nor one whose SKILL.md the sync leaves out, though it brings the rest.
+	write(t, filepath.Join(host, "skills/c/scripts/run.sh"), "host's script")
+	if err := os.Symlink(filepath.Join(elsewhere, "SKILL.md"), filepath.Join(host, "skills/c/SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	home = t.TempDir()
+	s.Skills = []Bundle{{Name: "c", Files: skillFiles("catchpen's c")}}
+	res = pushFiles(t, home, s)
+	if got := readFile(t, filepath.Join(home, ".claude/skills/c/SKILL.md")); got != "catchpen's c" {
+		t.Errorf("c/SKILL.md = %q; warnings %v", got, res.Warnings)
+	}
+
+	// Nor when the sync fails: catchpen's copy stays, and the push reports it.
+	write(t, filepath.Join(host, "settings.json"), "{")
+	home = t.TempDir()
+	s.Skills = []Bundle{{Name: "a", Files: skillFiles("catchpen's a")}}
+	if _, err := Push(context.Background(), localRemote{home}, s, fakeSecrets{}); err == nil || !strings.Contains(err.Error(), "claude config") {
+		t.Errorf("Push = %v; want claude config error", err)
+	}
+	if got := readFile(t, filepath.Join(home, ".claude/skills/a/SKILL.md")); got != "catchpen's a" {
+		t.Errorf("after a failed sync, a/SKILL.md = %q", got)
+	}
 }
 
 func readTOML(t *testing.T, path string) map[string]any {
