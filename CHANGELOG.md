@@ -83,15 +83,17 @@ before 0.1.0 describe work on `master` before the first tagged release.
   only if the sync brings it, with its `SKILL.md`. Before, a host skill the sync left
   out (one linking outside `~/.claude/skills`, say), or whose `SKILL.md` it left out, or
   any when the sync failed, left the VM with neither copy.
+- `task logs -f` and `task run -f` show the task's last line of output when it has no
+  final newline.
 
 ### Security
 
 - Stopping a skill or plugin fetch now kills the helpers git started, not just git. Each
   git process a fetch runs may use at most 1 GiB of memory: a server that never stops
   sending used to fill git's memory, which the 512 MiB disk check doesn't see.
-- The filter on guest output in `console`, `recordings play` and the task output
-  commands no longer lets OSC, DCS and APC sequences through after a doubled ESC, a stray
-  0xC2 byte, or a control character inside an escape sequence.
+- The filter on guest output in `console` and `recordings play` no longer lets OSC, DCS
+  and APC sequences through after a doubled ESC, a stray 0xC2 byte, or a control
+  character inside an escape sequence.
 - `pull`, `pr` and task exports check the guest's git objects (fsck) on every git version
   and whatever `fetch.fsckObjects` is set to. Before, git older than 2.48 (Ubuntu 24.04,
   Debian 12) took objects from the guest's bundle without checking them, as did any git
@@ -108,6 +110,10 @@ before 0.1.0 describe work on `master` before the first tagged release.
   guest commands do.
 - Reading a task's output holds a bounded amount in memory: the `cmd` agent's summary
   keeps only the last 64 KiB as it reads, and `task logs` skips lines over 16 MiB.
+- `task logs`, `task show` and `task run -f` drop control characters from the agent's
+  output, line by line. Before, a title or clipboard sequence the agent never ended hid
+  every later line of the output, with no sign, and carriage returns and cursor
+  movement could overwrite earlier lines on screen. Colour codes now show as text.
 
 ## [0.1.1] - 2026-10-25
 

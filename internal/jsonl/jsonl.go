@@ -57,8 +57,9 @@ const maxLine = 16 << 20
 var ErrWriterDone = errors.New("writer done")
 
 // Tail calls fn for each non-empty line; with follow it keeps reading new
-// lines (across rotations) until ctx is done. Lines over maxLine are skipped
-// without being held in memory.
+// lines (across rotations) until ctx is done, and passes on a last line
+// without a newline only if ctx's cause is ErrWriterDone. Lines over maxLine
+// are skipped without being held in memory.
 func Tail(ctx context.Context, path string, follow bool, fn func(line string) error) error {
 	const poll = 250 * time.Millisecond
 	f, err := openWhenExists(ctx, path, follow, poll)
@@ -112,6 +113,9 @@ func Tail(ctx context.Context, path string, follow bool, fn func(line string) er
 		}
 		select {
 		case <-ctx.Done():
+			if errors.Is(context.Cause(ctx), ErrWriterDone) {
+				return emit()
+			}
 			return nil
 		case <-time.After(poll):
 		}

@@ -70,9 +70,13 @@ Everything is on the host in `~/.local/share/catchpen/tasks/<id>/`:
 | `<id>.mbox` | The patches, with `--out patch`. |
 
 The agents' transcripts are copied to `transcripts/task-<id>/` when the task ends.
-`task logs` renders the output; `--raw` prints the event stream with OSC, DCS and APC
-sequences (window title, clipboard) dropped. `task run -f` and `task logs -f` follow it,
-and exit 1 if the task didn't end `done`. `task logs` skips any line of 16 MiB or more.
+`task logs` renders the output; `--raw` prints the event stream. Both drop control
+characters from the agent's text, one line at a time: the escape character and carriage
+returns go, so the text can't set the window title or clipboard, move the cursor, or hide
+the lines after it. The rest of an escape sequence, colour codes included, shows as plain
+text, and bytes that aren't UTF-8 show as `�`. `task show` does the same for the result.
+`task run -f` and `task logs -f` follow the output, and exit 1 if the task didn't end
+`done`. `task logs` skips any line of 16 MiB or more.
 
 ## Batch files
 

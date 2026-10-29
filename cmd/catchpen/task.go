@@ -14,6 +14,7 @@ import (
 
 	"github.com/blackshieldpt/catchpen/internal/jsonl"
 	"github.com/blackshieldpt/catchpen/internal/runner"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
 	"github.com/blackshieldpt/catchpen/internal/task"
 	"github.com/blackshieldpt/catchpen/internal/vm"
 )
@@ -189,18 +190,17 @@ func showTask(w io.Writer, st task.Store, t *task.Task) error {
 		fmt.Fprintf(w, "usage    %d turns, %d in / %d out tokens, $%.4f\n", t.Usage.Turns, t.Usage.InputTokens, t.Usage.OutputTokens, t.Usage.CostUSD)
 	}
 	// Error text can quote the agent (guest) output.
-	out := &termFilter{w: w}
 	if t.Output != "" {
-		fmt.Fprintf(out, "output   %s\n", t.Output)
+		fmt.Fprintf(w, "output   %s\n", sshx.Printable(t.Output))
 	}
 	if t.Error != "" {
-		fmt.Fprintf(out, "error    %s\n", t.Error)
+		fmt.Fprintf(w, "error    %s\n", sshx.Printable(t.Error))
 	}
 	fmt.Fprintf(w, "files    %s\n", st.Path(t.ID, ""))
 	if b, err := os.ReadFile(st.Path(t.ID, "result.md")); err == nil && len(b) > 0 {
 		fmt.Fprintln(w, "\n--- result")
 		// The result is the agent's text from the guest.
-		_, err := (&termFilter{w: w}).Write(append(b, '\n'))
+		_, err := fmt.Fprintln(w, sshx.Printable(string(b)))
 		return err
 	}
 	return nil
@@ -227,7 +227,7 @@ func taskLogsCmd() *cobra.Command {
 		},
 	}
 	c.Flags().BoolVarP(&follow, "follow", "f", false, "keep printing until the task ends")
-	c.Flags().BoolVar(&raw, "raw", false, "print the agent's event stream as is (terminal title, clipboard and other OSC, DCS and APC sequences dropped)")
+	c.Flags().BoolVar(&raw, "raw", false, "print the agent's event stream as is (control characters removed)")
 	return c
 }
 
@@ -236,7 +236,6 @@ func showTaskOutput(ctx context.Context, m *vm.Manager, id string, follow, raw b
 	if err != nil {
 		return err
 	}
-	out := &termFilter{w: w}
 	return jsonl.Tail(ctx, m.Tasks().Path(id, "output.jsonl"), follow, func(line string) error {
 		s := line
 		if !raw {
@@ -245,7 +244,9 @@ func showTaskOutput(ctx context.Context, m *vm.Manager, id string, follow, raw b
 		if s == "" {
 			return nil
 		}
-		_, err := io.WriteString(out, s+"\n")
+		// Guest text without control characters: nothing in one line can hide
+		// the lines after it, move the cursor or act on the terminal.
+		_, err := io.WriteString(w, sshx.Printable(s)+"\n")
 		return err
 	})
 }
@@ -273,15 +274,14 @@ func followTask(ctx context.Context, m *vm.Manager, id string, raw bool, stdout,
 	if lerr != nil {
 		return lerr
 	}
-	w := &termFilter{w: stderr}
-	fmt.Fprintf(w, "task %s %s", id, t.Status())
+	line := fmt.Sprintf("task %s %s", id, t.Status())
 	if t.Output != "" {
-		fmt.Fprintf(w, ": %s", t.Output)
+		line += ": " + t.Output
 	}
 	if t.Error != "" {
-		fmt.Fprintf(w, ": %s", t.Error)
+		line += ": " + t.Error
 	}
-	fmt.Fprintln(w)
+	fmt.Fprintln(stderr, sshx.Printable(line))
 	if err == nil && t.State != task.Done {
 		return exitError(1)
 	}
