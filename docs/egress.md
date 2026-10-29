@@ -91,8 +91,9 @@ Answered prompts go to the audit log; timeouts are only in the VM's egress log.
 `vms/<name>/egress.log` records every request the proxy allows or blocks by policy, plus
 `CACHE` entries for package cache fetches; requests refused before a policy check
 (malformed, a disallowed method, over the connection cap) aren't logged. It rotates at
-32 MiB, keeping one old file (`egress.log.1`). An allowed proxy connection whose log
-entry can't be written is refused; a package cache fetch goes ahead.
+32 MiB, keeping one old file (`egress.log.1`), which `catchpen egress log` shows first.
+An allowed proxy connection whose log entry can't be written is refused; a package cache
+fetch goes ahead.
 
 ## Limits
 

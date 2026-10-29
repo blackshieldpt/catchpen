@@ -97,6 +97,10 @@ before 0.1.0 describe work on `master` before the first tagged release.
   DELETE) is an error naming where it points. Before, catchpen sent the GET: adding a
   deploy key or opening a pull request failed on its answer, and removing a deploy key
   could count it as removed while it stayed.
+- `catchpen egress log` and `catchpen audit` show the entries the last rotation moved to
+  `egress.log.1` or `audit.jsonl.1` first. Before, right after a rotation they showed only
+  the newest entries. With `-f`, they no longer lose entries when the log rotates (once or
+  twice) while they follow it.
 
 ### Security
 

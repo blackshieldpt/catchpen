@@ -76,7 +76,8 @@ clipboard writes) unfiltered and doesn't say when a recording was cut short.
 catchpen audit [<vm>] [-f]
 ```
 
-`audit.jsonl` (rotated at 32 MiB) records:
+`audit.jsonl` (rotated at 32 MiB, keeping one old file, `audit.jsonl.1`, which
+`catchpen audit` shows first) records:
 
 - VM lifecycle;
 - credentials pushed (secret names only);
