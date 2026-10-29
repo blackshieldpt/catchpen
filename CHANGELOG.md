@@ -6,6 +6,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-29
+
 ### Changed (breaking)
 
 - curral is now catchpen: the binary, the `catchpen` command, the Go module

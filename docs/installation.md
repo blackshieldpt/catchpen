@@ -38,7 +38,7 @@ The `.deb` installs `/usr/bin/catchpen` and pulls in QEMU, `openssh-client` and 
 `--no-install-recommends`.
 
 ```
-v=0.1.1   # the release to install
+v=0.1.2   # the release to install
 f=catchpen_${v}_amd64.deb
 u=https://github.com/blackshieldpt/catchpen/releases/download/v$v
 curl -fL -O $u/$f -O $u/$f.sigstore.json -O $u/SHA256SUMS
@@ -70,7 +70,7 @@ sudo apt install libnotify-bin ssh-askpass tmux   # optional
 Then download the binary and check it the same way:
 
 ```
-v=0.1.1   # the release to install
+v=0.1.2   # the release to install
 f=catchpen_${v}_linux_amd64
 u=https://github.com/blackshieldpt/catchpen/releases/download/v$v
 curl -fL -O $u/$f -O $u/$f.sigstore.json -O $u/SHA256SUMS

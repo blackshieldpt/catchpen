@@ -40,7 +40,7 @@ KVM.
    catchpen in `/usr/bin` and pulls in QEMU, `openssh-client` and `git`:
 
    ```sh
-   v=0.1.1
+   v=0.1.2
    f=catchpen_${v}_amd64.deb
    curl -fLO https://github.com/blackshieldpt/catchpen/releases/download/v$v/$f
    curl -fLO https://github.com/blackshieldpt/catchpen/releases/download/v$v/SHA256SUMS
