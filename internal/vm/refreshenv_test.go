@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -200,7 +201,11 @@ func TestAgentBundlesFetch(t *testing.T) {
 	var log strings.Builder
 	m.Out = &log
 	bad := strings.Repeat("0", 40)
+	noGit := false
 	s := &State{
+		User:   "u",
+		Env:    map[string]string{"A": "1"},
+		Sync:   template.Sync{GitIdentity: &noGit},
 		Agents: template.Agents{Claude: &template.Agent{}, Pi: &template.Agent{}},
 		Skills: []template.Skill{
 			{Git: url, Ref: ref, Path: "skills/a"},
@@ -212,11 +217,19 @@ func TestAgentBundlesFetch(t *testing.T) {
 			{Agent: "pi", Name: "plan-mode", Bundled: "examples/extensions/plan-mode.ts"},
 		},
 	}
-	skills, plugins := m.agentBundles(context.Background(), s)
-	if len(skills) != 3 || skills[0].Name != "a" || skills[0].Failed || len(skills[0].Files) != 1 || !skills[1].Failed || !skills[2].Failed {
+	spec := m.pushSpec(context.Background(), s)
+	if !spec.AgentFiles || spec.Home != "/home/u" || !reflect.DeepEqual(spec.Agents, s.Agents) || !reflect.DeepEqual(spec.Env, s.Env) || !reflect.DeepEqual(spec.Sync, s.Sync) {
+		t.Errorf("spec: AgentFiles %v, Home %q, Agents %+v, Env %v, Sync %+v", spec.AgentFiles, spec.Home, spec.Agents, spec.Env, spec.Sync)
+	}
+	skills, plugins := spec.Skills, spec.Plugins
+	// The skill and the plugin share a repo and commit, not a folder.
+	if len(skills) != 3 || skills[0].Name != "a" || skills[0].Agent != "" || skills[0].Failed ||
+		len(skills[0].Files) != 1 || skills[0].Files[0].Name != "SKILL.md" ||
+		!skills[1].Failed || skills[1].Agent != "claude" || !skills[2].Failed || skills[2].Agent != "pi" {
 		t.Errorf("skills = %+v", skills)
 	}
 	if len(plugins) != 2 || plugins[0].Name != "p" || plugins[0].Agent != "claude" || len(plugins[0].Files) != 1 ||
+		plugins[0].Files[0].Name != ".claude-plugin/plugin.json" ||
 		plugins[1].Agent != "pi" || plugins[1].Bundled != "examples/extensions/plan-mode.ts" {
 		t.Errorf("plugins = %+v", plugins)
 	}

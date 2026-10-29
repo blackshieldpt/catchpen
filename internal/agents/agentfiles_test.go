@@ -2,10 +2,12 @@ package agents
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/blackshieldpt/catchpen/internal/fsutil"
 	"github.com/blackshieldpt/catchpen/internal/gitsrc"
+	"github.com/blackshieldpt/catchpen/internal/sshx"
 	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
@@ -499,10 +502,14 @@ func TestAgentFilesMarksEveryCopy(t *testing.T) {
 	s.Skills = []Bundle{
 		{Name: "a", Files: append(skillFiles("A"), gitsrc.File{Name: ".catchpen/x", Data: []byte("x")})},
 		{Name: "b", Files: skillFiles("B")},
+		{Name: "c", Files: append(skillFiles("C"), gitsrc.File{Name: ".catchpen", Data: []byte("c")})},
 	}
 	res := pushFiles(t, home, s)
 	if !warned(res, "skill a: it holds a .catchpen, which is catchpen's; skipped") || exists(filepath.Join(home, ".claude/skills/a")) {
 		t.Errorf("a: %v", res.Warnings)
+	}
+	if !warned(res, "skill c: it holds a .catchpen, which is catchpen's; skipped") || exists(filepath.Join(home, ".claude/skills/c")) {
+		t.Errorf("c: %v", res.Warnings)
 	}
 	if got := readFile(t, filepath.Join(home, ".claude/skills/b", catchpenMark)); got != "b" {
 		t.Errorf("b's mark = %q", got)
@@ -694,5 +701,44 @@ func TestAgentFilesPushesTakeTurns(t *testing.T) {
 	res = pushFiles(t, home, s)
 	if time.Since(start) < time.Second || exists(filepath.Join(home, skillDirs["codex"], "a")) {
 		t.Errorf("the cleanup didn't wait for the other push: %v, warnings %v", time.Since(start), res.Warnings)
+	}
+}
+
+// replyRemote answers every command with the same output: what a hostile
+// guest could print instead of running catchpen's script.
+type replyRemote string
+
+func (r replyRemote) Run(context.Context, string, []byte) (sshx.GuestOutput, error) {
+	return sshx.Guest([]byte(r)), nil
+}
+
+// The guest's output is believed only where it names a folder catchpen sent,
+// or could have marked, once each; a flood of failures is cut short.
+func TestAgentFilesDistrustGuestOutput(t *testing.T) {
+	evil := "\x1b]0;owned\x07"
+	p := &pusher{ctx: context.Background(), r: replyRemote("yours a\nyours a\nfailed a\nfailed a\nyours " + evil + "\nfailed b\n")}
+	if err := p.copyIn(".claude/skills", []entry{{name: "a", files: skillFiles("A")}}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"a: ~/.claude/skills/a is yours (no catchpen mark); not replaced", "a: copying it into ~/.claude/skills failed"}
+	if !slices.Equal(p.res.Warnings, want) {
+		t.Errorf("copyIn warnings = %q, want %q", p.res.Warnings, want)
+	}
+	out := "ours a\nours b\nours a\nfailed " + evil + "\n"
+	for i := range 12 {
+		out += fmt.Sprintf("failed f%d\n", i)
+	}
+	p = &pusher{ctx: context.Background(), r: replyRemote(out)}
+	ours, err := p.cleanup(".claude/skills", []string{"a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(ours, []string{"a"}) {
+		t.Errorf("ours = %q, want [a]", ours)
+	}
+	if len(p.res.Warnings) != 11 || strings.Contains(strings.Join(p.res.Warnings, "\n"), evil) ||
+		p.res.Warnings[0] != "f0: removing catchpen's ~/.claude/skills/f0 failed" ||
+		p.res.Warnings[10] != "removing more of catchpen's folders in ~/.claude/skills failed" {
+		t.Errorf("cleanup warnings = %q", p.res.Warnings)
 	}
 }

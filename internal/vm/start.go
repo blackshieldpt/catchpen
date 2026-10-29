@@ -287,20 +287,8 @@ func (r sshRemote) Run(ctx context.Context, cmd string, stdin []byte) (sshx.Gues
 }
 
 func (m *Manager) push(ctx context.Context, g *Guest, s *State) error {
-	spec := agents.Spec{Agents: s.Agents, Env: s.Env, MCP: s.MCP, Sync: s.Sync}
-	if s.Sync.Claude() {
-		spec.ClaudeDir = hostClaudeDir()
-	}
-	if s.Sync.Git() {
-		spec.GitName, spec.GitEmail = hostGit("user.name"), hostGit("user.email")
-	}
+	spec := m.pushSpec(ctx, s)
 	cloneCtx := ctx // clones can take longer than the config push
-	// A cold fetch can be slow; it must not eat the config push's time.
-	fctx, fcancel := context.WithTimeout(cloneCtx, 5*time.Minute)
-	spec.Skills, spec.Plugins = m.agentBundles(fctx, s)
-	fcancel()
-	spec.Home = "/home/" + s.User
-	spec.AgentFiles = true
 	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
 	gcreds, err := m.forgeCreds(ctx, s)
@@ -321,6 +309,24 @@ func (m *Manager) push(ctx context.Context, g *Guest, s *State) error {
 		return err
 	}
 	return m.pushForges(cloneCtx, sshRemote{g.Client}, s, gcreds)
+}
+
+// pushSpec is what push sends for s, its skills and plugins fetched on the host.
+func (m *Manager) pushSpec(ctx context.Context, s *State) agents.Spec {
+	spec := agents.Spec{Agents: s.Agents, Env: s.Env, MCP: s.MCP, Sync: s.Sync}
+	if s.Sync.Claude() {
+		spec.ClaudeDir = hostClaudeDir()
+	}
+	if s.Sync.Git() {
+		spec.GitName, spec.GitEmail = hostGit("user.name"), hostGit("user.email")
+	}
+	// A cold fetch can be slow; it must not eat the config push's time.
+	fctx, fcancel := context.WithTimeout(ctx, 5*time.Minute)
+	spec.Skills, spec.Plugins = m.agentBundles(fctx, s)
+	fcancel()
+	spec.Home = "/home/" + s.User
+	spec.AgentFiles = true
+	return spec
 }
 
 // fetchProtocols are the git protocols skills and plugins may use; nil is

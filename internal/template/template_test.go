@@ -667,7 +667,8 @@ func TestSkillsMergeAndFilter(t *testing.T) {
 		"sk-b: { skills: ["+pinned("agent: codex, path: skills/y")+"] }\n"+
 		"sk-any: { skills: ["+pinned("path: skills/z")+"] }\n"+
 		"sk-clash: { skills: ["+pinned("path: skills/w")+", { agent: codex, git: "+pinGit+", ref: 1123456789abcdef0123456789abcdef01234567, path: other/w }] }\n"+
-		"pl-cx: { plugins: ["+pinned("agent: codex, path: plugins/p")+"] }\n")
+		"pl-cx: { plugins: ["+pinned("agent: codex, path: plugins/p")+"] }\n"+
+		"pl-cx2: { plugins: ["+pinned("agent: codex, path: plugins/p")+"] }\n")
 	for spec, want := range map[string][]string{
 		"sk-a,sk-b":               {"x", "y"},
 		"sk-a,sk-a2":              {"x"},
@@ -688,6 +689,9 @@ func TestSkillsMergeAndFilter(t *testing.T) {
 	if tp, err := load(t, dir, "minimal,codex,pl-cx"); err != nil || len(tp.Plugins) != 1 {
 		t.Errorf("codex plugin with codex: %v %+v", err, tp)
 	}
+	if tp, err := load(t, dir, "minimal,codex,pl-cx,pl-cx2"); err != nil || len(tp.Plugins) != 1 {
+		t.Errorf("the same plugin twice: %v %+v", err, tp)
+	}
 }
 
 func TestSkillsValidation(t *testing.T) {
@@ -700,6 +704,7 @@ func TestSkillsValidation(t *testing.T) {
 		{entry("https:///skills", pinRef, "path: skills/x"), "", `git must be an https URL, got "https:///skills"`},
 		{entry("https://u:p@github.com/example/skills", pinRef, "path: skills/x"), "", "git must not hold a user or password"},
 		{entry(`"`+pinGit+`?a=b"`, pinRef, "path: skills/x"), "", "git must have no query or fragment"},
+		{entry(`"`+pinGit+`#x"`, pinRef, "path: skills/x"), "", "git must have no query or fragment"},
 		{entry(pinGit, "abc123", "path: skills/x"), "", `ref must be a full 40-character commit id, got "abc123"`},
 		{entry(pinGit, "0123456789ABCDEF0123456789abcdef01234567", "path: skills/x"), "", `got "0123456789ABCDEF`},
 		{entry(pinGit, pinRef, "path: ../x"), "", `path must not contain "..", got "../x"`},
@@ -764,6 +769,9 @@ func TestSkillDirName(t *testing.T) {
 	}
 	if got := (Plugin{Agent: "pi", Bundled: "examples/extensions/plan-mode.ts"}).DirName(); got != "plan-mode" {
 		t.Errorf("bundled plugin: %q", got)
+	}
+	if got := (Plugin{Agent: "pi", Bundled: "examples/extensions/x.js"}).DirName(); got != "x" {
+		t.Errorf("bundled .js plugin: %q", got)
 	}
 }
 

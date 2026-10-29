@@ -417,7 +417,15 @@ func TestFilesIgnoreUserGitConfig(t *testing.T) {
 	t.Setenv("GIT_CONFIG_KEY_0", "url.file:///nonexistent/.insteadOf")
 	t.Setenv("GIT_CONFIG_VALUE_0", "file://")
 	t.Setenv("GIT_DIR", "/nonexistent")
-	fs := mustFiles(t, fetcher(t), url, sha, "skills/a")
+	f := fetcher(t)
+	// git's HOME is the cache: a config there is ignored too.
+	if err := os.MkdirAll(f.Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.Dir, ".gitconfig"), []byte("[url \"file:///nonexistent/\"]\n\tinsteadOf = file://\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fs := mustFiles(t, f, url, sha, "skills/a")
 	if len(fs) != 1 || string(fs[0].Data) != "a" {
 		t.Errorf("files = %+v", fs)
 	}
