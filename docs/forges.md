@@ -19,14 +19,19 @@ catchpen forge ls
 `forge add` pins the forge's SSH host key: GitHub's from `api.github.com/meta`, others
 scanned and confirmed by you (`-y` trusts the scan without asking). Forges are stored in
 `~/.config/catchpen/forges.yaml`. GitHub Enterprise and Gitea on another URL take
-`--http-url`.
+`--http-url`. An `http://` URL sends the forge's token or password to its API
+unencrypted, and in `token` and `minted-token` modes the VM's token when it clones;
+`forge add`, `forge test` and creating a VM warn about it. API calls refuse a redirect to
+another host, from https to http, or one that would turn a request into a GET (a 301,
+302 or 303 on a POST or DELETE, as some forges answer for a renamed repo): the error
+names where it points, so you can fix `--http-url` or the repo name.
 
 ## Modes
 
 | `--mode` | The VM gets | The host-side token is used for |
 |---|---|---|
 | `deploy-key` | a per-VM, per-repo SSH key (`--ro`: read-only) | adding and removing the key |
-| `minted-token` (Gitea) | a per-VM token, minted with the account's password | minting and deleting it |
+| `minted-token` (Gitea) | a per-VM token, minted with the account's password; it reaches every repo the account can, so use an account that can reach only those | minting and deleting it |
 | `token` | your token (`--token-secret`), for HTTPS and `gh`/`tea` | — |
 | `agent` | nothing; SSH signs with your key through a restricted agent | — |
 | `none` | nothing; anonymous clone; work leaves through `pull`/`pr` | opening PRs |
@@ -34,8 +39,19 @@ scanned and confirmed by you (`-y` trusts the scan without asking). Forges are s
 In every mode, `catchpen pr` opens pull requests with the forge's token, or the account's
 password for `minted-token` without one.
 
-Deploy keys and minted tokens are removed when the VM is destroyed. Tokens and passwords
-are always `secret:` references; see [configuration.md](configuration.md#secrets).
+Deploy keys and minted tokens are removed when the VM is destroyed. If the forge answers
+that a key is gone while the token can no longer see the repo or is no longer its admin,
+catchpen warns instead, and you remove the key in the repo's settings. A key or token the
+forge creates without reporting it fully (no id or no secret) is looked up and removed,
+and the VM isn't created; if it can't be removed, the error names it and the audit log
+records it. Tokens and passwords are always `secret:` references; see
+[configuration.md](configuration.md#secrets).
+
+In the VM, each deploy-key repo and each agent-mode forge gets an SSH name, and one VM
+can't take two with the same name. A repo's is `catchpen-` then its forge, owner and name
+joined by `-`, lower-cased, with each run of other characters than letters, digits and
+`-` turned into one `-` and none left at either end: `o/b.c` and `o/b_c` match, as do
+`o/b-c` and `o-b/c`. An agent-mode forge's is `catchpen-forge-<forge name>`.
 
 In the VM, git SSH goes through the egress proxy (`~/.ssh/catchpen_config`, with pinned
 `known_hosts`), HTTPS tokens sit in `~/.config/catchpen/git-credentials`, `gh` gets

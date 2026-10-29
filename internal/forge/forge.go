@@ -73,6 +73,16 @@ func (f Forge) Port() int {
 	return 22
 }
 
+// CleartextCredentials reports whether a credential would cross the network
+// over plain http: the host's API token or password (http:// API URL), or the
+// VM's token in token and minted-token modes (http:// web URL, used to clone).
+func (f Forge) CleartextCredentials() bool {
+	plain := func(u string) bool { return strings.HasPrefix(strings.ToLower(u), "http://") }
+	host := (f.Auth.Token != "" || f.Auth.Password != "") && plain(f.APIURL())
+	guest := (f.Auth.Mode == ModeToken || f.Auth.Mode == ModeMintedToken) && plain(f.WebURL())
+	return host || guest
+}
+
 // APIURL is the REST API base.
 func (f Forge) APIURL() string {
 	if f.Type == GitHub {

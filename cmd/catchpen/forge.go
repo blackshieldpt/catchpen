@@ -85,6 +85,7 @@ func forgeCmd() *cobra.Command {
 			}); err != nil {
 				return err
 			}
+			warnCleartext(f)
 			fmt.Printf("added forge %s (%s); check credentials with: catchpen forge test %s\n", f.Name, f.WebURL(), f.Name)
 			return nil
 		},
@@ -180,7 +181,15 @@ func pinHostKeys(ctx context.Context, f forge.Forge, yes bool) ([]string, error)
 	return out, nil
 }
 
+// warnCleartext says when an http:// http_url sends a forge's credentials unencrypted.
+func warnCleartext(f forge.Forge) {
+	if f.CleartextCredentials() {
+		fmt.Fprintf(os.Stderr, "warning: forge %s uses an http:// URL, so its token or password crosses the network unencrypted; use https\n", f.Name)
+	}
+}
+
 func testForge(ctx context.Context, m *vm.Manager, f forge.Forge) error {
+	warnCleartext(f)
 	sec := &creds.Resolver{Sources: m.Cfg.Secrets, File: m.P.SecretsFile()}
 	get := func(ref string) (string, error) {
 		name := strings.TrimPrefix(ref, "secret:")

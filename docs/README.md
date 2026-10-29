@@ -19,7 +19,8 @@ everything inside it as untrusted:
   proxy on the host, plus package caches. Requests are logged, and a request to a host
   that isn't allowed is refused, or held until you allow or deny it.
 - **Credentials are scoped.** An agent gets its own token, and each VM gets its own
-  deploy key or token per repository, pushed at start and never baked into an image.
+  deploy key per repository or a token (its own where the forge can mint one), pushed at
+  start and never baked into an image.
 - **Work comes out through you.** Commits leave the VM as git bundles that the host
   checks before fetching them or opening a pull request, so the VM needs no push access.
 - **Misuse is noticed.** Decoy credentials planted in the VM pause it the moment

@@ -222,8 +222,10 @@ func (f *fakeAPI) handler(t *testing.T) http.Handler {
 			w.Write([]byte(`{"id":41}`))
 		case key == "DELETE /api/v1/repos/o/r/keys/41":
 			w.WriteHeader(204)
-		case key == "DELETE /api/v1/repos/o/r/keys/404":
+		case key == "DELETE /api/v1/repos/o/gone/keys/404":
 			w.WriteHeader(404)
+		case key == "GET /api/v1/repos/o/gone":
+			w.Write([]byte(`{"permissions":{"admin":true}}`))
 		case key == "POST /api/v1/users/bot/tokens":
 			w.WriteHeader(201)
 			w.Write([]byte(`{"id":7,"name":"n","sha1":"minted"}`))
@@ -275,7 +277,7 @@ func TestClient(t *testing.T) {
 	if err := c.DeleteDeployKey(ctx, repo, 41); err != nil {
 		t.Error(err)
 	}
-	if err := c.DeleteDeployKey(ctx, repo, 404); err != nil {
+	if err := c.DeleteDeployKey(ctx, Repo{Owner: "o", Name: "gone"}, 404); err != nil {
 		t.Errorf("deleting a missing key: %v", err)
 	}
 	id, tok, err := c.MintToken(ctx, "catchpen-vm", []string{"write:repository"})

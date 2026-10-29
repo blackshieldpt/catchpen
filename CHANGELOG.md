@@ -89,6 +89,14 @@ before 0.1.0 describe work on `master` before the first tagged release.
   named twice in one call. `catchpen herdr` checks its arguments before it starts a herdr
   server, says when only headless task VMs are running, and prints a note for each VM that
   keeps its default agent because it lacks the one `--agent` names.
+- One VM no longer takes two repos whose SSH names match in the VM: deploy-key repos
+  such as `o/b.c` and `o/b_c`, or `o/b-c` and `o-b/c`, or one named like an agent-mode
+  forge's `catchpen-forge-<name>`. Before, both got a deploy key and the second repo's key
+  file replaced the first's.
+- A forge redirect that would turn a request into a GET (a 301, 302 or 303 on a POST or
+  DELETE) is an error naming where it points. Before, catchpen sent the GET: adding a
+  deploy key or opening a pull request failed on its answer, and removing a deploy key
+  could count it as removed while it stayed.
 
 ### Security
 
@@ -134,6 +142,13 @@ before 0.1.0 describe work on `master` before the first tagged release.
   `catchpen setup-ssh` reports settings of yours that still reach a VM's sshd (identity
   files, certificates, `SendEnv`, `SetEnv`) or that override catchpen's. A VM whose state
   has an unusable name or user no longer breaks `ssh` for every host.
+- The forge API client refuses a redirect from https to http, which sent the forge's token
+  or password unencrypted. A 404 when removing a deploy key counts as removed only while
+  the token is still the repo's admin. A deploy key or Gitea token the forge created
+  without reporting it fully (no id, no secret, or an unreadable answer) is looked up and
+  removed, and the VM isn't created; one that can't be removed is named in the error and
+  the audit log. `forge add`, `forge test` and creating a VM warn when an `http://` URL
+  sends credentials unencrypted.
 
 ## [0.1.1] - 2026-10-25
 

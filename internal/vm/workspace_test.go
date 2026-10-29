@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -24,6 +25,8 @@ type fakeGitea struct {
 	mu    sync.Mutex
 	calls []string
 	fail  string // path prefix that returns 403
+	keys  string // the answer to adding a deploy key, if not {"id":5}
+	mint  string // the answer to minting a token, if not {"id":9,...}
 }
 
 func (f *fakeGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -35,8 +38,12 @@ func (f *fakeGitea) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/keys") && f.keys != "":
+		w.Write([]byte(f.keys))
 	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/keys"):
 		w.Write([]byte(`{"id":5}`))
+	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/tokens") && f.mint != "":
+		w.Write([]byte(f.mint))
 	case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/tokens"):
 		w.Write([]byte(`{"id":9,"sha1":"minted-token"}`))
 	case r.Method == "DELETE":
@@ -148,11 +155,53 @@ func TestCreateRollbackReleasesForges(t *testing.T) {
 	}
 }
 
+// A key or token the forge created without its id, and that catchpen couldn't
+// find to remove, is in the audit log; an http:// forge is warned about.
+func TestCreateAuditsCredentialsLeftBehind(t *testing.T) {
+	api := &fakeGitea{keys: `{}`, mint: `{}`}
+	m := forgeTestManager(t, api)
+	var out bytes.Buffer
+	m.Out = &out
+	_, err := m.Create(context.Background(), "a", CreateOpts{Template: "minimal", Repos: []string{"gd:o/app"}})
+	if err == nil || !strings.Contains(err.Error(), "may remain") {
+		t.Fatalf("err = %v", err)
+	}
+	if b, _ := os.ReadFile(m.P.Audit()); !strings.Contains(string(b), `"forge.deploy_key.add"`) || !strings.Contains(string(b), `"repo":"gd:o/app"`) {
+		t.Errorf("no audit record of the key: %s", b)
+	}
+	if !strings.Contains(out.String(), "warning: forge gd uses an http:// URL") {
+		t.Errorf("no cleartext warning: %s", out.String())
+	}
+	if _, err := m.Create(context.Background(), "b", CreateOpts{Template: "minimal", Repos: []string{"gm:o/lib"}}); err == nil || !strings.Contains(err.Error(), "may remain") {
+		t.Fatalf("mint: err = %v", err)
+	}
+	if b, _ := os.ReadFile(m.P.Audit()); !strings.Contains(string(b), `"forge.token.mint"`) || !strings.Contains(string(b), `"user":"bot"`) {
+		t.Errorf("no audit record of the token: %s", b)
+	}
+}
+
 func TestPlanReposErrors(t *testing.T) {
 	api := &fakeGitea{}
 	m := forgeTestManager(t, api)
 	if _, err := m.Create(context.Background(), "a", CreateOpts{Template: "minimal", Repos: []string{"gd:o/app", "gm:other/app"}}); err == nil || !strings.Contains(err.Error(), "/workspace/app") {
 		t.Errorf("clashing dirs: %v", err)
+	}
+	// Both map to the alias catchpen-gd-o-b-c, so one key file would replace the other.
+	if _, err := m.Create(context.Background(), "b", CreateOpts{Template: "minimal", Repos: []string{"gd:o/b-c", "gd:o-b/c"}}); err == nil || !strings.Contains(err.Error(), "catchpen-gd-o-b-c") {
+		t.Errorf("clashing deploy-key aliases: %v", err)
+	}
+	// A deploy-key repo of forge "forge" and an agent-mode forge "o-r" both name catchpen-forge-o-r.
+	if err := forge.Update(m.P.Forges(), func(r *forge.Registry) error {
+		dk, ag := r.Forges[0], r.Forges[0]
+		dk.Name = "forge"
+		ag.Name, ag.Auth = "o-r", forge.Auth{Mode: forge.ModeAgent}
+		r.Forges = append(r.Forges, dk, ag)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Create(context.Background(), "c", CreateOpts{Template: "minimal", Repos: []string{"forge:o/r", "o-r:x/y"}}); err == nil || !strings.Contains(err.Error(), "catchpen-forge-o-r") {
+		t.Errorf("deploy-key alias clashing with an agent-mode forge: %v", err)
 	}
 	if _, err := m.Create(context.Background(), "a", CreateOpts{Template: "minimal", Repos: []string{"https://nowhere.test/o/r"}}); err == nil || !strings.Contains(err.Error(), "catchpen forge add") {
 		t.Errorf("unknown forge: %v", err)

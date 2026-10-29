@@ -79,6 +79,7 @@ func (m *Manager) planRepos(refs []string, readOnly bool) ([]RepoState, map[stri
 	var repos []RepoState
 	used := map[string]forge.Forge{}
 	dirs := map[string]string{}
+	aliases := map[string]string{}
 	for _, ref := range refs {
 		f, repo, err := reg.Resolve(ref)
 		if err != nil {
@@ -95,8 +96,24 @@ func (m *Manager) planRepos(refs []string, readOnly bool) ([]RepoState, map[stri
 		}
 		dirs[repo.Name] = repo.String()
 		rs := RepoState{Repo: repo, ReadOnly: readOnly}
-		if f.Auth.Mode == forge.ModeDeployKey {
+		// The guest's SSH host blocks (and a deploy key's file) are named by
+		// alias: two owners of one alias would clash.
+		var alias, owner string
+		switch f.Auth.Mode {
+		case forge.ModeDeployKey:
 			rs.Alias = forge.Alias(repo)
+			alias, owner = rs.Alias, repo.String()
+		case forge.ModeAgent:
+			alias, owner = f.AgentAlias(), "forge "+f.Name
+		}
+		if alias != "" {
+			if prev, ok := aliases[alias]; ok && prev != owner {
+				return nil, nil, fmt.Errorf("%s and %s would share the SSH name %s in the VM; clone one of them in another VM", prev, owner, alias)
+			}
+			aliases[alias] = owner
+		}
+		if _, seen := used[f.Name]; !seen && f.CleartextCredentials() {
+			m.logf("warning: forge %s uses an http:// URL, so its token or password crosses the network unencrypted; use https", f.Name)
 		}
 		repos = append(repos, rs)
 		used[f.Name] = f
@@ -135,6 +152,9 @@ func (m *Manager) provisionForges(ctx context.Context, s *State) error {
 			rnd := make([]byte, 4)
 			_, _ = rand.Read(rnd)
 			id, tok, err := c.MintToken(ctx, "catchpen-"+s.Name+"-"+hex.EncodeToString(rnd), f.Auth.Scopes)
+			if errors.Is(err, forge.ErrMayRemain) {
+				m.audit(audit.TokenMint, s.Name, map[string]any{"forge": name, "id": 0, "user": f.Auth.User, "error": err.Error()})
+			}
 			if err != nil {
 				return fmt.Errorf("forge %s: mint token: %w", name, err)
 			}
@@ -177,14 +197,17 @@ func (m *Manager) provisionForges(ctx context.Context, s *State) error {
 			return err
 		}
 		id, err := (&forge.Client{HTTP: m.HTTP, F: f, Token: tok}).AddDeployKey(ctx, r.Repo, "catchpen "+s.Name, strings.TrimSpace(string(pub)), r.ReadOnly)
-		if err != nil {
-			return fmt.Errorf("%s: add deploy key: %w", r.Repo, err)
-		}
-		r.DeployKeyID = id
 		mode := "read-write"
 		if r.ReadOnly {
 			mode = "read-only"
 		}
+		if errors.Is(err, forge.ErrMayRemain) {
+			m.audit(audit.DeployKeyAdd, s.Name, map[string]any{"repo": r.Repo.String(), "id": 0, "mode": mode, "error": err.Error()})
+		}
+		if err != nil {
+			return fmt.Errorf("%s: add deploy key: %w", r.Repo, err)
+		}
+		r.DeployKeyID = id
 		m.logf("added a %s deploy key to %s", mode, r.Repo)
 		m.audit(audit.DeployKeyAdd, s.Name, map[string]any{"repo": r.Repo.String(), "id": id, "mode": mode})
 	}

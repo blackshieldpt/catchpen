@@ -81,8 +81,9 @@ the agent user has passwordless sudo inside it.
   boundary inside the VM, where anything running as the agent user can read all of
   them. Don't give a VM a credential you wouldn't give to everything that runs in it.
 - Forge credentials are scoped per VM where the forge allows it: per-VM, per-repo deploy
-  keys (read-only with `--ro`) or per-VM minted Gitea tokens, removed when the VM is
-  destroyed. Task VMs get read-only deploy keys unless you pass `--rw`.
+  keys (read-only with `--ro`) or per-VM minted Gitea tokens (which reach every repo the
+  account can), removed when the VM is destroyed. Task VMs get read-only deploy keys
+  unless you pass `--rw`.
 - The notification relay holds the sink credentials on the host; the guest never sees
   them.
 
