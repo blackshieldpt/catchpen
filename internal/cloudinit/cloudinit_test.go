@@ -116,8 +116,9 @@ func TestInstanceUserData(t *testing.T) {
 	if keys["ed25519_private"] != "PRIV" || keys["ed25519_public"] != "ssh-ed25519 BBBB h" {
 		t.Errorf("ssh_keys = %v", m["ssh_keys"])
 	}
-	if g, ok := m["ssh_genkeytypes"].([]any); !ok || len(g) != 0 {
-		t.Errorf("ssh_genkeytypes = %v, want [] (host keys come from the seed only)", m["ssh_genkeytypes"])
+	// cloud-init ignores this while ssh_keys is set, but its schema rejects [].
+	if g, ok := m["ssh_genkeytypes"].([]any); !ok || len(g) != 1 || g[0] != "ed25519" {
+		t.Errorf("ssh_genkeytypes = %v, want [ed25519]", m["ssh_genkeytypes"])
 	}
 	users, _ := m["users"].([]any)
 	u, _ := users[0].(map[string]any)

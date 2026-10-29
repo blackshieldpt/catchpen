@@ -67,6 +67,10 @@ func TestLifecycle(t *testing.T) {
 	if got := run("sudo sshd -T | grep -E '^passwordauthentication'"); got != "passwordauthentication no" {
 		t.Errorf("sshd: %q", got)
 	}
+	// A user-data the cloud-init schema rejects leaves every boot "degraded done".
+	if got := run("cloud-init status --long | sed -n 's/^extended_status: //p'"); got != "done" {
+		t.Errorf("cloud-init extended_status %q, want done", got)
+	}
 	if got := run("sudo passwd -S agent | cut -d' ' -f2"); got != "L" {
 		t.Errorf("password not locked: %q", got)
 	}
