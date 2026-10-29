@@ -84,6 +84,11 @@ before 0.1.0 describe work on `master` before the first tagged release.
 - The filter on guest output in `console`, `recordings play` and the task output
   commands no longer lets OSC, DCS and APC sequences through after a doubled ESC, a stray
   0xC2 byte, or a control character inside an escape sequence.
+- `pull`, `pr` and task exports check the guest's git objects (fsck) on every git version
+  and whatever `fetch.fsckObjects` is set to. Before, git older than 2.48 (Ubuntu 24.04,
+  Debian 12) took objects from the guest's bundle without checking them, as did any git
+  with `fetch.fsckObjects=false` configured. If you pulled from a VM in that setup, run
+  `git fsck` in the repository: objects already present are not checked again.
 
 ## [0.1.1] - 2026-10-25
 

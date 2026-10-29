@@ -81,9 +81,10 @@ the agent user has passwordless sudo inside it.
 
 ## Data coming from the guest
 
-- Bundles from `pull`, `pr` and tasks are fetched into `refs/catchpen/...` with hooks off,
-  fsmonitor off and `transfer.fsckObjects` on. Nothing from the guest runs on the host,
-  and the host working tree is untouched.
+- Bundles from `pull`, `pr` and tasks are fetched into `refs/catchpen/...` with hooks off
+  and fsmonitor off, and every object the host repository receives is checked
+  (`fetch.fsckObjects`, under the repository's own fsck settings), on any git version.
+  Nothing from the guest runs on the host, and the host working tree is untouched.
 - Exported commits, branch names, PR titles and bodies, task results and agent
   notifications are scanned for canaries. Patches are made on the host from the scanned
   commits, not taken from the guest. See [canaries.md](canaries.md).
