@@ -196,10 +196,46 @@ func (m *Manager) FetchBranch(ctx context.Context, c *ssh.Client, name, git, bra
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if _, err := HostGit(ctx, into, "bundle", "verify", "-q", tmp.Name()); err != nil {
-		return fmt.Errorf("bundle from %s failed verification: %w", name, err)
+	if err := importBundle(ctx, into, tmp.Name(), branch, ref); err != nil {
+		return fmt.Errorf("bundle from %s: %w", name, err)
 	}
-	_, err = HostGit(ctx, into, "fetch", "--no-tags", "--no-write-fetch-head", tmp.Name(), "+refs/heads/"+branch+":"+ref)
+	return nil
+}
+
+// importBundle fetches branch from the bundle file into ref of the host
+// repository into, checking the guest's objects (fsck) on every git
+// version: git before 2.48 doesn't check objects read from a bundle, so the
+// bundle is unpacked unchecked into a scratch repository that borrows into's
+// objects, and into fetches from there with fetch.fsckObjects, under its own
+// fsck settings, receiving only the objects it lacks.
+func importBundle(ctx context.Context, into, bundle, branch, ref string) error {
+	if _, err := HostGit(ctx, into, "bundle", "verify", "-q", bundle); err != nil {
+		return fmt.Errorf("failed verification: %w", err)
+	}
+	out, err := HostGit(ctx, into, "rev-parse", "--show-object-format", "--path-format=absolute", "--git-path", "objects")
+	if err != nil {
+		return err
+	}
+	format, objects, ok := strings.Cut(strings.TrimSpace(string(out.Raw())), "\n")
+	if !ok || strings.ContainsAny(objects, "\n\r") || !filepath.IsAbs(objects) {
+		return fmt.Errorf("unsupported repository path %q", into)
+	}
+	scratch, err := os.MkdirTemp("", "catchpen-import-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(scratch)
+	if _, err := HostGit(ctx, scratch, "init", "-q", "--bare", "--template=", "--object-format="+format); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(scratch, "objects", "info", "alternates"), []byte(objects+"\n"), 0o600); err != nil {
+		return err
+	}
+	// Unchecked here: into's fetch below is the one check, with into's settings.
+	if _, err := HostGit(ctx, scratch, "-c", "fetch.fsckObjects=false", "fetch", "--no-tags", "--no-write-fetch-head", bundle, "+refs/heads/"+branch+":refs/heads/in"); err != nil {
+		return err
+	}
+	_, err = HostGit(ctx, into, "-c", "fetch.fsckObjects=true", "fetch", "--no-tags", "--no-write-fetch-head", scratch, "+refs/heads/in:"+ref)
 	return err
 }
 
