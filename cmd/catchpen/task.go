@@ -224,7 +224,7 @@ func taskLogsCmd() *cobra.Command {
 		},
 	}
 	c.Flags().BoolVarP(&follow, "follow", "f", false, "keep printing until the task ends")
-	c.Flags().BoolVar(&raw, "raw", false, "print the agent's event stream as is (control characters filtered)")
+	c.Flags().BoolVar(&raw, "raw", false, "print the agent's event stream as is (terminal title, clipboard and other OSC, DCS and APC sequences dropped)")
 	return c
 }
 

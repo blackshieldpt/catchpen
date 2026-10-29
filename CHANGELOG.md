@@ -81,6 +81,9 @@ before 0.1.0 describe work on `master` before the first tagged release.
 - Stopping a skill or plugin fetch now kills the helpers git started, not just git. Each
   git process a fetch runs may use at most 1 GiB of memory: a server that never stops
   sending used to fill git's memory, which the 512 MiB disk check doesn't see.
+- The filter on guest output in `console`, `recordings play` and the task output
+  commands no longer lets OSC, DCS and APC sequences through after a doubled ESC, a stray
+  0xC2 byte, or a control character inside an escape sequence.
 
 ## [0.1.1] - 2026-10-25
 

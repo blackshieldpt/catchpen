@@ -92,8 +92,9 @@ the agent user has passwordless sudo inside it.
 - Notification text from the guest is stripped of control characters, cut to 300
   characters and rate-limited (a burst of 5 per VM, then one every 30 s).
 - Guest output shown on the host is filtered: first-boot errors drop control
-  characters, and `catchpen console` and `catchpen recordings play` drop OSC, DCS and APC
-  sequences (window title, clipboard). `asciinema play` does not filter them.
+  characters, and `catchpen console`, `catchpen recordings play` and the task output
+  commands (`task logs`, `task show`, `task run -f`) drop OSC, DCS and APC sequences
+  (window title, clipboard). `asciinema play` does not filter them.
 - Session recordings are written on the host, from the host side of the pty, so the
   guest can't alter them.
 - Live `ssh`, `run` and `attach` sessions pass guest output to your terminal unfiltered,
