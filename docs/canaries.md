@@ -91,7 +91,10 @@ and exports refuse everything, and its notifications and task results are withhe
 ## What goes unseen
 
 - Values sent encoded in other ways (base64 in a body, say), or over HTTPS to an
-  allowed host.
+  allowed host. Only the URL is percent-decoded and only `Basic` credentials are
+  base64-decoded, so a value percent- or base64-encoded in another header or a `Bearer`
+  token goes unseen. Exports are matched on the committed bytes, not decoded further, so
+  a value the guest encoded (base64, say) in a file goes unseen too.
 - Clients that don't use the proxy (database drivers for the `DATABASE_URL`, Node's
   `fetch`). Their connections just fail.
 - Network use in VMs with `egress: open` or `egress: none`. Their exports,

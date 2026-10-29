@@ -130,6 +130,8 @@ the agent user has passwordless sudo inside it.
 
 - Allowlist entries match the requested name, not the resolved address, and CDN hosts on
   the allowlist (such as `*.githubusercontent.com`) can be used for domain fronting.
+- An allowed upload service (the `github`, `ghcr`, `docker-hub` or `npm` preset) lets a
+  guest that holds a token or key for it, its own included, push data out.
 - A package cache is about as open as allowlisting its preset. proxy.golang.org and
   sum.golang.org fetch any module path they're asked for, as with the `go` preset.
 - The cache store is shared by all VMs, so a VM can tell from timing whether a package

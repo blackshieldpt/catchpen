@@ -19,7 +19,10 @@ import (
 // later one):
 //  1. the pool fill lock, then the pool lock (vms/.pool.lock);
 //  2. a VM's lock (vms/<name>/.lock), held while its disk, state or QEMU
-//     process change.
+//     process change;
+//  3. a skill or plugin repo's cache lock (internal/gitsrc), a leaf taken
+//     before the push: nothing else is taken while it is held (a pool fill
+//     holds 1 around it).
 //
 // A VM's lock isn't re-entrant: flock makes a second taker in the same
 // process wait, forever if it's the holder. Code holding it has a heldVM and

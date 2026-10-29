@@ -99,6 +99,11 @@ entry can't be written is refused; a package cache fetch goes ahead.
 - Entries match the requested name, not the resolved address.
 - CDN hosts on the allowlist (such as `*.githubusercontent.com`) can be used for domain
   fronting.
+- A preset for a service that takes uploads (`github`, `ghcr`, `docker-hub`, `npm`) is
+  also a way out: a guest holding a token or key for it, yours or its own, can push data
+  there (to GitHub over HTTPS or SSH).
+- Skills and plugins are fetched by the host and copied in over SSH, whatever the VM's
+  mode, `none` included (pi's `bundled` plugins are files already in the VM).
 - The proxy caps request headers at 64 KiB and concurrent connections at 128 per VM (for
   the proxy and the caches each), closes connections idle for 10 minutes, and accepts
   only standard HTTP methods.

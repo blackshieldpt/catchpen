@@ -78,7 +78,7 @@ canary_action: pause            # pause, stop or log
 | `record` | `true` | `false` turns session recording off. |
 | `notify` | no sinks | See [notifications.md](notifications.md). |
 | `tasks.max_vms` | `2` | All running catchpen VMs count against it. |
-| `tasks.max_memory` | no limit | A size such as `24G`. |
+| `tasks.max_memory` | no limit | A size such as `24G`. When no VM is running or starting for a task, a task starts anyway, even one that needs more. |
 | `idle_stop` | off | A template can override it (`idle.yaml`). See [deployment.md](deployment.md#idle-stop). |
 | `rebuild` | off | Needs the daemon. |
 | `pool` | none | `template` is a `-t` spec (default: every category's default), `size` is 0 to 32. Each template may appear once. A pool VM serves only the same spec, written the same way. |

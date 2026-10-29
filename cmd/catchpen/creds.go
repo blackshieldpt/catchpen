@@ -15,7 +15,7 @@ func credsCmd() *cobra.Command {
 	var all bool
 	push := &cobra.Command{
 		Use:   "push <name>... | --all",
-		Short: "Push credentials, env and agent config into running VMs (also done at every start)",
+		Short: "Push credentials, agent config, and env, skills and plugins refreshed from the template, into running VMs",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if all == (len(args) > 0) {
 				return fmt.Errorf("give VM names or --all")

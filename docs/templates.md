@@ -62,7 +62,7 @@ section changes what those give for every VM that picked it.
 | `distros.yaml` | `distro` | `ubuntu-24.04` | `ubuntu-24.04`, `ubuntu-26.04`, `debian-13` |
 | `resources.yaml` | `resources` | `medium` | `small` (2 CPUs, 4G, 20G), `medium` (4, 8G, 40G), `large` (8, 16G, 80G), `xlarge` (16, 32G, 160G) |
 | `tools.yaml` | `packages`, `tools`, `scripts`, `files` | `core`, `build`, `gh` | `core` (git, curl, jq, tmux, ripgrep, ...), `build` (build-essential, make, python3, ...), `gh`, `tea` |
-| `agents.yaml` | `agents`, the `runtimes` they need, and their `skills` and `plugins` | `claude`, `opencode`, `pi`, `codex` | `claude` (with Anthropic's `skill-creator`, `mcp-builder` and `frontend-design` skills), `claude-vanilla` (no skills), `claude-api-key`, `claude-yolo`, `opencode`, `pi`, `omp`, `codex`, `codex-api-key`, `codex-chatgpt` |
+| `agents.yaml` | `agents`, the `runtimes` they need, and their `skills` and `plugins` | `claude`, `opencode`, `pi`, `codex` | `claude` (with Anthropic's `skill-creator`, `mcp-builder` and `frontend-design` skills), `claude-vanilla` (no skills; pick it with `-t -claude,claude-vanilla`), `claude-api-key`, `claude-yolo`, `opencode`, `pi`, `omp`, `codex`, `codex-api-key`, `codex-chatgpt` |
 | `runtimes.yaml` | `runtimes`, `docker` | `docker`, `uv` | `docker`, `uv`, `node-22`, `node-24`, `go-1.26`, `go-1.27`, `python-3.12`, `python-3.13`, `python-3.14` |
 | `network.yaml` | `network` | `allowlist` and the presets below | `allowlist`, `open`, `offline`, `prompt`; `anthropic`, `github`, `npm`, `pypi`, `go`, `apt-ubuntu`, `apt-debian`, `docker-apt`, `docker-hub`, `ghcr` (one per preset) |
 | `caches.yaml` | `cache` | all five | `apt-cache`, `go-cache`, `npm-cache`, `pypi-cache`, `docker-cache` |
@@ -155,7 +155,7 @@ default: [claude, omp]             # no opencode, pi or codex by default
 | Setting | Values |
 |---|---|
 | `distro` | `ubuntu-24.04`, `ubuntu-26.04`, `debian-13`, or a name from `images:` in config.yaml. |
-| `resources` | `cpus` (0 to 256), `memory`, `disk`: sizes like `512M`, `8G`, `1T`. `--cpus`, `--mem` and `--disk` on `catchpen up` override them. |
+| `resources` | `cpus` (1 to 256), `memory`, `disk`: sizes like `512M`, `8G`, `1T`. `--cpus`, `--mem` and `--disk` on `catchpen up` override them. |
 | `packages` | apt package names, optionally `name=version`. |
 | `docker` | `true` installs Docker and configures it for the proxy and caches. |
 | `runtimes` | `node: "24"` (a major version, quoted), `go: "1.27"` or `"1.27.1"`, `python: uv` or a version like `"3.14"` (installed with uv, as `python3.14` and `python`). |
@@ -165,10 +165,10 @@ default: [claude, omp]             # no opencode, pi or codex by default
 | `ports` | `"guest"` or `"host:guest"`, bound to `127.0.0.1`. Host port 0 or omitted picks a free port at start. |
 | `network` | `egress` (`allowlist`, `open`, `none`), `presets`, `allow`, `on_deny` (`log`, `prompt`), `prompt_timeout` (default `30s`), `allow_private`. See [egress.md](egress.md). |
 | `agents` | `claude`, `opencode`, `pi`, `omp`, `codex`. See [agents.md](agents.md). |
-| `env` | Environment for every ssh session: literal values or `secret:NAME`. Names are upper case; `HOME`, `USER`, `PATH`, `SHELL` and `LOGNAME` are refused, and so is `ANTHROPIC_API_KEY` with Claude whose `auth` isn't `api-key`. |
+| `env` | Environment for every ssh session: literal values or `secret:NAME`. Names are upper case letters, digits and `_`, not starting with a digit, at most 64 characters; `HOME`, `USER`, `PATH`, `SHELL` and `LOGNAME` are refused, and so is `ANTHROPIC_API_KEY` with Claude whose `auth` isn't `api-key`. |
 | `mcp` | MCP servers for all agents. See [agents.md](agents.md#mcp-servers). |
-| `skills` | `{agent, git, ref, path, name}`: a folder with a `SKILL.md` from an `https` git repo at a full 40-character commit `ref`; `path` is the folder (`.` for the repo's root), `name` its name in the guest (default: the last element of `path`, or the repo's name for `.`). Without `agent`, every agent the VM has gets it. See [agents.md](agents.md#skills-and-plugins). |
-| `plugins` | `{agent, git, ref, path, name}` as for `skills`, but `agent` is required; for pi also `{agent: pi, bundled, name}`, a path in pi's installed package. See [agents.md](agents.md#skills-and-plugins). |
+| `skills` | `{agent, git, ref, path, name}`: a folder with a `SKILL.md` from an `https` git repo at a full 40-character commit `ref`; `path` is the folder (`.` for the repo's root), `name` its name in the guest (default: the last element of `path`, or the repo's name for `.`): lower case letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 64 characters, not starting with `catchpen`; two skills, or two plugins, of one agent can't share a name. Without `agent`, every agent the VM has gets it. See [agents.md](agents.md#skills-and-plugins). |
+| `plugins` | `{agent, git, ref, path, name}` as for `skills`, but `agent` is required; for pi also `{agent: pi, bundled, name}`, a path in pi's installed package, named by default after its file without `.ts` or `.js`. See [agents.md](agents.md#skills-and-plugins). |
 | `sync` | `git_identity` (default `true`), `claude_config` (default `false`), `claude_ai` (default `false`), `opencode_claude_skills` (default `false`). |
 | `ssh` | `agent` (`off`, `restricted`, `host`), `agent_keys`, `confirm` (default `true`). See [forges.md](forges.md#ssh-agent). |
 | `repos` | Repos cloned into `/workspace/<repo>` at start. See [forges.md](forges.md). |
