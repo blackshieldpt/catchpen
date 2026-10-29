@@ -50,6 +50,12 @@ func Append(path string, v any, max int64) error {
 // counting its line ending, is skipped.
 const maxLine = 16 << 20
 
+// ErrWriterDone, as the cause of Tail's context (context.WithCancelCause),
+// says the file's writer has finished: Tail then passes on a last line that
+// has no newline. Any other end of ctx leaves such a line out, since a writer
+// may still be in the middle of it.
+var ErrWriterDone = errors.New("writer done")
+
 // Tail calls fn for each non-empty line; with follow it keeps reading new
 // lines (across rotations) until ctx is done. Lines over maxLine are skipped
 // without being held in memory.

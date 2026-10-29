@@ -82,7 +82,7 @@ Tasks wait for the budget in config.yaml tasks: (max_vms, max_memory).
 				fmt.Printf("%s queued (%s, %s)\n", t.ID, sp.Agent, orDash(sp.Repo))
 			}
 			if follow && len(ids) == 1 {
-				return followTask(cmd.Context(), m, ids[0], false)
+				return followTask(cmd.Context(), m, ids[0], false, os.Stdout, os.Stderr)
 			}
 			fmt.Fprintf(os.Stderr, "follow with: catchpen task logs -f %s\n", ids[0])
 			return nil
@@ -172,35 +172,38 @@ func taskShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			st := m.Tasks()
-			fmt.Printf("task     %s (%s)\nagent    %s\nrepo     %s\nVM       %s\n", t.ID, t.Status(), t.Spec.Agent, orDash(t.Spec.Repo), t.VM)
-			if t.Branch != "" {
-				fmt.Printf("branch   %s (%d commits)\n", t.Branch, t.Commits)
-			}
-			if t.Exit != nil {
-				fmt.Printf("exit     %d\n", *t.Exit)
-			}
-			if t.Usage != (task.Usage{}) {
-				fmt.Printf("usage    %d turns, %d in / %d out tokens, $%.4f\n", t.Usage.Turns, t.Usage.InputTokens, t.Usage.OutputTokens, t.Usage.CostUSD)
-			}
-			// Error text can quote the agent (guest) output.
-			out := &termFilter{w: os.Stdout}
-			if t.Output != "" {
-				fmt.Fprintf(out, "output   %s\n", t.Output)
-			}
-			if t.Error != "" {
-				fmt.Fprintf(out, "error    %s\n", t.Error)
-			}
-			fmt.Printf("files    %s\n", st.Path(t.ID, ""))
-			if b, err := os.ReadFile(st.Path(t.ID, "result.md")); err == nil && len(b) > 0 {
-				fmt.Println("\n--- result")
-				// The result is the agent's text from the guest.
-				_, err := (&termFilter{w: os.Stdout}).Write(append(b, '\n'))
-				return err
-			}
-			return nil
+			return showTask(os.Stdout, m.Tasks(), t)
 		},
 	}
+}
+
+func showTask(w io.Writer, st task.Store, t *task.Task) error {
+	fmt.Fprintf(w, "task     %s (%s)\nagent    %s\nrepo     %s\nVM       %s\n", t.ID, t.Status(), t.Spec.Agent, orDash(t.Spec.Repo), t.VM)
+	if t.Branch != "" {
+		fmt.Fprintf(w, "branch   %s (%d commits)\n", t.Branch, t.Commits)
+	}
+	if t.Exit != nil {
+		fmt.Fprintf(w, "exit     %d\n", *t.Exit)
+	}
+	if t.Usage != (task.Usage{}) {
+		fmt.Fprintf(w, "usage    %d turns, %d in / %d out tokens, $%.4f\n", t.Usage.Turns, t.Usage.InputTokens, t.Usage.OutputTokens, t.Usage.CostUSD)
+	}
+	// Error text can quote the agent (guest) output.
+	out := &termFilter{w: w}
+	if t.Output != "" {
+		fmt.Fprintf(out, "output   %s\n", t.Output)
+	}
+	if t.Error != "" {
+		fmt.Fprintf(out, "error    %s\n", t.Error)
+	}
+	fmt.Fprintf(w, "files    %s\n", st.Path(t.ID, ""))
+	if b, err := os.ReadFile(st.Path(t.ID, "result.md")); err == nil && len(b) > 0 {
+		fmt.Fprintln(w, "\n--- result")
+		// The result is the agent's text from the guest.
+		_, err := (&termFilter{w: w}).Write(append(b, '\n'))
+		return err
+	}
+	return nil
 }
 
 func taskLogsCmd() *cobra.Command {
@@ -218,9 +221,9 @@ func taskLogsCmd() *cobra.Command {
 				return err
 			}
 			if !follow {
-				return showTaskOutput(cmd.Context(), m, args[0], false, raw)
+				return showTaskOutput(cmd.Context(), m, args[0], false, raw, os.Stdout)
 			}
-			return followTask(cmd.Context(), m, args[0], raw)
+			return followTask(cmd.Context(), m, args[0], raw, os.Stdout, os.Stderr)
 		},
 	}
 	c.Flags().BoolVarP(&follow, "follow", "f", false, "keep printing until the task ends")
@@ -228,12 +231,12 @@ func taskLogsCmd() *cobra.Command {
 	return c
 }
 
-func showTaskOutput(ctx context.Context, m *vm.Manager, id string, follow, raw bool) error {
+func showTaskOutput(ctx context.Context, m *vm.Manager, id string, follow, raw bool, w io.Writer) error {
 	t, err := m.Tasks().Load(id)
 	if err != nil {
 		return err
 	}
-	out := &termFilter{w: os.Stdout}
+	out := &termFilter{w: w}
 	return jsonl.Tail(ctx, m.Tasks().Path(id, "output.jsonl"), follow, func(line string) error {
 		s := line
 		if !raw {
@@ -248,9 +251,9 @@ func showTaskOutput(ctx context.Context, m *vm.Manager, id string, follow, raw b
 }
 
 // followTask prints supervisor progress and agent output until the task ends.
-func followTask(ctx context.Context, m *vm.Manager, id string, raw bool) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+func followTask(ctx context.Context, m *vm.Manager, id string, raw bool, stdout, stderr io.Writer) error {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	go func() {
 		for {
 			select {
@@ -260,17 +263,17 @@ func followTask(ctx context.Context, m *vm.Manager, id string, raw bool) error {
 			}
 			if t, err := m.Tasks().Load(id); err == nil && (task.Final(t.State) || t.Status() == "lost") {
 				time.Sleep(time.Second) // let the tail read the last lines
-				cancel()
+				cancel(jsonl.ErrWriterDone)
 				return
 			}
 		}
 	}()
-	err := showTaskOutput(ctx, m, id, true, raw)
+	err := showTaskOutput(ctx, m, id, true, raw, stdout)
 	t, lerr := m.Tasks().Load(id)
 	if lerr != nil {
 		return lerr
 	}
-	w := &termFilter{w: os.Stderr}
+	w := &termFilter{w: stderr}
 	fmt.Fprintf(w, "task %s %s", id, t.Status())
 	if t.Output != "" {
 		fmt.Fprintf(w, ": %s", t.Output)

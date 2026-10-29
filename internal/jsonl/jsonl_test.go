@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"slices"
 	"testing"
+	"time"
 )
 
 func TestTail(t *testing.T) {
@@ -46,5 +47,33 @@ func TestTailSkipsOverlongLine(t *testing.T) {
 	}
 	if grew := after.TotalAlloc - before.TotalAlloc; grew > 160<<20 {
 		t.Errorf("allocated %d MiB reading a 128 MiB line", grew>>20)
+	}
+}
+
+// tailFollow follows path until it is cancelled with cause after 600 ms.
+func tailFollow(t *testing.T, path string, cause error) []string {
+	t.Helper()
+	ctx, cancel := context.WithCancelCause(context.Background())
+	time.AfterFunc(600*time.Millisecond, func() { cancel(cause) })
+	var got []string
+	if err := Tail(ctx, path, true, func(l string) error { got = append(got, l); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+// Following a file whose writer is done: the last line shows even without a
+// final newline (a `cmd` task's `echo -n done`). Stopped any other way (Ctrl-C),
+// a line without a newline may be half-written, so it stays out.
+func TestTailFollowLastLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "log")
+	if err := os.WriteFile(path, []byte("a\nb"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := tailFollow(t, path, ErrWriterDone); !slices.Equal(got, []string{"a", "b"}) {
+		t.Errorf("writer done: lines %q, want a and b", got)
+	}
+	if got := tailFollow(t, path, context.Canceled); !slices.Equal(got, []string{"a"}) {
+		t.Errorf("interrupted: lines %q, want a only", got)
 	}
 }
