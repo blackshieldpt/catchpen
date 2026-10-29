@@ -205,32 +205,12 @@ func lsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			current := map[string]string{} // template -> current base
+			vms = slices.DeleteFunc(vms, func(v vm.Info) bool { return v.Pool }) // catchpen pool ls
+			statuses := m.Statuses(vms)
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "NAME\tSTATE\tTEMPLATE\tDISTRO\tCPU\tMEM\tEGRESS\tSSH\tPORTS\tAGE")
 			for _, v := range vms {
-				if v.Pool { // catchpen pool ls
-					continue
-				}
-				state, ssh, ports := "stopped", "-", "-"
-				if v.Running {
-					state = "running"
-				}
-				if v.Paused {
-					state = "paused" // canary hit
-				}
-				if v.Ephemeral {
-					state += ",ephemeral"
-				}
-				if v.Task != "" {
-					state += ",task"
-				}
-				if _, ok := current[v.Template]; !ok && v.Picks {
-					current[v.Template], _ = m.CurrentBase(v.Template)
-				}
-				if cur := current[v.Template]; v.Picks && cur != "" && cur != v.Base {
-					state += ",stale-base"
-				}
+				state, ssh, ports := statuses[v.Name].String(), "-", "-"
 				if v.Running {
 					if v.Runtime != nil && v.Runtime.SSHPort != 0 {
 						ssh = fmt.Sprintf("127.0.0.1:%d", v.Runtime.SSHPort)
