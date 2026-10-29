@@ -102,8 +102,9 @@ catchpen up dev -t my-key
 With `restricted`, `catchpen start` runs a per-VM `ssh-agent` holding only `agent_keys`,
 each destination-constrained (`ssh-add -h`), so it signs only on the path host → VM →
 that VM's `agent`-mode forges. The VM can't use it to log in anywhere else, including
-back into itself. `ssh catchpen-<vm>` forwards that agent, never your own, and it ends when
-the VM stops. `--ssh-agent` and `--agent-key` on `catchpen up` override the VM's `ssh.yaml`
+back into itself. `ssh catchpen-<vm>` forwards that agent, never your own, and it
+ends when catchpen stops or destroys the VM (after a guest power-off, at the next
+`stop`, `destroy` or `start`). `--ssh-agent` and `--agent-key` on `catchpen up` override the VM's `ssh.yaml`
 section.
 
 The constraints need the forge's SSH server to support OpenSSH host-bound

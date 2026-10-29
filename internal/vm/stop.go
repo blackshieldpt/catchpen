@@ -30,8 +30,8 @@ func (m *Manager) stopLocked(h heldVM, force bool) error {
 	name := h.name
 	pidfile := m.vm(name).path(pidFile)
 	pid, ok := qemu.Pid(pidfile, name)
-	if !ok {
-		return nil
+	if !ok { // not running, or QEMU exited on its own (the guest powered off)
+		return m.cleanupRuntime(name)
 	}
 	force = force || m.Paused(name) // a paused guest can't shut down
 	m.audit(audit.VMStop, name, map[string]any{"pid": pid, "force": force})

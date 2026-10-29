@@ -75,6 +75,10 @@ before 0.1.0 describe work on `master` before the first tagged release.
   rebuild alone doesn't change existing VMs, which keep their base.
 - The warm pool works for templates whose `env` sets an `AWS_*` variable. Their pool
   VMs never matched, so the daemon kept creating and discarding them.
+- Stopping a VM whose guest powered itself off (`stop`, `destroy`, and reset, rebase and
+  pool recycling) now cleans up its restricted ssh-agent, port forwards, tmux and herdr
+  entries and runtime files. Before, the ssh-agent kept running until the next start, or
+  for good after `destroy`.
 
 ### Security
 
