@@ -96,6 +96,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
   notifications. A canary hit's audit record is written before the VM is paused or
   stopped, so a running snapshot no longer delays it, and a `canaries.json` that isn't
   as catchpen wrote it is refused like an unreadable one.
+- Agent-mode forge clones keep at most 64 KiB of the guest's output in memory, as other
+  guest commands do.
 
 ## [0.1.1] - 2026-10-25
 

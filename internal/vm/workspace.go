@@ -384,11 +384,23 @@ func (m *Manager) startAgent(ctx context.Context, s *State) error {
 // ssh_config, so the VM's agent forwarding applies.
 func (m *Manager) sshExec(ctx context.Context, name, cmd string) (sshx.GuestOutput, error) {
 	c := exec.CommandContext(ctx, "ssh", "-F", m.P.SSHConfig(), "-o", "BatchMode=yes", sshx.AliasPrefix+name, cmd)
-	var buf bytes.Buffer
-	c.Stdout, c.Stderr = &buf, &buf
+	buf := &headWriter{max: 64 << 10}
+	c.Stdout, c.Stderr = buf, buf
 	err := c.Run()
-	if buf.Len() > 64<<10 {
-		buf.Truncate(64 << 10)
+	return sshx.Guest(buf.b.Bytes()), err
+}
+
+// headWriter keeps the first max bytes written and discards the rest, so
+// guest output can't grow host memory. exec.Cmd calls Write from one
+// goroutine at a time when Stdout and Stderr are the same writer.
+type headWriter struct {
+	b   bytes.Buffer
+	max int
+}
+
+func (w *headWriter) Write(p []byte) (int, error) {
+	if room := w.max - w.b.Len(); room > 0 {
+		w.b.Write(p[:min(len(p), room)])
 	}
-	return sshx.Guest(buf.Bytes()), err
+	return len(p), nil
 }
