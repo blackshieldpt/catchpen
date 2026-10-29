@@ -139,6 +139,17 @@ func fakeQEMU(t *testing.T, argv0, vmName string) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	// Like QEMU, which writes its pidfile once it runs: just after Start, the
+	// kernel may not have set the new program's argv yet (cmdline reads empty).
+	cmdline := "/proc/" + strconv.Itoa(cmd.Process.Pid) + "/cmdline"
+	for end := time.Now().Add(5 * time.Second); ; time.Sleep(time.Millisecond) {
+		if b, _ := os.ReadFile(cmdline); strings.HasPrefix(string(b), argv0+"\x00") {
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatalf("%s never showed argv[0] %q", cmdline, argv0)
+		}
+	}
 	pf := filepath.Join(t.TempDir(), "qemu.pid")
 	if err := os.WriteFile(pf, []byte(strconv.Itoa(cmd.Process.Pid)+"\n"), 0o600); err != nil {
 		t.Fatal(err)
