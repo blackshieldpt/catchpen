@@ -58,10 +58,10 @@ func formatEntry(line string) string {
 	return strings.TrimRight(s, " ")
 }
 
-// TailLog prints the log in human-readable form; with follow it keeps
-// printing new lines (across rotations) until ctx is done.
+// TailLog prints the log in human-readable form, egress.log.1 first; with
+// follow it keeps printing new lines (across rotations) until ctx is done.
 func TailLog(ctx context.Context, path string, follow bool, w io.Writer) error {
-	return jsonl.Tail(ctx, path, follow, func(line string) error {
+	return jsonl.TailRotated(ctx, path, follow, func(line string) error {
 		_, err := fmt.Fprintln(w, formatEntry(line))
 		return err
 	})

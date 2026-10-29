@@ -72,9 +72,10 @@ func (l Log) Record(event, vm string, detail map[string]any) error {
 	return jsonl.Append(l.Path, Event{Time: time.Now().UTC(), Event: event, VM: vm, Detail: detail}, maxBytes)
 }
 
-// Tail prints events (of one VM if vm is set) in human-readable form.
+// Tail prints events (of one VM if vm is set) in human-readable form, the
+// rotated-out file first.
 func (l Log) Tail(ctx context.Context, vm string, follow bool, w io.Writer) error {
-	return jsonl.Tail(ctx, l.Path, follow, func(line string) error {
+	return jsonl.TailRotated(ctx, l.Path, follow, func(line string) error {
 		var e Event
 		if err := json.Unmarshal([]byte(line), &e); err != nil {
 			return nil
