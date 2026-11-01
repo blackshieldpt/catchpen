@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"os/exec"
 	"os/user"
@@ -15,7 +14,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/blackshieldpt/catchpen/internal/paths"
-	"github.com/blackshieldpt/catchpen/internal/termfilter"
+	"github.com/blackshieldpt/catchpen/internal/vm"
 )
 
 func consoleCmd() *cobra.Command {
@@ -28,10 +27,7 @@ func consoleCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := m.SSHPort(args[0]); err != nil {
-				return err
-			}
-			conn, err := net.Dial("unix", m.SerialSocket(args[0]))
+			conn, err := m.DialConsole(args[0])
 			if err != nil {
 				return err
 			}
@@ -44,32 +40,22 @@ func consoleCmd() *cobra.Command {
 				}
 				defer term.Restore(int(os.Stdin.Fd()), st)
 			}
-			done := make(chan struct{}, 2)
-			go func() { _, _ = io.Copy(termfilter.New(os.Stdout), conn); done <- struct{}{} }()
-			go func() {
-				buf := make([]byte, 256)
-				for {
-					n, err := os.Stdin.Read(buf)
-					if i := bytes.IndexByte(buf[:n], 0x1d); i >= 0 {
-						_, _ = conn.Write(buf[:i])
-						break
-					}
-					if n > 0 {
-						if _, err := conn.Write(buf[:n]); err != nil {
-							break
-						}
-					}
-					if err != nil {
-						break
-					}
-				}
-				done <- struct{}{}
-			}()
-			<-done
+			vm.PumpConsole(conn, detachReader{os.Stdin}, os.Stdout)
 			fmt.Fprint(os.Stderr, "\r\ndetached\r\n")
 			return nil
 		},
 	}
+}
+
+// detachReader reads r up to the detach key, Ctrl-], and then reports EOF.
+type detachReader struct{ r io.Reader }
+
+func (d detachReader) Read(p []byte) (int, error) {
+	n, err := d.r.Read(p)
+	if i := bytes.IndexByte(p[:n], 0x1d); i >= 0 {
+		return i, io.EOF
+	}
+	return n, err
 }
 
 func doctorCmd() *cobra.Command {
