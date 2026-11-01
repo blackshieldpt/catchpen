@@ -10,7 +10,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blackshieldpt/catchpen/internal/creds"
 	"github.com/blackshieldpt/catchpen/internal/forge"
 	"github.com/blackshieldpt/catchpen/internal/vm"
 )
@@ -63,8 +62,8 @@ func forgeCmd() *cobra.Command {
 			}
 			if reg, err := forge.Load(m.P.Forges()); err != nil {
 				return err
-			} else if _, ok := reg.Get(f.Name); ok {
-				return fmt.Errorf("forge %s exists (catchpen forge rm %s first)", f.Name, f.Name)
+			} else if err := reg.CheckNew(f.Name); err != nil {
+				return err
 			}
 			keys, err := pinHostKeys(cmd.Context(), f, yes)
 			if err != nil {
@@ -74,15 +73,7 @@ func forgeCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "warning: %v (only needed for deploy-key and agent modes)\n", err)
 			}
 			f.HostKeys = keys
-			if f.Auth.Mode == forge.ModeAgent {
-				if err := checkHostBound(cmd.Context(), f); err != nil {
-					return err
-				}
-			}
-			if err := forge.Update(m.P.Forges(), func(r *forge.Registry) error {
-				r.Forges = append(r.Forges, f)
-				return nil
-			}); err != nil {
+			if err := forge.Add(cmd.Context(), m.P.Forges(), f); err != nil {
 				return err
 			}
 			warnCleartext(f)
@@ -151,21 +142,17 @@ func forgeCmd() *cobra.Command {
 }
 
 func pinHostKeys(ctx context.Context, f forge.Forge, yes bool) ([]string, error) {
-	if f.Type == forge.GitHub && f.Host == "github.com" {
-		keys, err := (&forge.Client{F: f}).GitHubKeys(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("fetching GitHub host keys: %w", err)
-		}
-		fmt.Printf("pinned %d GitHub host keys from api.github.com/meta\n", len(keys))
-		return keys, nil
-	}
-	keys, err := forge.Scan(ctx, f.Host, f.Port())
+	scan, err := (&forge.Client{F: f}).ScanHostKeys(ctx)
 	if err != nil {
 		return nil, err
 	}
+	if scan.Published {
+		fmt.Printf("pinned %d GitHub host keys from api.github.com/meta\n", len(scan.Keys))
+		return scan.Keys, nil
+	}
 	fmt.Printf("SSH host keys of %s port %d:\n", f.Host, f.Port())
-	for _, k := range keys {
-		fmt.Printf("  %s\n", forge.Fingerprint(k))
+	for _, fp := range scan.Fingerprints {
+		fmt.Printf("  %s\n", fp)
 	}
 	if !yes {
 		fmt.Print("Do these match the forge's published fingerprints? Trust them? [y/N] ")
@@ -174,11 +161,7 @@ func pinHostKeys(ctx context.Context, f forge.Forge, yes bool) ([]string, error)
 			return nil, fmt.Errorf("host keys not trusted")
 		}
 	}
-	var out []string
-	for _, k := range keys {
-		out = append(out, forge.FormatHostKey(k))
-	}
-	return out, nil
+	return scan.Keys, nil
 }
 
 // warnCleartext says when an http:// http_url sends a forge's credentials unencrypted.
@@ -190,72 +173,17 @@ func warnCleartext(f forge.Forge) {
 
 func testForge(ctx context.Context, m *vm.Manager, f forge.Forge) error {
 	warnCleartext(f)
-	sec := &creds.Resolver{Sources: m.Cfg.Secrets, File: m.P.SecretsFile()}
-	get := func(ref string) (string, error) {
-		name := strings.TrimPrefix(ref, "secret:")
-		v, ok, err := sec.Lookup(ctx, name)
-		if err == nil && !ok {
-			err = fmt.Errorf("secret %s not found on the host", name)
-		}
-		return v, err
+	r, err := m.TestForge(ctx, f)
+	if r.API {
+		fmt.Printf("API ok: authenticated as %s\n", r.Login)
 	}
-	c := &forge.Client{F: f}
-	switch {
-	case f.Auth.Token != "":
-		tok, err := get(f.Auth.Token)
-		if err != nil {
-			return err
-		}
-		c.Token = tok
-	case f.Auth.Password != "":
-		pw, err := get(f.Auth.Password)
-		if err != nil {
-			return err
-		}
-		c.User, c.Password, c.Basic = f.Auth.User, pw, true
-	}
-	if c.Token != "" || c.Basic {
-		login, err := c.Login(ctx)
-		if err != nil {
-			return fmt.Errorf("API: %w", err)
-		}
-		fmt.Printf("API ok: authenticated as %s\n", login)
-	}
-	if len(f.HostKeys) > 0 && !(f.Type == forge.GitHub && f.Host == "github.com") {
-		keys, err := forge.Scan(ctx, f.Host, f.Port())
-		if err != nil {
-			return fmt.Errorf("SSH: %w", err)
-		}
-		pinned := map[string]bool{}
-		for _, k := range f.HostKeys {
-			pinned[k] = true
-		}
-		for _, k := range keys {
-			if !pinned[forge.FormatHostKey(k)] {
-				return fmt.Errorf("SSH host key changed: %s is not pinned (if expected: catchpen forge rm %s && catchpen forge add ...)", forge.Fingerprint(k), f.Name)
-			}
-		}
+	if r.HostKeys {
 		fmt.Println("SSH host keys match")
 	}
-	if f.Auth.Mode == forge.ModeAgent {
-		if err := checkHostBound(ctx, f); err != nil {
-			return err
-		}
+	if r.HostBound {
 		fmt.Println("SSH server supports host-bound auth (agent mode works)")
 	}
-	return nil
-}
-
-func checkHostBound(ctx context.Context, f forge.Forge) error {
-	ok, err := forge.HostBound(ctx, f)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("%s's SSH server does not support host-bound auth (publickey-hostbound@openssh.com), "+
-			"so a restricted agent can't sign for it; use deploy-key or minted-token mode instead", f.Name)
-	}
-	return nil
+	return err
 }
 
 func pullCmd() *cobra.Command {

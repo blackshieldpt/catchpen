@@ -13,6 +13,9 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Fixed
 
+- Two `catchpen forge add` runs with the same name at once no longer both save it, which
+  left a `forges.yaml` that every later command reading forges refused, `forge rm`
+  included (`duplicate forge`); the second now fails with `forge <name> exists`.
 - `catchpen forge add --help` lists the `agent` mode, and the hint for a repo whose host
   has no forge lists `minted-token`.
 - New VMs, and VMs after `catchpen reset`, no longer finish booting with cloud-init
