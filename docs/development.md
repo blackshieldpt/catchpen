@@ -32,7 +32,7 @@ Docker).
 | `internal/agents/`, `internal/creds/` | Agent config, credentials, skills and plugins pushed into guests. |
 | `internal/gitsrc/` | Fetching pinned folders of git repos on the host, for skills and plugins. |
 | `internal/sshx/`, `internal/sshagent/` | SSH clients, ssh_config and restricted agents. |
-| `internal/task/` | Task specs, batch files and storage. |
+| `internal/task/` | Task specs, batch files and storage; showing and following a task's output. |
 | `internal/daemon/` | The daemon's jobs and systemd unit. |
 | `internal/hosttmux/`, `internal/hostherdr/` | Keeping host tmux windows and herdr workspaces in step with running VMs. |
 | `internal/notify/`, `internal/audit/`, `internal/record/` | Notifications, the audit log and recordings. |

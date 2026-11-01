@@ -1,5 +1,6 @@
-// Package task holds headless task specs, their on-disk records and the
-// parsing of agent output. Running them is internal/vm's job.
+// Package task holds headless task specs, their on-disk records, and the
+// parsing, showing and following of agent output. Running them is
+// internal/vm's job.
 package task
 
 import (

@@ -13,6 +13,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Fixed
 
+- `catchpen task run --file` refuses other task flags (`--prompt`, `--repo`, `-t`, …), as
+  the docs say; it ignored them. `--parallel` and `--follow` still go with it.
 - Two `catchpen forge add` runs with the same name at once no longer both save it, which
   left a `forges.yaml` that every later command reading forges refused, `forge rm`
   included (`duplicate forge`); the second now fails with `forge <name> exists`.

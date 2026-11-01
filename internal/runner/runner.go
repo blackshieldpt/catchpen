@@ -92,6 +92,25 @@ func (r *Runner) Submit(spec task.Spec) (*task.Task, error) {
 	return t, nil
 }
 
+// SubmitAll submits specs in order; each must be normalized (Spec.Normalize),
+// as for Submit. On an error it stops, and returns the tasks submitted before
+// it and an error naming them; a task Submit recorded before it failed is in
+// neither (see Submit). The tasks are as stored:
+// without their prompt, which is in prompt.md.
+func (r *Runner) SubmitAll(specs []task.Spec) ([]*task.Task, error) {
+	var ts []*task.Task
+	var ids []string
+	for _, sp := range specs {
+		t, err := r.Submit(sp)
+		if err != nil {
+			return ts, fmt.Errorf("%w (submitted so far: %s)", err, strings.Join(ids, " "))
+		}
+		ts = append(ts, t)
+		ids = append(ids, t.ID)
+	}
+	return ts, nil
+}
+
 // claimSlot moves a queued task to starting if the budget allows.
 func (r *Runner) claimSlot(id string) (bool, error) {
 	unlock, err := fsutil.Lock(r.M.P.Tasks() + "/.schedule.lock")

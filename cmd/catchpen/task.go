@@ -11,10 +11,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
-	"github.com/blackshieldpt/catchpen/internal/jsonl"
 	"github.com/blackshieldpt/catchpen/internal/runner"
-	"github.com/blackshieldpt/catchpen/internal/sshx"
 	"github.com/blackshieldpt/catchpen/internal/task"
 	"github.com/blackshieldpt/catchpen/internal/vm"
 )
@@ -51,16 +50,19 @@ Tasks wait for the budget in config.yaml tasks: (max_vms, max_memory).
 			}
 			var specs []task.Spec
 			if file != "" {
-				if cmd.LocalFlags().NFlag() > 1+boolToInt(cmd.Flags().Changed("parallel"))+boolToInt(follow) {
+				others := 0 // run's own flags set, other than these four (not --debug)
+				cmd.Flags().Visit(func(fl *pflag.Flag) {
+					if cmd.LocalFlags().Lookup(fl.Name) != nil && fl.Name != "file" && fl.Name != "parallel" && fl.Name != "follow" && fl.Name != "help" {
+						others++
+					}
+				})
+				if others > 0 {
 					return errors.New("--file can't be combined with other task flags (put them under defaults:)")
 				}
 				if specs, err = task.ParseFile(file, wd); err != nil {
 					return err
 				}
-				batch := task.NewID()
-				for i := range specs {
-					specs[i].Batch, specs[i].Parallel = batch, parallel
-				}
+				task.AsBatch(specs, parallel)
 				if follow && len(specs) > 1 {
 					return errors.New("-f follows one task; use catchpen task logs -f <id> per task")
 				}
@@ -73,19 +75,17 @@ Tasks wait for the budget in config.yaml tasks: (max_vms, max_memory).
 				}
 				specs = []task.Spec{s}
 			}
-			var ids []string
-			for _, sp := range specs {
-				t, err := (&runner.Runner{M: m}).Submit(sp)
-				if err != nil {
-					return fmt.Errorf("%w (submitted so far: %s)", err, strings.Join(ids, " "))
-				}
-				ids = append(ids, t.ID)
-				fmt.Printf("%s queued (%s, %s)\n", t.ID, sp.Agent, orDash(sp.Repo))
+			ts, err := (&runner.Runner{M: m}).SubmitAll(specs)
+			for _, t := range ts {
+				fmt.Printf("%s queued (%s, %s)\n", t.ID, t.Spec.Agent, orDash(t.Spec.Repo))
 			}
-			if follow && len(ids) == 1 {
-				return followTask(cmd.Context(), m, ids[0], false, os.Stdout, os.Stderr)
+			if err != nil {
+				return err
 			}
-			fmt.Fprintf(os.Stderr, "follow with: catchpen task logs -f %s\n", ids[0])
+			if follow && len(ts) == 1 {
+				return followTask(cmd.Context(), m, ts[0].ID, false, os.Stdout, os.Stderr)
+			}
+			fmt.Fprintf(os.Stderr, "follow with: catchpen task logs -f %s\n", ts[0].ID)
 			return nil
 		},
 	}
@@ -107,13 +107,6 @@ Tasks wait for the budget in config.yaml tasks: (max_vms, max_memory).
 	f.IntVar(&parallel, "parallel", 0, "with --file: at most this many of the batch at once")
 	f.BoolVarP(&follow, "follow", "f", false, "follow the task's output until it ends")
 	return c
-}
-
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
 }
 
 func orDash(s string) string {
@@ -173,37 +166,9 @@ func taskShowCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return showTask(os.Stdout, m.Tasks(), t)
+			return m.Tasks().Show(os.Stdout, t)
 		},
 	}
-}
-
-func showTask(w io.Writer, st task.Store, t *task.Task) error {
-	fmt.Fprintf(w, "task     %s (%s)\nagent    %s\nrepo     %s\nVM       %s\n", t.ID, t.Status(), t.Spec.Agent, orDash(t.Spec.Repo), t.VM)
-	if t.Branch != "" {
-		fmt.Fprintf(w, "branch   %s (%d commits)\n", t.Branch, t.Commits)
-	}
-	if t.Exit != nil {
-		fmt.Fprintf(w, "exit     %d\n", *t.Exit)
-	}
-	if t.Usage != (task.Usage{}) {
-		fmt.Fprintf(w, "usage    %d turns, %d in / %d out tokens, $%.4f\n", t.Usage.Turns, t.Usage.InputTokens, t.Usage.OutputTokens, t.Usage.CostUSD)
-	}
-	// Error text can quote the agent (guest) output.
-	if t.Output != "" {
-		fmt.Fprintf(w, "output   %s\n", sshx.Printable(t.Output))
-	}
-	if t.Error != "" {
-		fmt.Fprintf(w, "error    %s\n", sshx.Printable(t.Error))
-	}
-	fmt.Fprintf(w, "files    %s\n", st.Path(t.ID, ""))
-	if b, err := os.ReadFile(st.Path(t.ID, "result.md")); err == nil && len(b) > 0 {
-		fmt.Fprintln(w, "\n--- result")
-		// The result is the agent's text from the guest.
-		_, err := fmt.Fprintln(w, sshx.Printable(string(b)))
-		return err
-	}
-	return nil
 }
 
 func taskLogsCmd() *cobra.Command {
@@ -221,7 +186,7 @@ func taskLogsCmd() *cobra.Command {
 				return err
 			}
 			if !follow {
-				return showTaskOutput(cmd.Context(), m, args[0], false, raw, os.Stdout)
+				return m.Tasks().WriteOutput(cmd.Context(), args[0], false, raw, os.Stdout)
 			}
 			return followTask(cmd.Context(), m, args[0], raw, os.Stdout, os.Stderr)
 		},
@@ -231,57 +196,10 @@ func taskLogsCmd() *cobra.Command {
 	return c
 }
 
-func showTaskOutput(ctx context.Context, m *vm.Manager, id string, follow, raw bool, w io.Writer) error {
-	t, err := m.Tasks().Load(id)
-	if err != nil {
-		return err
-	}
-	return jsonl.Tail(ctx, m.Tasks().Path(id, "output.jsonl"), follow, func(line string) error {
-		s := line
-		if !raw {
-			s = task.Render(t.Spec.Agent, []byte(line))
-		}
-		if s == "" {
-			return nil
-		}
-		// Guest text without control characters: nothing in one line can hide
-		// the lines after it, move the cursor or act on the terminal.
-		_, err := io.WriteString(w, sshx.Printable(s)+"\n")
-		return err
-	})
-}
-
-// followTask prints supervisor progress and agent output until the task ends.
+// followTask prints a task's output and status line until it ends, and fails
+// (exit status 1) unless it ended done.
 func followTask(ctx context.Context, m *vm.Manager, id string, raw bool, stdout, stderr io.Writer) error {
-	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(nil)
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(time.Second):
-			}
-			if t, err := m.Tasks().Load(id); err == nil && (task.Final(t.State) || t.Status() == "lost") {
-				time.Sleep(time.Second) // let the tail read the last lines
-				cancel(jsonl.ErrWriterDone)
-				return
-			}
-		}
-	}()
-	err := showTaskOutput(ctx, m, id, true, raw, stdout)
-	t, lerr := m.Tasks().Load(id)
-	if lerr != nil {
-		return lerr
-	}
-	line := fmt.Sprintf("task %s %s", id, t.Status())
-	if t.Output != "" {
-		line += ": " + t.Output
-	}
-	if t.Error != "" {
-		line += ": " + t.Error
-	}
-	fmt.Fprintln(stderr, sshx.Printable(line))
+	t, err := m.Tasks().Follow(ctx, id, raw, stdout, stderr)
 	if err == nil && t.State != task.Done {
 		return exitError(1)
 	}
