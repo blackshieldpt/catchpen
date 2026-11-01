@@ -1,15 +1,20 @@
-package main
+// Package termfilter shows a guest's output on a terminal without letting it
+// act on the terminal itself.
+package termfilter
 
 import "io"
 
-// termFilter passes a guest's serial output to the terminal but drops the
+// Writer passes a guest's serial output to the terminal but drops the
 // escape sequences that act outside the screen contents: OSC (title,
 // clipboard, hyperlinks), DCS, SOS, PM and APC strings, and their C1 forms.
 // Cursor movement and colours (CSI) still work, so the console stays usable.
-type termFilter struct {
+type Writer struct {
 	w     io.Writer
 	state int
 }
+
+// New returns a Writer that writes what it keeps to w.
+func New(w io.Writer) *Writer { return &Writer{w: w} }
 
 const (
 	tfText   = iota
@@ -19,7 +24,7 @@ const (
 	tfC2     // after a 0xC2 lead byte (possible UTF-8 encoded C1 control)
 )
 
-func (t *termFilter) Write(p []byte) (int, error) {
+func (t *Writer) Write(p []byte) (int, error) {
 	out := make([]byte, 0, len(p))
 	for _, b := range p {
 		switch t.state {

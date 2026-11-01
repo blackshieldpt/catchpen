@@ -1,4 +1,4 @@
-package main
+package termfilter
 
 import (
 	"bytes"
@@ -32,7 +32,7 @@ func TestTermFilter(t *testing.T) {
 	}
 	for _, c := range cases {
 		var b bytes.Buffer
-		f := &termFilter{w: &b}
+		f := New(&b)
 		if _, err := f.Write([]byte(c.in)); err != nil {
 			t.Fatal(err)
 		}
@@ -44,7 +44,7 @@ func TestTermFilter(t *testing.T) {
 
 func TestTermFilterAcrossWrites(t *testing.T) {
 	var b bytes.Buffer
-	f := &termFilter{w: &b}
+	f := New(&b)
 	for _, chunk := range []string{"x\x1b", "]0;ti", "tle\x1b", "\\y\xc2", "\x9d2;z\x07w"} {
 		f.Write([]byte(chunk))
 	}
@@ -103,7 +103,7 @@ func FuzzTermFilter(f *testing.F) {
 	}
 	f.Fuzz(func(t *testing.T, in []byte, split int) {
 		var out bytes.Buffer
-		tf := &termFilter{w: &out}
+		tf := New(&out)
 		if split > 0 && split < len(in) {
 			tf.Write(in[:split])
 			tf.Write(in[split:])

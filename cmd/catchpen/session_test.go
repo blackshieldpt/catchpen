@@ -28,6 +28,9 @@ func TestPlayRecordingSaysHowItEnds(t *testing.T) {
 		if errw.String() != c.want {
 			t.Errorf("%s: stderr %q, want %q", c.name, errw.String(), c.want)
 		}
+		if strings.Contains(out.String(), "\x1b]") {
+			t.Errorf("%s: output %q keeps the guest's title string", c.name, out.String())
+		}
 		if got := strings.HasSuffix(out.String(), termReset); got != c.tty {
 			t.Errorf("%s: output %q ends with the reset: %v, want %v", c.name, out.String(), got, c.tty)
 		}

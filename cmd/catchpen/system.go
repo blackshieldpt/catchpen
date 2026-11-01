@@ -15,6 +15,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/blackshieldpt/catchpen/internal/paths"
+	"github.com/blackshieldpt/catchpen/internal/termfilter"
 )
 
 func consoleCmd() *cobra.Command {
@@ -44,7 +45,7 @@ func consoleCmd() *cobra.Command {
 				defer term.Restore(int(os.Stdin.Fd()), st)
 			}
 			done := make(chan struct{}, 2)
-			go func() { _, _ = io.Copy(&termFilter{w: os.Stdout}, conn); done <- struct{}{} }()
+			go func() { _, _ = io.Copy(termfilter.New(os.Stdout), conn); done <- struct{}{} }()
 			go func() {
 				buf := make([]byte, 256)
 				for {

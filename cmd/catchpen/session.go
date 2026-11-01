@@ -18,6 +18,7 @@ import (
 	"github.com/blackshieldpt/catchpen/internal/record"
 	"github.com/blackshieldpt/catchpen/internal/sshx"
 	"github.com/blackshieldpt/catchpen/internal/template"
+	"github.com/blackshieldpt/catchpen/internal/termfilter"
 	"github.com/blackshieldpt/catchpen/internal/vm"
 )
 
@@ -111,7 +112,7 @@ const termReset = "\x1b[0m\x1b(B\x0f\x1b[?25h\x1b[?1047l"
 // after the replay and outside the filter, so the guest can't hide or fake
 // it (a string it left open would swallow anything sent through the filter).
 func playRecording(r io.Reader, out, errw io.Writer, tty bool, speed float64, idle time.Duration) error {
-	fw := &termFilter{w: out}
+	fw := termfilter.New(out)
 	truncated, err := record.Play(r, fw, speed, idle)
 	if tty {
 		_, _ = io.WriteString(out, termReset)
