@@ -126,15 +126,11 @@ func confirmSnapshotLoss(vm, op string, yes bool) error {
 	if err != nil {
 		return err
 	}
-	ss, err := m.Snapshots(vm)
-	if err != nil || len(ss) == 0 || yes {
+	l, err := m.RebaseLoss(vm)
+	if err != nil || len(l.Snapshots) == 0 || yes {
 		return err
 	}
-	var names []string
-	for _, s := range ss {
-		names = append(names, s.Name)
-	}
-	return confirm(fmt.Sprintf("%s deletes the snapshots of %s (%s). Continue?", op, vm, strings.Join(names, ", ")))
+	return confirm(fmt.Sprintf("%s deletes the snapshots of %s (%s). Continue?", op, vm, strings.Join(l.Snapshots, ", ")))
 }
 
 func resetCmd() *cobra.Command {
