@@ -23,7 +23,7 @@ func daemonCmd() *cobra.Command {
 			d := &daemon.Daemon{
 				Manager: manager,
 				Prompts: func(ctx context.Context, m *vm.Manager, dirs map[string]string) error {
-					return egress.Watch(ctx, dirs, promptDecider(m, egress.DesktopDecider()))
+					return egress.Watch(ctx, dirs, m.PromptDecider(egress.DesktopDecider()))
 				},
 				Log: os.Stderr,
 			}

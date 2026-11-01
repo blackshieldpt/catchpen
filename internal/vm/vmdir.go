@@ -22,7 +22,12 @@ import (
 //     process change;
 //  3. a skill or plugin repo's cache lock (internal/gitsrc), a leaf taken
 //     before the push: nothing else is taken while it is held (a pool fill
-//     holds 1 around it).
+//     holds 1 around it);
+//  4. a VM's egress list and settings locks (allowlist.lock, denylist.lock
+//     and egress.json.lock in vms/<name>): under egress.json.lock only 5 is
+//     taken, and nothing under the list locks;
+//  5. a JSON-lines log's lock (audit.jsonl.lock and the like, internal/jsonl),
+//     the last: nothing is taken under it.
 //
 // A VM's lock isn't re-entrant: flock makes a second taker in the same
 // process wait, forever if it's the holder. Code holding it has a heldVM and

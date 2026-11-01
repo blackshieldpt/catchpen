@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -12,10 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/blackshieldpt/catchpen/internal/audit"
 	"github.com/blackshieldpt/catchpen/internal/canary"
 	"github.com/blackshieldpt/catchpen/internal/egress"
-	"github.com/blackshieldpt/catchpen/internal/notify"
 	"github.com/blackshieldpt/catchpen/internal/vm"
 )
 
@@ -50,32 +47,7 @@ func egressCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				s, err := m.Load(args[0])
-				if err != nil {
-					return err
-				}
-				if s.Egress != egress.ModeAllowlist {
-					return fmt.Errorf("VM %s uses egress mode %q; lists only apply to allowlist mode", s.Name, s.Egress)
-				}
-				for _, e := range args[1:] {
-					if _, err := egress.ParseEntry(e); err != nil {
-						return err
-					}
-					if add {
-						err = egress.AddEntry(m.Dir(s.Name), file, e)
-					} else {
-						err = egress.RemoveEntry(m.Dir(s.Name), file, e)
-					}
-					if err != nil {
-						return err
-					}
-					ev := audit.EgressAllow
-					if file == egress.DenylistFile {
-						ev = audit.EgressDeny
-					}
-					_ = m.Audit().Record(ev, s.Name, map[string]any{"entry": e, "add": add})
-				}
-				return nil
+				return m.EditEgressList(args[0], file, add, args[1:])
 			},
 		}
 	}
@@ -127,33 +99,28 @@ func egressCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s, err := m.Load(args[0])
-			if err != nil {
-				return err
-			}
-			if s.Egress != egress.ModeAllowlist {
-				return fmt.Errorf("VM %s uses egress mode %q", s.Name, s.Egress)
-			}
-			c, err := egress.ReadConfig(m.Dir(s.Name))
-			if err != nil {
-				return err
-			}
+			var set vm.EgressSettings
 			f := cmd.Flags()
 			if f.Changed("on-deny") {
-				if onDeny != egress.OnDenyLog && onDeny != egress.OnDenyPrompt {
-					return fmt.Errorf("--on-deny must be log or prompt")
-				}
-				c.OnDeny = onDeny
+				set.OnDeny = &onDeny
 			}
 			if f.Changed("prompt-timeout") {
-				if c.PromptTimeout, err = time.ParseDuration(timeout); err != nil || c.PromptTimeout <= 0 {
-					return fmt.Errorf("--prompt-timeout: invalid duration %q", timeout)
+				d, err := time.ParseDuration(timeout)
+				if err != nil {
+					d = 0 // refused as ErrPromptTimeout after the VM checks, as before
 				}
+				set.PromptTimeout = &d
 			}
 			if f.Changed("allow-private") {
-				c.AllowPrivate = allowPrivate
+				set.AllowPrivate = &allowPrivate
 			}
-			if err := egress.WriteConfig(m.Dir(s.Name), c); err != nil {
+			c, err := m.SetEgressConfig(args[0], set)
+			switch {
+			case errors.Is(err, vm.ErrOnDeny):
+				return fmt.Errorf("--on-deny must be log or prompt")
+			case errors.Is(err, vm.ErrPromptTimeout):
+				return fmt.Errorf("--prompt-timeout: invalid duration %q", timeout)
+			case err != nil:
 				return err
 			}
 			fmt.Printf("on_deny: %s, prompt_timeout: %s, allow_private: %v\n", c.OnDeny, c.PromptTimeout, c.AllowPrivate)
@@ -206,7 +173,7 @@ func egressCmd() *cobra.Command {
 			if desktop {
 				decide = egress.DesktopDecider()
 			}
-			decide = promptDecider(m, decide)
+			decide = m.PromptDecider(decide)
 			fmt.Fprintf(os.Stderr, "watching %d VM(s); Ctrl-C to stop\n", len(dirs))
 			err = egress.Watch(cmd.Context(), dirs, decide)
 			if errors.Is(err, cmd.Context().Err()) {
@@ -224,31 +191,6 @@ func egressCmd() *cobra.Command {
 		edit("undeny", "Remove entries from a VM's denylist", egress.DenylistFile, false),
 	)
 	return c
-}
-
-// promptDecider wraps a decider with the prompt notification and the
-// audit record of the answer.
-func promptDecider(m *vm.Manager, inner egress.Decider) egress.Decider {
-	alog, nt := m.Audit(), m.Notifier()
-	return func(ctx context.Context, r egress.Request) egress.Decision {
-		if nt.Wants(notify.EgressPrompt) {
-			go func() {
-				if err := nt.Send(context.Background(), notify.Event{Kind: notify.EgressPrompt, VM: r.VM,
-					Title: "catchpen " + r.VM + ": egress prompt", Message: fmt.Sprintf("%s %s:%d is waiting for an answer", r.Method, r.Host, r.Port)}); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: notification: %v\n", err)
-				}
-			}()
-		}
-		start := time.Now()
-		d := inner(ctx, r)
-		// Only answers given by a person: timeouts are in the VM's egress log, and
-		// a guest could otherwise flood the audit log until it rotates. So could
-		// a decider failing at once (notify-send without a notification server).
-		if ctx.Err() == nil && time.Since(start) > 300*time.Millisecond {
-			_ = alog.Record(audit.EgressPrompt, r.VM, map[string]any{"host": r.Host, "port": r.Port, "method": r.Method, "decision": string(d)})
-		}
-		return d
-	}
 }
 
 // stdioConn is the guest connection QEMU gave a guestfwd process on stdin

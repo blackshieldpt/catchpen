@@ -219,7 +219,7 @@ Pull a branch, push it with your host git credentials and open a pull request. T
 | `catchpen egress unallow <name> <host[:port]>...` | Remove allowlist entries. |
 | `catchpen egress deny <name> <host[:port]>...` | Add denylist entries (they win over the allowlist). |
 | `catchpen egress undeny <name> <host[:port]>...` | Remove denylist entries. |
-| `catchpen egress config <name> [--on-deny log\|prompt] [--prompt-timeout 30s] [--allow-private]` | Change settings. Only the flags you pass are changed; `--allow-private=false` clears it. |
+| `catchpen egress config <name> [--on-deny log\|prompt] [--prompt-timeout 30s] [--allow-private]` | Change settings. Only the flags you pass are changed; `--allow-private=false` clears it. Changes are recorded in the audit log. |
 | `catchpen egress watch [<name>...] [--desktop]` | Answer prompts for allowlist-mode VMs, in the terminal or through desktop notifications. |
 
 All but `show` and `log` need a VM in allowlist mode.

@@ -32,6 +32,7 @@ const (
 	EgressAllow     = "egress.allow"
 	EgressDeny      = "egress.deny"
 	EgressPrompt    = "egress.prompt"
+	EgressConfig    = "egress.config"
 	ForwardOpen     = "forward.open"
 	ForwardStop     = "forward.stop"
 	ExportPull      = "export.pull"

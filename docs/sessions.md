@@ -82,7 +82,8 @@ catchpen audit [<vm>] [-f]
 - VM lifecycle;
 - credentials pushed (secret names only);
 - deploy keys and tokens added and removed, and restricted agents;
-- allowlist edits and answered egress prompts (timeouts are only in the VM's egress log);
+- allowlist and denylist edits, egress setting changes (old and new values), and answered
+  egress prompts (timeouts are only in the VM's egress log);
 - forwards, `cp`, `pull` and `pr`;
 - the start and end of every `ssh`, `run` and `attach` session, with its recording id;
 - canary hits.

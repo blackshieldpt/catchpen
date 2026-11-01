@@ -6,6 +6,11 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ## [Unreleased]
 
+### Added
+
+- `catchpen egress config` records each change in the audit log (`egress.config`), with
+  the old and new values, as allowlist and denylist edits already were.
+
 ### Fixed
 
 - `catchpen forge add --help` lists the `agent` mode, and the hint for a repo whose host

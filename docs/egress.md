@@ -66,7 +66,8 @@ catchpen egress deny dev evil.example.com     # the denylist wins over the allow
 catchpen egress config dev --on-deny prompt   # ask instead of just logging
 ```
 
-Allowlist edits are recorded in the audit log.
+List edits (`egress.allow`, `egress.deny`) and setting changes (`egress.config`, with the
+old and new values) are recorded in the audit log.
 
 ## Prompting on deny
 
