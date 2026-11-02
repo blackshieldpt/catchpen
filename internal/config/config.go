@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -48,7 +50,11 @@ type Config struct {
 }
 
 // Server configures the API catchpen daemon serves.
-type Server struct{}
+type Server struct {
+	// Listen is a host:port to serve enrolled clients on too, over TLS 1.3
+	// (empty: the unix socket only).
+	Listen string `yaml:"listen"`
+}
 
 // PoolEntry asks for Size booted, stopped VMs of a template (a -t spec), ready
 // for up and task to claim.
@@ -167,6 +173,12 @@ func Load(path string) (Config, error) {
 	for name, s := range c.Secrets {
 		if (len(s.Command) == 0) == (s.Env == "") {
 			return c, fmt.Errorf("%s: secrets.%s: set exactly one of command or env", path, name)
+		}
+	}
+	if c.Server != nil && c.Server.Listen != "" {
+		_, port, err := net.SplitHostPort(c.Server.Listen)
+		if n, perr := strconv.Atoi(port); err != nil || perr != nil || n < 1 || n > 65535 {
+			return c, fmt.Errorf("%s: server.listen must be host:port, e.g. 127.0.0.1:7443 or :7443", path)
 		}
 	}
 	if err := ValidUser(c.Defaults.User); err != nil {

@@ -17,6 +17,7 @@ import (
 	"github.com/blackshieldpt/catchpen/internal/paths"
 	"github.com/blackshieldpt/catchpen/internal/server"
 	"github.com/blackshieldpt/catchpen/internal/vm"
+	"github.com/blackshieldpt/catchpen/pkg/api"
 	"github.com/blackshieldpt/catchpen/pkg/apiclient"
 )
 
@@ -139,14 +140,19 @@ func (l *syncLog) String() string {
 
 // apiDaemon is a daemon on m's directories, with server: set when serve is.
 func apiDaemon(m *vm.Manager, serve bool) (*Daemon, *syncLog) {
+	return tcpDaemon(m, serve, "")
+}
+
+// tcpDaemon is apiDaemon with server.listen set to listen.
+func tcpDaemon(m *vm.Manager, serve bool, listen string) (*Daemon, *syncLog) {
 	cfg := m.Cfg
 	if serve {
-		cfg.Server = &config.Server{}
+		cfg.Server = &config.Server{Listen: listen}
 	}
 	log := &syncLog{}
 	return &Daemon{
 		Manager: func() (*vm.Manager, error) { return &vm.Manager{P: m.P, Cfg: cfg}, nil },
-		API:     server.New("1.2.3").Handler(),
+		API:     server.New("1.2.3", m.P.Clients()),
 		Log:     log,
 	}, log
 }
@@ -210,5 +216,66 @@ func TestRunAPISetting(t *testing.T) {
 	d, _ = apiDaemon(m, true)
 	if err := d.Run(ctx); err == nil || !strings.Contains(err.Error(), "not a socket") {
 		t.Errorf("with server: %v", err)
+	}
+}
+
+func TestRunServesTCP(t *testing.T) {
+	m := testManager(t)
+	key, err := server.AddHMAC(m.P.Clients(), "cockpit", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, log := tcpDaemon(m, true, "127.0.0.1:0")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+	for start := time.Now(); !strings.Contains(log.String(), "catchpen daemon running"); time.Sleep(10 * time.Millisecond) {
+		if time.Since(start) > 10*time.Second {
+			t.Fatalf("daemon not running: %s", log)
+		}
+	}
+	// The port the kernel picked, from the second "serving on" line.
+	var addr string
+	for _, line := range strings.Split(log.String(), "\n") {
+		if a, ok := strings.CutPrefix(line, "api: serving on 127.0.0.1:"); ok {
+			addr = "127.0.0.1:" + a
+		}
+	}
+	if addr == "" {
+		t.Fatalf("log: %s", log)
+	}
+	cert, err := server.Certificate(m.P.ServerKey(), m.P.ServerCert())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := apiclient.New(apiclient.Options{URL: "https://" + addr, ServerPin: api.PublicKeyPin(cert.Leaf), HMAC: &apiclient.HMAC{Name: "cockpit", Key: key}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i, err := c.Info(ctx); err != nil || i.Version != "1.2.3" {
+		t.Errorf("info over TCP: %+v, %v", i, err)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the daemon kept running after its context was done")
+	}
+}
+
+// server.listen with no client enrolled stops the daemon, socket and all.
+func TestRunTCPNeedsClients(t *testing.T) {
+	m := testManager(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	d, _ := tcpDaemon(m, true, "127.0.0.1:0")
+	if err := d.Run(ctx); err == nil || !strings.Contains(err.Error(), "no client is enrolled") {
+		t.Errorf("no clients: %v", err)
+	}
+	if _, err := os.Lstat(m.P.APISocket()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("socket left behind: %v", err)
 	}
 }

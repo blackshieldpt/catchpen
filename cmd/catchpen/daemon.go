@@ -11,6 +11,7 @@ import (
 
 	"github.com/blackshieldpt/catchpen/internal/daemon"
 	"github.com/blackshieldpt/catchpen/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/paths"
 	"github.com/blackshieldpt/catchpen/internal/server"
 	"github.com/blackshieldpt/catchpen/internal/vm"
 )
@@ -27,7 +28,7 @@ func daemonCmd() *cobra.Command {
 				Prompts: func(ctx context.Context, m *vm.Manager, dirs map[string]string) error {
 					return egress.Watch(ctx, dirs, m.PromptDecider(egress.DesktopDecider()))
 				},
-				API: server.New(v).Handler(),
+				API: server.New(v, paths.Default().Clients()),
 				Log: os.Stderr,
 			}
 			return d.Run(cmd.Context())

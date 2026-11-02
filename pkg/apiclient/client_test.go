@@ -2,6 +2,7 @@ package apiclient
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"net"
 	"net/http"
@@ -49,10 +50,43 @@ func TestIgnoresProxy(t *testing.T) {
 	}
 }
 
-func TestErrors(t *testing.T) {
-	if _, err := New(Options{}); err == nil {
-		t.Error("no socket accepted")
+func TestNewRefuses(t *testing.T) {
+	pin := "sha256:" + strings.Repeat("ab", 32)
+	key := make([]byte, api.MinKeyBytes)
+	h := &HMAC{Name: "cockpit", Key: key}
+	cert := &tls.Certificate{Certificate: [][]byte{{1}}}
+	for what, o := range map[string]Options{
+		"nothing":           {},
+		"socket and URL":    {Socket: "/s", URL: "https://h:1", ServerPin: pin, HMAC: h},
+		"http":              {URL: "http://h:1", ServerPin: pin, HMAC: h},
+		"a path":            {URL: "https://h:1/v1", ServerPin: pin, HMAC: h},
+		"a query":           {URL: "https://h:1?x=1", ServerPin: pin, HMAC: h},
+		"a user":            {URL: "https://u@h:1", ServerPin: pin, HMAC: h},
+		"no pin":            {URL: "https://h:1", HMAC: h},
+		"a bad pin":         {URL: "https://h:1", ServerPin: "sha256:ab", HMAC: h},
+		"no credentials":    {URL: "https://h:1", ServerPin: pin},
+		"cert and HMAC":     {URL: "https://h:1", ServerPin: pin, HMAC: h, Cert: cert},
+		"a short key":       {URL: "https://h:1", ServerPin: pin, HMAC: &HMAC{Name: "cockpit", Key: key[1:]}},
+		"a name with a dot": {URL: "https://h:1", ServerPin: pin, HMAC: &HMAC{Name: "a.b", Key: key}},
+		"no port":           {URL: "https://h", ServerPin: pin, HMAC: h},
+		"an empty cert":     {URL: "https://h:1", ServerPin: pin, Cert: &tls.Certificate{}},
+	} {
+		if _, err := New(o); err == nil {
+			t.Errorf("%s: accepted", what)
+		}
 	}
+	for what, o := range map[string]Options{
+		"HMAC":   {URL: "https://h:1", ServerPin: pin, HMAC: h},
+		"cert":   {URL: "https://h:1/", ServerPin: pin, Cert: cert},
+		"socket": {Socket: "/s"},
+	} {
+		if _, err := New(o); err != nil {
+			t.Errorf("%s: %v", what, err)
+		}
+	}
+}
+
+func TestErrors(t *testing.T) {
 	sock := serve(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Plain") != "" {
 			http.Error(w, "<html>bad gateway</html>", http.StatusBadGateway)

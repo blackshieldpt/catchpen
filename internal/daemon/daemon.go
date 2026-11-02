@@ -10,7 +10,6 @@ import (
 	"io"
 	"maps"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,10 +38,11 @@ type Daemon struct {
 	// Prompts answers egress prompts for the VMs in dirs (name -> directory)
 	// until ctx is done; nil turns prompt dispatch off.
 	Prompts func(ctx context.Context, m *vm.Manager, dirs map[string]string) error
-	// API is served on the API socket when config.yaml has server: (nil:
-	// never). Unlike the jobs' settings, server: is read only when the daemon
-	// starts; a socket it can't serve fails Run.
-	API http.Handler
+	// API is served on the API socket when config.yaml has server:, and on
+	// server.listen over TLS when that is set (nil: never). Unlike the jobs'
+	// settings, server: is read only when the daemon starts; a listener it
+	// can't open fails Run.
+	API *server.Server
 	Log io.Writer
 }
 
@@ -91,12 +91,24 @@ func (d *Daemon) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("api: %w", err)
 		}
-		d.logf("api: serving on %s", m.P.APISocket())
-		wg.Go(func() {
-			if err := server.Serve(ctx, l, d.API); err != nil {
-				d.logf("api: %v", err)
+		ls := []net.Listener{l}
+		if addr := m.Cfg.Server.Listen; addr != "" {
+			tl, err := d.listenTCP(m, addr)
+			if err != nil {
+				l.Close()
+				return fmt.Errorf("api: server.listen: %w", err)
 			}
-		})
+			ls = append(ls, tl)
+		}
+		h := d.API.Handler()
+		for _, l := range ls {
+			d.logf("api: serving on %s", l.Addr())
+			wg.Go(func() {
+				if err := server.Serve(ctx, l, h); err != nil {
+					d.logf("api: %v", err)
+				}
+			})
+		}
 	}
 	d.logf("catchpen daemon running")
 	loop := func(job string, every time.Duration, fn func(context.Context, *vm.Manager) error) {
@@ -125,6 +137,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 	wg.Wait()
 	return nil
+}
+
+func (d *Daemon) listenTCP(m *vm.Manager, addr string) (net.Listener, error) {
+	cert, err := server.Certificate(m.P.ServerKey(), m.P.ServerCert())
+	if err != nil {
+		return nil, err
+	}
+	return d.API.ListenTCP(addr, cert)
 }
 
 func (d *Daemon) idle(m *vm.Manager, t *vm.IdleTracker) error {

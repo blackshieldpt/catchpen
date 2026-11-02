@@ -135,8 +135,16 @@ func TestLoadServer(t *testing.T) {
 			t.Errorf("%q: server %v, %v", in, c.Server, err)
 		}
 	}
-	os.WriteFile(p, []byte("server: { listen: \"0.0.0.0:7443\" }\n"), 0o600)
-	if _, err := Load(p); err == nil {
-		t.Error("server.listen accepted before TCP is supported")
+	for _, ok := range []string{"127.0.0.1:7443", ":7443", "[::1]:7443", "host.example:1"} {
+		os.WriteFile(p, []byte("server: { listen: \""+ok+"\" }\n"), 0o600)
+		if c, err := Load(p); err != nil || c.Server == nil || c.Server.Listen != ok {
+			t.Errorf("listen %q: %+v, %v", ok, c.Server, err)
+		}
+	}
+	for _, bad := range []string{"7443", "host:", "host:http", "host:0", "host:70000", "::1:7443"} {
+		os.WriteFile(p, []byte("server: { listen: \""+bad+"\" }\n"), 0o600)
+		if _, err := Load(p); err == nil || !strings.Contains(err.Error(), "server.listen must be host:port") {
+			t.Errorf("listen %q: %v", bad, err)
+		}
 	}
 }

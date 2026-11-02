@@ -278,7 +278,7 @@ See [snapshots.md](snapshots.md); `reset`, `rebase` and `gc` are under VM lifecy
 | `catchpen daemon install` | Install and start the systemd user service (`journalctl --user -u catchpen`). |
 | `catchpen daemon uninstall` | Stop and remove the service. |
 | `catchpen daemon status` | Show whether the daemon runs. |
-| `catchpen daemon info` | Show the config directory, the API's socket (served only when `config.yaml` has `server: {}`), the pin of its TLS certificate and how many clients are enrolled. The key and certificate are made on first use. |
+| `catchpen daemon info` | Show the config directory, the API's socket (served only when `config.yaml` has `server: {}`), the pin of its TLS certificate (served on `server.listen`, if set) and how many clients are enrolled. The key and certificate are made on first use. |
 | `catchpen daemon client add <name> --cert <file>` | Enrol an API client by its certificate (PEM): the server pins its public key. |
 | `catchpen daemon client add <name> --hmac` | Enrol an API client with a new 32-byte HMAC key, printed once on stdout as 64 hex digits. |
 | `catchpen daemon client ls` | List enrolled clients (name, method, scopes, when added, in UTC); never keys. |
@@ -287,8 +287,9 @@ See [snapshots.md](snapshots.md); `reset`, `rebase` and `gc` are under VM lifecy
 | `catchpen pool fill` | Replace stale pool VMs and create missing ones. |
 | `catchpen pool drain` | Destroy all pool VMs. |
 
-The daemon doesn't listen on TCP yet, so enrolled API clients can't connect until it
-does. Enrolments go in `clients.yaml` in the config directory and are audited
+Enrolled API clients connect over TLS 1.3 to `server.listen` (see
+[configuration.md](configuration.md)), pinning the certificate's key; `client rm` refuses
+a removed client's next request. Enrolments go in `clients.yaml` in the config directory and are audited
 (`api.client.add`, `api.client.rm`; never the key).
 
 - A pin is `sha256:` and the hex SHA-256 of the certificate's public key, which

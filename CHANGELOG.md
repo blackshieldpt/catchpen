@@ -8,10 +8,16 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- `server: { listen: host:port }` makes `catchpen daemon` serve the API over TLS 1.3 to
+  clients enrolled with `catchpen daemon client add`, by certificate (mTLS) or by HMAC
+  signed requests; it refuses to start with no client enrolled, and a removed client is
+  refused from its next request. At most 64 connections, 16 from one IPv4 address or IPv6 /64. `pkg/apiclient`
+  connects with `URL`, `ServerPin` and `Cert` or `HMAC`; `pkg/api`'s `Verifier` gains
+  `SetNonceLimit`.
 - `catchpen daemon client add|ls|rm` enrols API clients, by certificate (`--cert`) or
   with a generated HMAC key (`--hmac`), into `clients.yaml`; `catchpen daemon info`
   shows the API's socket and the pin of its TLS certificate, which it makes on first
-  use. Nothing listens on TCP yet.
+  use.
 - `server: {}` in `config.yaml` makes `catchpen daemon` serve an HTTP API on a unix
   socket, `api.sock` in the data directory (mode 0600, its own user only). So far it
   only reports catchpen's version and the API version (`GET /v1/info`); the Go client is

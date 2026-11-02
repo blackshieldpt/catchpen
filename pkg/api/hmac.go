@@ -125,6 +125,15 @@ func NewVerifier(key func(name string) ([]byte, bool)) *Verifier {
 	return &Verifier{key: key, now: time.Now, maxNonces: 1 << 13, seen: map[string]map[string]time.Time{}}
 }
 
+// SetNonceLimit sets how many nonces a client may use in a window (default
+// 8192); past it, Verify returns ErrNonceCacheFull. With n <= 0 it returns
+// that for every request.
+func (v *Verifier) SetNonceLimit(n int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.maxNonces = n
+}
+
 // signature is what a request's headers say.
 type signature struct {
 	name, mac, ts, nonce string

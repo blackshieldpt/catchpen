@@ -1,9 +1,11 @@
-// Package server serves the catchpen API (pkg/api) for catchpen daemon, on
-// a unix socket only the daemon's user can use.
+// Package server serves the catchpen API (pkg/api) for catchpen daemon: on a
+// unix socket only the daemon's user can use, and over TCP with TLS to
+// enrolled clients.
 package server
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,16 +23,22 @@ import (
 // Server is the API's handlers.
 type Server struct {
 	version string
-	uid     int // the only user whose connections are served
+	uid     int    // the only user whose unix socket connections are served
+	clients string // the clients file: who may connect over TCP
+	hmac    *api.Verifier
 }
 
-// New returns the API of catchpen at version, for this process's user.
-func New(version string) *Server {
-	return &Server{version: version, uid: os.Getuid()}
+// New returns the API of catchpen at version, for this process's user over
+// the unix socket and for the clients in the clients file over TCP.
+func New(version, clients string) *Server {
+	s := &Server{version: version, uid: os.Getuid(), clients: clients}
+	s.hmac = api.NewVerifier(s.hmacKey)
+	return s
 }
 
-// Handler is the API. A request is served only on a connection Serve
-// accepted from this process's user.
+// Handler is the API. A request is served on a unix socket connection from
+// this process's user, or on a TLS connection from an enrolled client (see
+// ListenTCP); anything else is refused.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+api.PathInfo, s.info)
@@ -41,7 +49,13 @@ func (s *Server) Handler() http.Handler {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Cache-Control", "no-store")
-		if uid, ok := r.Context().Value(peerUID{}).(int); !ok || uid != s.uid {
+		r.Body = http.MaxBytesReader(w, r.Body, api.MaxRequestBody)
+		if r.TLS != nil {
+			var ok bool
+			if r, ok = s.authTCP(w, r); !ok {
+				return
+			}
+		} else if uid, ok := r.Context().Value(peerUID{}).(int); !ok || uid != s.uid {
 			writeError(w, api.CodeUnauthorized, "not a connection from this user")
 			return
 		}
@@ -66,6 +80,17 @@ func writeError(w http.ResponseWriter, code, msg string) {
 // peerUID is the context key of the user id at the other end of a
 // connection (-1: unknown).
 type peerUID struct{}
+
+// connContext gives a request its connection's peer uid (unix socket) or
+// its limitConn (TCP, which authTCP marks authenticated).
+func connContext(ctx context.Context, c net.Conn) context.Context {
+	if tc, ok := c.(*tls.Conn); ok {
+		if lc, ok := tc.NetConn().(*limitConn); ok {
+			return context.WithValue(ctx, limitConnKey{}, lc)
+		}
+	}
+	return withPeerUID(ctx, c)
+}
 
 func withPeerUID(ctx context.Context, c net.Conn) context.Context {
 	uid := -1
@@ -110,11 +135,20 @@ func Listen(path string) (net.Listener, error) {
 	return l, nil
 }
 
-// Serve serves h on l, a listener from Listen, until ctx is done; it returns
-// once l is closed, which removes the socket.
+// headerTimeout bounds a request's headers, and a TLS connection's
+// handshake: a client that sends nothing can't hold a connection open.
+var headerTimeout = 10 * time.Second
+
+// Serve serves h on l, a listener from Listen or ListenTCP, until ctx is
+// done; it returns once l is closed (for the socket, that removes it).
 func Serve(ctx context.Context, l net.Listener, h http.Handler) error {
-	srv := &http.Server{Handler: h, ConnContext: withPeerUID,
-		ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10}
+	srv := &http.Server{Handler: h, ConnContext: connContext,
+		ReadHeaderTimeout: headerTimeout, IdleTimeout: 2 * time.Minute, MaxHeaderBytes: 64 << 10,
+		// net/http reads some bodies without calling h (after a 417 for an
+		// unknown Expect, say): bound those too. h may set its own deadline.
+		ReadTimeout: headerTimeout + requestTimeout,
+		// net/http would answer "OPTIONS *" itself, past h's checks and deadlines.
+		DisableGeneralOptionsHandler: true}
 	done := make(chan error, 1)
 	go func() { done <- srv.Serve(l) }()
 	select {
@@ -125,6 +159,9 @@ func Serve(ctx context.Context, l net.Listener, h http.Handler) error {
 	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	err := srv.Shutdown(sctx)
+	if err != nil {
+		srv.Close() // what is still open after 5 s
+	}
 	<-done // srv.Serve closes l, even when it starts after Shutdown
 	return err
 }

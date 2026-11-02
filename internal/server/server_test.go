@@ -27,7 +27,7 @@ func serve(t *testing.T) string {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- Serve(ctx, l, New("1.2.3").Handler()) }()
+	go func() { done <- Serve(ctx, l, New("1.2.3", "").Handler()) }()
 	t.Cleanup(func() {
 		cancel()
 		if err := <-done; err != nil {
@@ -99,14 +99,14 @@ func TestRefusesOtherConnections(t *testing.T) {
 		r := httptest.NewRequest("GET", api.PathInfo, nil)
 		r = r.WithContext(context.WithValue(r.Context(), peerUID{}, uid))
 		w := httptest.NewRecorder()
-		New("1.2.3").Handler().ServeHTTP(w, r)
+		New("1.2.3", "").Handler().ServeHTTP(w, r)
 		if w.Code != http.StatusUnauthorized {
 			t.Errorf("uid %d: %d %s", uid, w.Code, w.Body)
 		}
 	}
 
 	// Over TCP there is no peer to ask.
-	ts := httptest.NewServer(New("1.2.3").Handler())
+	ts := httptest.NewServer(New("1.2.3", "").Handler())
 	defer ts.Close()
 	resp, err := http.Get(ts.URL + api.PathInfo)
 	if err != nil {
@@ -175,7 +175,7 @@ func TestServeCancelledAtOnce(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := Serve(ctx, l, New("1.2.3").Handler()); err != nil {
+		if err := Serve(ctx, l, New("1.2.3", "").Handler()); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := os.Lstat(sock); !errors.Is(err, fs.ErrNotExist) {

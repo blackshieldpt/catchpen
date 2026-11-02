@@ -71,7 +71,9 @@ pool:                           # warm pool kept by the daemon; template is a -t
 
 cache_max: 20G                  # package cache size
 canary_action: pause            # pause, stop or log
-server: {}                      # the daemon serves the API on its unix socket
+server: {}                      # the daemon serves the API on its unix socket;
+                                # server: { listen: "127.0.0.1:7443" } also serves it
+                                # over TLS 1.3 to enrolled clients
 ```
 
 | Key | Default | Notes |
@@ -89,6 +91,7 @@ server: {}                      # the daemon serves the API on its unix socket
 | `cache_max` | `20G` | Least recently used objects go first. |
 | `canary_action` | `pause` | See [canaries.md](canaries.md). |
 | `server` | not set | Set it (`server: {}`) and `catchpen daemon` serves the API on `api.sock` in the data directory, mode 0600, to its own user only. A bare `server:` is the same as not setting it. Read when the daemon starts: restart it after a change (`systemctl --user restart catchpen`). The API so far only reports its version (`GET /v1/info`). |
+| `server.listen` | not set | A `host:port`, quoted (`":7443"` for every interface; `"[::1]:7443"` for IPv6), where the daemon also serves the API over TLS 1.3, with the certificate `catchpen daemon info` shows, to clients enrolled with `catchpen daemon client add`: by their certificate, or by requests signed with their HMAC key. It refuses to start with no client enrolled. At most 64 connections at once, 16 from one IPv4 address or IPv6 /64; once a request's headers are in, it has 30 s to send its body and 30 s, from when it is authenticated, for its answer to be read, and a refused one closes its connection. A connection is closed 60 s after it opened unless a request on it has been authenticated by then. |
 
 Sizes are a number followed by `M`, `G` or `T` (MiB, GiB, TiB).
 
