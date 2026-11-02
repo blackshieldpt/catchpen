@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/blackshieldpt/catchpen/internal/sshx"
 )
 
 // storeWith makes a store holding one task in state, with output.jsonl and
@@ -146,5 +149,48 @@ func TestFollowEndedBadly(t *testing.T) {
 	status.Reset()
 	if got, err := st.Follow(context.Background(), "0badc0de", false, &out, &status); got != nil || err == nil || out.Len() != 0 || status.Len() != 0 {
 		t.Errorf("missing task: %+v, %v; out %q, status %q", got, err, out.String(), status.String())
+	}
+}
+
+// The API's task logs: the guest's lines as it wrote them (WriteOutput makes
+// them printable), rendered for the agent or raw, without the events that
+// render to nothing.
+func TestTailOutputPassesGuestLines(t *testing.T) {
+	ev := `{"type":"assistant","message":{"content":[{"type":"text","text":"\u001b]0;owned"}]}}`
+	st, tk := storeWith(t, Done, "claude", `{"type":"system"}`+"\n"+ev+"\n", "")
+	for _, c := range []struct {
+		raw  bool
+		want []string
+	}{
+		{false, []string{"\x1b]0;owned"}},
+		{true, []string{`{"type":"system"}`, ev}},
+	} {
+		var got []string
+		if err := st.TailOutput(context.Background(), tk.ID, false, c.raw, func(g sshx.GuestOutput) error {
+			got = append(got, string(g.Raw()))
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(got, c.want) {
+			t.Errorf("raw %v: got %q, want %q", c.raw, got, c.want)
+		}
+	}
+}
+
+// The API's task logs -f: the guest's lines up to the last one, which has no
+// newline, then the task as it ended.
+func TestFollowOutputEndsWithTheTask(t *testing.T) {
+	st, tk := storeWith(t, Failed, "cmd", "\x1b]0;owned\nlast", "")
+	var got []string
+	ended, err := st.FollowOutput(context.Background(), tk.ID, false, func(g sshx.GuestOutput) error {
+		got = append(got, string(g.Raw()))
+		return nil
+	})
+	if err != nil || ended == nil || ended.State != Failed {
+		t.Fatalf("%+v, %v", ended, err)
+	}
+	if want := []string{"\x1b]0;owned", "last"}; !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

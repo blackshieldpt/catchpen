@@ -58,11 +58,12 @@ func (s Store) Show(w io.Writer, t *Task) error {
 	return nil
 }
 
-// WriteOutput writes a task's agent output to w, one line per event: rendered
-// for its agent, or the event stream as is when raw. With follow it waits for
-// more until ctx ends; a cancel whose cause is jsonl.ErrWriterDone reads the
-// last lines first.
-func (s Store) WriteOutput(ctx context.Context, id string, follow, raw bool, w io.Writer) error {
+// TailOutput calls fn with a task's agent output, one line per event:
+// rendered for its agent, or the event stream as is when raw. Events that
+// render to nothing are skipped. With follow it waits for more until ctx
+// ends; a cancel whose cause is jsonl.ErrWriterDone reads the last lines
+// first. The lines carry the guest's text, not made printable.
+func (s Store) TailOutput(ctx context.Context, id string, follow, raw bool, fn func(sshx.GuestOutput) error) error {
 	t, err := s.Load(id)
 	if err != nil {
 		return err
@@ -75,20 +76,32 @@ func (s Store) WriteOutput(ctx context.Context, id string, follow, raw bool, w i
 		if out == "" {
 			return nil
 		}
-		// Guest text without control characters: nothing in one line can hide
-		// the lines after it, move the cursor or act on the terminal.
-		_, err := io.WriteString(w, sshx.Printable(out)+"\n")
-		return err
+		return fn(sshx.Guest([]byte(out)))
 	})
 }
 
-// Follow writes a task's output to out until the task ends or ctx does, then
-// a status line to status, and returns the task as it then was. The error is
+// WriteOutput writes a task's agent output to w, as TailOutput passes it on.
+func (s Store) WriteOutput(ctx context.Context, id string, follow, raw bool, w io.Writer) error {
+	return s.TailOutput(ctx, id, follow, raw, printLines(w))
+}
+
+// printLines writes each guest line to w on a line of its own.
+func printLines(w io.Writer) func(sshx.GuestOutput) error {
+	return func(g sshx.GuestOutput) error {
+		// Guest text without control characters: nothing in one line can hide
+		// the lines after it, move the cursor or act on the terminal.
+		_, err := io.WriteString(w, sshx.Printable(string(g.Raw()))+"\n")
+		return err
+	}
+}
+
+// FollowOutput calls fn with a task's output, as TailOutput does, until the
+// task ends or ctx does, and returns the task as it then was. The error is
 // the output's: nil both when the task ended and when ctx ended first, so a
 // caller that cancels checks ctx.Err() before taking the task as ended (a
-// task that ended is Final(t.State), or lost: t.Status() == "lost"). What a task that ended other than done means is the
-// caller's to decide. A task that can't be loaded afterwards gives (nil, err).
-func (s Store) Follow(ctx context.Context, id string, raw bool, out, status io.Writer) (*Task, error) {
+// task that ended is Final(t.State), or lost: t.Status() == "lost"). A task
+// that can't be loaded afterwards gives (nil, err).
+func (s Store) FollowOutput(ctx context.Context, id string, raw bool, fn func(sshx.GuestOutput) error) (*Task, error) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	go func() {
@@ -105,10 +118,22 @@ func (s Store) Follow(ctx context.Context, id string, raw bool, out, status io.W
 			}
 		}
 	}()
-	err := s.WriteOutput(ctx, id, true, raw, out)
+	err := s.TailOutput(ctx, id, true, raw, fn)
 	t, lerr := s.Load(id)
 	if lerr != nil {
 		return nil, lerr
+	}
+	return t, err
+}
+
+// Follow writes a task's output to out until the task ends or ctx does, then
+// a status line to status, and returns the task and error as FollowOutput
+// does. What a task that ended other than done means is the caller's to
+// decide.
+func (s Store) Follow(ctx context.Context, id string, raw bool, out, status io.Writer) (*Task, error) {
+	t, err := s.FollowOutput(ctx, id, raw, printLines(out))
+	if t == nil {
+		return nil, err
 	}
 	line := fmt.Sprintf("task %s %s", id, t.Status())
 	if t.Output != "" {

@@ -46,11 +46,7 @@ func appendLog(dir string, e LogEntry) error {
 	return jsonl.Append(filepath.Join(dir, LogFile), e, maxLogBytes)
 }
 
-func formatEntry(line string) string {
-	var e LogEntry
-	if err := json.Unmarshal([]byte(line), &e); err != nil {
-		return sshx.Printable(line)
-	}
+func formatEntry(e LogEntry) string {
 	// Hosts and reasons can come from upstreams or the guest: one line each.
 	p := func(s string) string { return strings.ReplaceAll(sshx.Printable(s), "\n", " ") }
 	s := fmt.Sprintf("%s %-5s %s  %s %s  %s", e.Time.UTC().Format(time.RFC3339),
@@ -58,11 +54,40 @@ func formatEntry(line string) string {
 	return strings.TrimRight(s, " ")
 }
 
+// TailEntries calls fn with each entry of the log, egress.log.1 first,
+// skipping lines that don't decode as JSON. With follow it keeps going, across
+// rotations, until ctx is done. Hosts and reasons can come from upstreams or
+// the guest: TailLog makes them printable.
+func TailEntries(ctx context.Context, path string, follow bool, fn func(LogEntry) error) error {
+	return tailLog(ctx, path, follow, func(e LogEntry, _ string, ok bool) error {
+		if !ok {
+			return nil
+		}
+		return fn(e)
+	})
+}
+
 // TailLog prints the log in human-readable form, egress.log.1 first; with
-// follow it keeps printing new lines (across rotations) until ctx is done.
+// follow it keeps printing new lines (across rotations) until ctx is done. A
+// line that doesn't decode is printed as it is, made printable.
 func TailLog(ctx context.Context, path string, follow bool, w io.Writer) error {
-	return jsonl.TailRotated(ctx, path, follow, func(line string) error {
-		_, err := fmt.Fprintln(w, formatEntry(line))
+	return tailLog(ctx, path, follow, func(e LogEntry, line string, ok bool) error {
+		var s string
+		if ok {
+			s = formatEntry(e)
+		} else {
+			s = sshx.Printable(line)
+		}
+		_, err := fmt.Fprintln(w, s)
 		return err
+	})
+}
+
+// tailLog calls fn with each line of the log, decoded (ok) or not.
+func tailLog(ctx context.Context, path string, follow bool, fn func(e LogEntry, line string, ok bool) error) error {
+	return jsonl.TailRotated(ctx, path, follow, func(line string) error {
+		var e LogEntry
+		err := json.Unmarshal([]byte(line), &e)
+		return fn(e, line, err == nil)
 	})
 }

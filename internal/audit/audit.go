@@ -73,9 +73,11 @@ func (l Log) Record(event, vm string, detail map[string]any) error {
 	return jsonl.Append(l.Path, Event{Time: time.Now().UTC(), Event: event, VM: vm, Detail: detail}, maxBytes)
 }
 
-// Tail prints events (of one VM if vm is set) in human-readable form, the
-// rotated-out file first.
-func (l Log) Tail(ctx context.Context, vm string, follow bool, w io.Writer) error {
+// TailEvents calls fn with each event (of one VM if vm is set), the
+// rotated-out file first, skipping lines that don't decode as JSON. With
+// follow it keeps going, across rotations, until ctx is done. Values may come
+// from the guest: Format makes them printable.
+func (l Log) TailEvents(ctx context.Context, vm string, follow bool, fn func(Event) error) error {
 	return jsonl.TailRotated(ctx, l.Path, follow, func(line string) error {
 		var e Event
 		if err := json.Unmarshal([]byte(line), &e); err != nil {
@@ -84,6 +86,14 @@ func (l Log) Tail(ctx context.Context, vm string, follow bool, w io.Writer) erro
 		if vm != "" && e.VM != vm {
 			return nil
 		}
+		return fn(e)
+	})
+}
+
+// Tail prints events (of one VM if vm is set) in human-readable form, the
+// rotated-out file first.
+func (l Log) Tail(ctx context.Context, vm string, follow bool, w io.Writer) error {
+	return l.TailEvents(ctx, vm, follow, func(e Event) error {
 		_, err := fmt.Fprintln(w, Format(e))
 		return err
 	})

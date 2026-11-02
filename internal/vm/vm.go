@@ -108,7 +108,7 @@ type Manager struct {
 	P     paths.Paths
 	Cfg   config.Config
 	Tpl   template.Loader
-	Out   io.Writer        // progress messages
+	Out   io.Writer        // progress messages: lines, and a build spinner on a terminal (nil: none)
 	In    io.Reader        // terminal input for key passphrases (nil: none)
 	Tmux  *hosttmux.Tmux   // host tmux session to keep in sync (nil: none)
 	Herdr *hostherdr.Herdr // host herdr workspaces to keep in sync (nil: none)
