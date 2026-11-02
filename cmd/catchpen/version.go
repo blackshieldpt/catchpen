@@ -22,32 +22,38 @@ func versionCmd() *cobra.Command {
 		Short: "Print catchpen's version, commit and commit date",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			v, c, d, dirty := version, commit, date, false
-			if bi, ok := rtdebug.ReadBuildInfo(); ok && c == "" {
-				if v == "dev" && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
-					v = bi.Main.Version
-				}
-				for _, s := range bi.Settings {
-					switch s.Key {
-					case "vcs.revision":
-						c = s.Value
-					case "vcs.time":
-						d = s.Value
-					case "vcs.modified":
-						dirty = s.Value == "true"
-					}
-				}
-			}
-			if c == "" {
-				c = "unknown"
-			}
-			if dirty {
-				c += "-dirty"
-			}
-			if d == "" {
-				d = "unknown"
-			}
+			v, c, d := versionInfo()
 			fmt.Printf("catchpen %s\ncommit %s\ndate   %s\n%s %s/%s\n", v, c, d, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 		},
 	}
+}
+
+// versionInfo is catchpen's version, commit and commit date.
+func versionInfo() (v, c, d string) {
+	v, c, d, dirty := version, commit, date, false
+	if bi, ok := rtdebug.ReadBuildInfo(); ok && c == "" {
+		if v == "dev" && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+			v = bi.Main.Version
+		}
+		for _, s := range bi.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				c = s.Value
+			case "vcs.time":
+				d = s.Value
+			case "vcs.modified":
+				dirty = s.Value == "true"
+			}
+		}
+	}
+	if c == "" {
+		c = "unknown"
+	}
+	if dirty {
+		c += "-dirty"
+	}
+	if d == "" {
+		d = "unknown"
+	}
+	return v, c, d
 }

@@ -126,3 +126,17 @@ func TestOldKeysExplained(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadServer(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	for in, want := range map[string]bool{"": false, "server:\n": false, "server: {}\n": true} {
+		os.WriteFile(p, []byte(in), 0o600)
+		if c, err := Load(p); err != nil || (c.Server != nil) != want {
+			t.Errorf("%q: server %v, %v", in, c.Server, err)
+		}
+	}
+	os.WriteFile(p, []byte("server: { listen: \"0.0.0.0:7443\" }\n"), 0o600)
+	if _, err := Load(p); err == nil {
+		t.Error("server.listen accepted before TCP is supported")
+	}
+}

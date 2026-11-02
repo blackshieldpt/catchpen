@@ -8,6 +8,10 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- `server: {}` in `config.yaml` makes `catchpen daemon` serve an HTTP API on a unix
+  socket, `api.sock` in the data directory (mode 0600, its own user only). So far it
+  only reports catchpen's version and the API version (`GET /v1/info`); the Go client is
+  `pkg/apiclient`.
 - `catchpen egress config` records each change in the audit log (`egress.config`), with
   the old and new values, as allowlist and denylist edits already were.
 

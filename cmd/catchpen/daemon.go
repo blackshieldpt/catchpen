@@ -11,6 +11,7 @@ import (
 
 	"github.com/blackshieldpt/catchpen/internal/daemon"
 	"github.com/blackshieldpt/catchpen/internal/egress"
+	"github.com/blackshieldpt/catchpen/internal/server"
 	"github.com/blackshieldpt/catchpen/internal/vm"
 )
 
@@ -20,11 +21,13 @@ func daemonCmd() *cobra.Command {
 		Short: "Run the background jobs: warm pool, idle stop, scheduled rebuilds, desktop egress prompts",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			v, _, _ := versionInfo()
 			d := &daemon.Daemon{
 				Manager: manager,
 				Prompts: func(ctx context.Context, m *vm.Manager, dirs map[string]string) error {
 					return egress.Watch(ctx, dirs, m.PromptDecider(egress.DesktopDecider()))
 				},
+				API: server.New(v).Handler(),
 				Log: os.Stderr,
 			}
 			return d.Run(cmd.Context())

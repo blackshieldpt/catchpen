@@ -10,6 +10,7 @@ import (
 	"io"
 	"maps"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/blackshieldpt/catchpen/internal/egress"
 	"github.com/blackshieldpt/catchpen/internal/fsutil"
 	"github.com/blackshieldpt/catchpen/internal/paths"
+	"github.com/blackshieldpt/catchpen/internal/server"
 	"github.com/blackshieldpt/catchpen/internal/template"
 	"github.com/blackshieldpt/catchpen/internal/vm"
 )
@@ -37,7 +39,11 @@ type Daemon struct {
 	// Prompts answers egress prompts for the VMs in dirs (name -> directory)
 	// until ctx is done; nil turns prompt dispatch off.
 	Prompts func(ctx context.Context, m *vm.Manager, dirs map[string]string) error
-	Log     io.Writer
+	// API is served on the API socket when config.yaml has server: (nil:
+	// never). Unlike the jobs' settings, server: is read only when the daemon
+	// starts; a socket it can't serve fails Run.
+	API http.Handler
+	Log io.Writer
 }
 
 func (d *Daemon) logf(format string, a ...any) {
@@ -76,9 +82,23 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return errors.New("catchpen daemon is already running")
 	}
 	defer unlock()
-	d.logf("catchpen daemon running")
 
 	var wg sync.WaitGroup
+	// Under the daemon lock: Listen replaces the socket, which must not be a
+	// running daemon's.
+	if m.Cfg.Server != nil && d.API != nil {
+		l, err := server.Listen(m.P.APISocket())
+		if err != nil {
+			return fmt.Errorf("api: %w", err)
+		}
+		d.logf("api: serving on %s", m.P.APISocket())
+		wg.Go(func() {
+			if err := server.Serve(ctx, l, d.API); err != nil {
+				d.logf("api: %v", err)
+			}
+		})
+	}
+	d.logf("catchpen daemon running")
 	loop := func(job string, every time.Duration, fn func(context.Context, *vm.Manager) error) {
 		wg.Go(func() {
 			for {

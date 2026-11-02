@@ -40,7 +40,8 @@ jobs.
 | rebuild | checked every 10 minutes | When `rebuild:` has elapsed, rebuilds the bases in use, refills the pool and runs `gc`. |
 | prompts | every 30 seconds | Answers egress prompts through desktop notifications for VMs with `on_deny: prompt` that no `catchpen egress watch` serves. |
 
-It reads config.yaml again each round, so edits apply without a restart.
+It reads config.yaml again each round, so edits apply without a restart, except
+`server:`, which it reads when it starts.
 
 ```
 catchpen daemon install     # writes ~/.config/systemd/user/catchpen.service, enables and starts it

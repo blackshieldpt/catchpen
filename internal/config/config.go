@@ -42,7 +42,13 @@ type Config struct {
 	CacheMax string `yaml:"cache_max"`
 	// CanaryAction is what a canary hit does to the VM: pause (default), stop or log.
 	CanaryAction string `yaml:"canary_action"`
+	// Server, when set (server: {}), makes catchpen daemon serve the API on
+	// its unix socket.
+	Server *Server `yaml:"server"`
 }
+
+// Server configures the API catchpen daemon serves.
+type Server struct{}
 
 // PoolEntry asks for Size booted, stopped VMs of a template (a -t spec), ready
 // for up and task to claim.
@@ -118,6 +124,7 @@ func Load(path string) (Config, error) {
 	c.Tasks = f.Tasks
 	c.IdleStop, c.Rebuild, c.Pool = f.IdleStop, f.Rebuild, f.Pool
 	c.CacheMax = f.CacheMax
+	c.Server = f.Server
 	switch c.CanaryAction = f.CanaryAction; c.CanaryAction {
 	case "", CanaryPause, CanaryStop, CanaryLog:
 	default:

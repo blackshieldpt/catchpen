@@ -2,17 +2,22 @@ package daemon
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/blackshieldpt/catchpen/internal/config"
 	"github.com/blackshieldpt/catchpen/internal/egress"
 	"github.com/blackshieldpt/catchpen/internal/paths"
+	"github.com/blackshieldpt/catchpen/internal/server"
 	"github.com/blackshieldpt/catchpen/internal/vm"
+	"github.com/blackshieldpt/catchpen/pkg/apiclient"
 )
 
 func TestUnit(t *testing.T) {
@@ -111,5 +116,99 @@ func TestPromptVMs(t *testing.T) {
 	ours := map[string]string{"asks": m.Dir("asks"), "other": m.Dir("other")}
 	if got, stale := promptVMs(m, ours); len(got) != 2 || !stale {
 		t.Errorf("promptVMs keeping ours = %v %v", got, stale)
+	}
+}
+
+// syncLog is a log the daemon's goroutines can share.
+type syncLog struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *syncLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *syncLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// apiDaemon is a daemon on m's directories, with server: set when serve is.
+func apiDaemon(m *vm.Manager, serve bool) (*Daemon, *syncLog) {
+	cfg := m.Cfg
+	if serve {
+		cfg.Server = &config.Server{}
+	}
+	log := &syncLog{}
+	return &Daemon{
+		Manager: func() (*vm.Manager, error) { return &vm.Manager{P: m.P, Cfg: cfg}, nil },
+		API:     server.New("1.2.3").Handler(),
+		Log:     log,
+	}, log
+}
+
+func TestRunServesAPI(t *testing.T) {
+	m := testManager(t)
+	d, log := apiDaemon(m, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- d.Run(ctx) }()
+	c, err := apiclient.New(apiclient.Options{Socket: m.P.APISocket()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for start := time.Now(); !strings.Contains(log.String(), "catchpen daemon running"); time.Sleep(10 * time.Millisecond) {
+		if time.Since(start) > 10*time.Second {
+			t.Fatalf("daemon not running: %s", log)
+		}
+	}
+	if i, err := c.Info(ctx); err != nil || i.Version != "1.2.3" {
+		t.Errorf("info %+v, %v", i, err)
+	}
+	// A second daemon fails, and leaves the first one's socket alone.
+	d2, _ := apiDaemon(m, true)
+	if err := d2.Run(ctx); err == nil || !strings.Contains(err.Error(), "already running") {
+		t.Errorf("second daemon: %v", err)
+	}
+	if _, err := c.Info(ctx); err != nil {
+		t.Errorf("after a second daemon: %v", err)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the daemon kept running after its context was done")
+	}
+	if _, err := os.Lstat(m.P.APISocket()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("socket after the daemon stopped: %v", err)
+	}
+}
+
+// Without server:, the daemon leaves the socket's path alone; with it, a path
+// it can't listen on stops the daemon.
+func TestRunAPISetting(t *testing.T) {
+	m := testManager(t)
+	if err := os.Mkdir(m.P.APISocket(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	d, log := apiDaemon(m, false)
+	if err := d.Run(ctx); err != nil || strings.Contains(log.String(), "api:") {
+		t.Errorf("without server: %v; log %q", err, log)
+	}
+	if fi, err := os.Stat(m.P.APISocket()); err != nil || !fi.IsDir() {
+		t.Errorf("without server, the path was touched: %v", err)
+	}
+	d, _ = apiDaemon(m, true)
+	if err := d.Run(ctx); err == nil || !strings.Contains(err.Error(), "not a socket") {
+		t.Errorf("with server: %v", err)
 	}
 }

@@ -31,6 +31,7 @@ files, not here.
   tasks/<id>/                task.json, prompt.md, output.jsonl, result.md, supervisor.log
   audit.jsonl                host audit log
   daemon.lock, rebuild.stamp catchpen daemon state
+  api.sock                   the API's socket, while catchpen daemon serves it (server:)
 ~/.cache/catchpen/pkg/         package caches (apt, go, npm, pypi, docker)
 ~/.cache/catchpen/sources/     pinned git repos of skills and plugins
 ```
@@ -68,6 +69,7 @@ pool:                           # warm pool kept by the daemon; template is a -t
 
 cache_max: 20G                  # package cache size
 canary_action: pause            # pause, stop or log
+server: {}                      # the daemon serves the API on its unix socket
 ```
 
 | Key | Default | Notes |
@@ -84,6 +86,7 @@ canary_action: pause            # pause, stop or log
 | `pool` | none | `template` is a `-t` spec (default: every category's default), `size` is 0 to 32. Each template may appear once. A pool VM serves only the same spec, written the same way. |
 | `cache_max` | `20G` | Least recently used objects go first. |
 | `canary_action` | `pause` | See [canaries.md](canaries.md). |
+| `server` | not set | Set it (`server: {}`) and `catchpen daemon` serves the API on `api.sock` in the data directory, mode 0600, to its own user only. A bare `server:` is the same as not setting it. Read when the daemon starts: restart it after a change (`systemctl --user restart catchpen`). The API so far only reports its version (`GET /v1/info`). |
 
 Sizes are a number followed by `M`, `G` or `T` (MiB, GiB, TiB).
 
