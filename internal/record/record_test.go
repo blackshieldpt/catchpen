@@ -4,8 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -185,13 +188,125 @@ func TestRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, err := Run(exec.Command("sh", "-c", "[ -t 1 ] && printf 'on a tty'; exit 3"), c)
+	var out bytes.Buffer
+	s := IO{In: strings.NewReader(""), Out: &out, Size: func() (int, int) { return 80, 24 }}
+	code, err := Run(exec.Command("sh", "-c", "[ -t 1 ] && printf 'on a tty'; exit 3"), c, s)
 	c.Close()
 	if err != nil || code != 3 {
 		t.Fatalf("Run = %d, %v", code, err)
 	}
-	if _, evs := readCast(t, p); !strings.Contains(output(evs), "on a tty") {
-		t.Errorf("recording: %q", output(evs))
+	if _, evs := readCast(t, p); !strings.Contains(output(evs), "on a tty") || !strings.Contains(out.String(), "on a tty") {
+		t.Errorf("recording %q, output %q", output(evs), out.String())
+	}
+}
+
+// syncBuffer is a bytes.Buffer safe to write and read from two goroutines.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.String()
+}
+
+// TestRunOverPipes runs a session on pipes, as the API will: input reaches
+// the child, resizes reach it and the recording, and without a recording
+// it still runs on a pty.
+func TestRunOverPipes(t *testing.T) {
+	for _, recorded := range []bool{true, false} {
+		p := filepath.Join(t.TempDir(), "a.cast")
+		var c *Cast
+		if recorded {
+			var err error
+			if c, err = Create(p, 80, 24, ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+		inR, inW := io.Pipe()
+		var out syncBuffer
+		resize := make(chan Winsize, 1)
+		s := IO{In: inR, Out: &out, Size: func() (int, int) { return 80, 24 }, Resize: resize}
+		waitFor := func(want string) {
+			t.Helper()
+			for i := 0; i < 100 && !strings.Contains(out.String(), want); i++ {
+				time.Sleep(50 * time.Millisecond)
+			}
+			if !strings.Contains(out.String(), want) {
+				t.Fatalf("recorded %v: no %q in %q", recorded, want, out.String())
+			}
+		}
+		res := make(chan int, 1)
+		go func() {
+			code, err := Run(exec.Command("sh", "-c", "stty size; echo ready; read x; stty size; read y; echo got-$y; exit 4"), c, s)
+			if err != nil {
+				t.Error(err)
+			}
+			res <- code
+		}()
+		waitFor("ready")
+		resize <- Winsize{100, 40}
+		time.Sleep(300 * time.Millisecond)
+		io.WriteString(inW, "a\n")
+		waitFor("40 100")
+		io.WriteString(inW, "b\n")
+		waitFor("got-b")
+		if code := <-res; code != 4 {
+			t.Errorf("recorded %v: exit %d", recorded, code)
+		}
+		inW.Close()
+		if !strings.HasPrefix(out.String(), "24 80") {
+			t.Errorf("recorded %v: starting size: %q", recorded, out.String())
+		}
+		if !recorded {
+			continue
+		}
+		c.Close()
+		_, evs := readCast(t, p)
+		var resized bool
+		for _, e := range evs {
+			resized = resized || (e[1] == "r" && e[2] == "100x40")
+		}
+		if !resized || !strings.Contains(output(evs), "got-b") {
+			t.Errorf("recording: resized=%v output=%q", resized, output(evs))
+		}
+	}
+}
+
+// failWriter fails every write, as a client that went away does.
+type failWriter struct{}
+
+func (failWriter) Write([]byte) (int, error) { return 0, errors.New("gone") }
+
+// When Out fails, Run ends: the child, still writing, gets SIGHUP from the
+// pty's close instead of blocking on a full pty forever.
+func TestRunEndsWhenOutFails(t *testing.T) {
+	// The child must not inherit SIGHUP ignored (under nohup): handling it
+	// here makes exec give the child the default action.
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+	s := IO{In: strings.NewReader(""), Out: failWriter{}, Size: func() (int, int) { return 80, 24 }}
+	res := make(chan int, 1)
+	go func() {
+		code, _ := Run(exec.Command("sh", "-c", "while :; do echo x; done"), nil, s)
+		res <- code
+	}()
+	select {
+	case code := <-res:
+		if code != 128+int(syscall.SIGHUP) {
+			t.Errorf("exit %d", code)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run didn't end after Out failed")
 	}
 }
 
@@ -248,9 +363,14 @@ func TestRunOnTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s, stop := Stdio()
+	defer stop()
+	if s.Size == nil || !s.OnTerminal() {
+		t.Fatal("Stdio on a terminal has no size")
+	}
 	res := make(chan int, 1)
 	go func() {
-		code, err := Run(exec.Command("sh", "-c", "echo ready; read x; stty size; read y; echo got-$y"), c)
+		code, err := Run(exec.Command("sh", "-c", "echo ready; read x; stty size; read y; echo got-$y"), c, s)
 		if err != nil {
 			t.Error(err)
 		}

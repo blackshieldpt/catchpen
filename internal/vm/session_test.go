@@ -1,10 +1,13 @@
 package vm
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/blackshieldpt/catchpen/internal/forge"
+	"github.com/blackshieldpt/catchpen/internal/record"
 	"github.com/blackshieldpt/catchpen/internal/template"
 )
 
@@ -83,5 +86,28 @@ func TestDefaultAgent(t *testing.T) {
 		if got := (&State{Agents: c.agents}).DefaultAgent(); got != c.want {
 			t.Errorf("%+v: %q, want %q", c.agents, got, c.want)
 		}
+	}
+}
+
+// A TERM that isn't a terminfo name is refused before anything runs: it is
+// the only environment a Session's caller can give ssh. So is an IO without
+// an input.
+func TestSessionRefusesBadTerm(t *testing.T) {
+	m := testManager(t)
+	sio := record.IO{In: strings.NewReader(""), Out: &strings.Builder{}}
+	for _, term := range []string{"xterm\nLD_PRELOAD=/tmp/x.so", "a b", "x=y", strings.Repeat("x", 65)} {
+		sio.Term = term
+		if _, err := m.Session(context.Background(), "v1", KindSSH, "", sio); err == nil || err.Error() != fmt.Sprintf("invalid TERM %q", term) {
+			t.Errorf("TERM %q: %v", term, err)
+		}
+	}
+	// No input or output is refused too.
+	if _, err := m.Session(context.Background(), "v1", KindSSH, "", record.IO{Out: sio.Out}); err == nil || err.Error() != "a session needs an input and an output" {
+		t.Errorf("no input: %v", err)
+	}
+	// A good TERM goes on, and fails on the missing VM.
+	sio.Term = "xterm-256color"
+	if _, err := m.Session(context.Background(), "v1", KindSSH, "", sio); err == nil || strings.Contains(err.Error(), "TERM") {
+		t.Errorf("good TERM: %v", err)
 	}
 }

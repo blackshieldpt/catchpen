@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -95,15 +97,27 @@ func WorkDir(s *State) string {
 	return "/workspace"
 }
 
-// Session runs an interactive ssh session to a VM. remote is the guest
-// command ("" for a login shell). With a terminal and recording on, the
-// session runs on a host pty and its output is recorded.
-func (m *Manager) Session(ctx context.Context, name, kind, remote string) (int, error) {
+// validTerm is what a TERM may be: the names terminfo uses.
+var validTerm = regexp.MustCompile(`^[A-Za-z0-9._+-]{1,64}$`)
+
+// Session runs an interactive ssh session to a VM on s. remote is the
+// guest command ("" for a login shell). With a terminal (s.Size set, and a
+// kind other than KindCommand) the session gets a tty, and with recording
+// on it runs on a host pty and its output is recorded. On this process's
+// own terminal with recording off, ssh uses the terminal directly; on any
+// other IO it always runs on a host pty.
+func (m *Manager) Session(ctx context.Context, name, kind, remote string, s record.IO) (int, error) {
+	if s.In == nil || s.Out == nil {
+		return -1, errors.New("a session needs an input and an output")
+	}
+	if s.Term != "" && !validTerm.MatchString(s.Term) {
+		return -1, fmt.Errorf("invalid TERM %q", s.Term)
+	}
 	if _, err := m.SSHPort(name); err != nil {
 		return -1, err
 	}
 	args := []string{"-F", m.P.SSHConfig()}
-	tty := kind != KindCommand && record.IsTerminal()
+	tty := kind != KindCommand && s.Size != nil
 	if tty {
 		args = append(args, "-t")
 	}
@@ -112,26 +126,58 @@ func (m *Manager) Session(ctx context.Context, name, kind, remote string) (int, 
 		args = append(args, remote)
 	}
 	cmd := exec.CommandContext(ctx, "ssh", args...)
-	if !tty || !m.Cfg.Recording() {
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if s.Term != "" {
+		cmd.Env = append(os.Environ(), "TERM="+s.Term)
+	}
+	// exec copies an Out or Err that isn't a file in goroutines, which a
+	// process still holding ssh's stderr (its ProxyCommand) could keep open.
+	// When the delay cuts a copy short, Session returns exec.ErrWaitDelay.
+	cmd.WaitDelay = time.Second
+	if !tty || (!m.Cfg.Recording() && s.OnTerminal()) {
+		cmd.Stdout, cmd.Stderr = s.Out, s.Err
+		if _, ok := s.In.(*os.File); ok {
+			cmd.Stdin = s.In
+		} else {
+			// Not cmd.Stdin: Wait would wait for a Read of s.In to return,
+			// whatever WaitDelay says. Wait closes the pipe when ssh exits,
+			// which ends this copy at its next write.
+			w, err := cmd.StdinPipe()
+			if err != nil {
+				return -1, err
+			}
+			go func() {
+				_, _ = io.Copy(w, s.In)
+				_ = w.Close()
+			}()
+		}
 		start := time.Now()
 		m.audit(audit.SessionStart, name, map[string]any{"kind": kind})
 		code, err := record.ExitStatus(cmd.Run())
 		m.audit(audit.SessionEnd, name, map[string]any{"kind": kind, "exit": code, "seconds": int(time.Since(start).Seconds())})
 		return code, err
 	}
+	cmd.Stderr = s.Err // ssh's own messages go to the terminal unrecorded
+	if s.Err == nil {
+		cmd.Stderr = io.Discard // not the pty, which pty.Start would pick
+	}
+	if !m.Cfg.Recording() {
+		start := time.Now()
+		m.audit(audit.SessionStart, name, map[string]any{"kind": kind})
+		code, err := record.Run(cmd, nil, s)
+		m.audit(audit.SessionEnd, name, map[string]any{"kind": kind, "exit": code, "seconds": int(time.Since(start).Seconds())})
+		return code, err
+	}
 	rnd := make([]byte, 2)
 	_, _ = rand.Read(rnd)
 	id := time.Now().UTC().Format("20060102-150405") + "-" + kind + "-" + hex.EncodeToString(rnd)
-	w, h := record.Size()
+	w, h := s.Size()
 	rec, err := record.Create(m.RecordingPath(name, id), w, h, fmt.Sprintf("catchpen %s %s", kind, name))
 	if err != nil {
 		return -1, fmt.Errorf("recording: %w (set record: false in config.yaml to skip)", err)
 	}
-	cmd.Stderr = os.Stderr // ssh's own messages go to the terminal unrecorded
 	start := time.Now()
 	m.audit(audit.SessionStart, name, map[string]any{"kind": kind, "recording": id})
-	code, err := record.Run(cmd, rec)
+	code, err := record.Run(cmd, rec, s)
 	if cerr := rec.Close(); err == nil && cerr != nil {
 		m.logf("warning: recording %s: %v", id, cerr)
 	}

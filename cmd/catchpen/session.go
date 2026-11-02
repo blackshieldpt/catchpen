@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -32,6 +33,13 @@ func exitCode(code int, err error) error {
 	return nil
 }
 
+// session runs m.Session on this process's stdin, stdout and stderr.
+func session(ctx context.Context, m *vm.Manager, name, kind, remote string) (int, error) {
+	s, stop := record.Stdio()
+	defer stop()
+	return m.Session(ctx, name, kind, remote, s)
+}
+
 func sshCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "ssh <name> [-- command...]",
@@ -44,9 +52,9 @@ func sshCmd() *cobra.Command {
 			}
 			if len(args) > 1 {
 				// A command: no tty, not recorded (ssh joins the words, as here).
-				return exitCode(m.Session(cmd.Context(), args[0], vm.KindCommand, strings.Join(args[1:], " ")))
+				return exitCode(session(cmd.Context(), m, args[0], vm.KindCommand, strings.Join(args[1:], " ")))
 			}
-			return exitCode(m.Session(cmd.Context(), args[0], vm.KindSSH, ""))
+			return exitCode(session(cmd.Context(), m, args[0], vm.KindSSH, ""))
 		},
 	}
 }
@@ -78,7 +86,7 @@ Template agents.<name>.yolo: true starts ` + strings.Join(yolo, "/") + ` without
 			if err != nil {
 				return err
 			}
-			return exitCode(m.Session(cmd.Context(), s.Name, vm.KindRun, remote))
+			return exitCode(session(cmd.Context(), m, s.Name, vm.KindRun, remote))
 		},
 	}
 }
@@ -97,7 +105,7 @@ func attachCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return exitCode(m.Session(cmd.Context(), s.Name, vm.KindAttach, vm.AttachCommand(s)))
+			return exitCode(session(cmd.Context(), m, s.Name, vm.KindAttach, vm.AttachCommand(s)))
 		},
 	}
 }

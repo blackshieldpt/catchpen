@@ -159,6 +159,72 @@ func (c *Cast) Close() error {
 	return c.err
 }
 
+// Winsize is a terminal's size in columns and rows.
+type Winsize struct{ W, H int }
+
+// IO is what a session runs on; In and Out are required. With Size nil
+// there is no terminal: the session gets no pty and isn't recorded. When In
+// is this process's own terminal (an *os.File), Run puts it in raw mode and
+// stops reading it as soon as the session ends. Any other In is read by a
+// goroutine nobody waits for: it ends when In returns from a Read, so the
+// caller must end In when the session ends. Out and Err may be written at
+// the same time, from different goroutines, and a write that blocks stalls
+// the session. All of them must be usable values, not typed nils.
+type IO struct {
+	In     io.Reader
+	Out    io.Writer
+	Err    io.Writer         // ssh's own messages, not recorded (nil: discarded)
+	Size   func() (w, h int) // the size at the start
+	Resize <-chan Winsize    // later sizes (nil: it never changes)
+	Term   string            // TERM for the session ("": this process's)
+}
+
+// OnTerminal reports whether s.In is a terminal of this process.
+func (s IO) OnTerminal() bool {
+	f, ok := s.In.(*os.File)
+	return ok && term.IsTerminal(int(f.Fd()))
+}
+
+// Stdio is the IO of this process's stdin, stdout and stderr. On a
+// terminal it has the terminal's size, and its resizes (SIGWINCH) until
+// stop is called; otherwise Size is nil.
+func Stdio() (s IO, stop func()) {
+	s = IO{In: os.Stdin, Out: os.Stdout, Err: os.Stderr}
+	if !IsTerminal() {
+		return s, func() {}
+	}
+	s.Size = Size
+	ch := make(chan Winsize, 1)
+	s.Resize = ch
+	winch := make(chan os.Signal, 1)
+	signal.Notify(winch, syscall.SIGWINCH)
+	quit, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-quit:
+				return
+			case <-winch:
+				w, h, err := term.GetSize(int(os.Stdout.Fd()))
+				if err != nil {
+					continue
+				}
+				select { // only the latest size matters
+				case <-ch:
+				default:
+				}
+				ch <- Winsize{w, h}
+			}
+		}
+	}()
+	return s, func() {
+		signal.Stop(winch)
+		close(quit)
+		<-done
+	}
+}
+
 // IsTerminal reports whether stdin and stdout are terminals.
 func IsTerminal() bool {
 	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
@@ -173,49 +239,64 @@ func Size() (width, height int) {
 	return w, h
 }
 
-// Run runs cmd on a pty connected to the terminal (stdin in raw mode),
-// teeing its output to rec. It returns cmd's exit status.
-func Run(cmd *exec.Cmd, rec *Cast) (int, error) {
-	w, h := Size()
+// Run runs cmd on a pty of s's size, with s.In as its input and its output
+// written to s.Out and teed to rec (nil: not recorded). s.Size must be set.
+// It returns cmd's exit status.
+func Run(cmd *exec.Cmd, rec *Cast, s IO) (int, error) {
+	w, h := s.Size()
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(w), Rows: uint16(h)})
 	if err != nil {
 		return -1, err
 	}
 	defer ptmx.Close()
-	if st, err := term.MakeRaw(int(os.Stdin.Fd())); err == nil {
-		defer term.Restore(int(os.Stdin.Fd()), st)
+	stopIn := func() {}
+	if s.OnTerminal() {
+		fd := int(s.In.(*os.File).Fd())
+		if st, err := term.MakeRaw(fd); err == nil {
+			defer term.Restore(fd, st)
+		}
+		stopIn = pumpStdin(fd, ptmx)
+	} else {
+		go func() { _, _ = io.Copy(ptmx, s.In) }() // ends when In does, or at the next write
 	}
-	winch := make(chan os.Signal, 1)
-	signal.Notify(winch, syscall.SIGWINCH)
-	defer signal.Stop(winch)
-	done := make(chan struct{})
-	defer close(done)
+	stopResize, resized := make(chan struct{}), make(chan struct{})
 	go func() {
+		defer close(resized)
 		for {
 			select {
-			case <-done:
+			case <-stopResize:
 				return
-			case <-winch:
-				if err := pty.InheritSize(os.Stdout, ptmx); err == nil {
-					w, h := Size()
-					rec.Resize(w, h)
+			case sz, ok := <-s.Resize:
+				if !ok {
+					return
+				}
+				if err := pty.Setsize(ptmx, &pty.Winsize{Cols: uint16(sz.W), Rows: uint16(sz.H)}); err == nil && rec != nil {
+					rec.Resize(sz.W, sz.H)
 				}
 			}
 		}
 	}()
-	stopIn := pumpStdin(ptmx)
-	_, _ = io.Copy(io.MultiWriter(os.Stdout, rec), ptmx) // ends with EIO when the child exits
+	out := s.Out
+	if rec != nil {
+		out = io.MultiWriter(s.Out, rec)
+	}
+	_, _ = io.Copy(out, ptmx) // ends with EIO when the child exits, or on a write error
 	stopIn()
+	close(stopResize)
+	<-resized        // done with ptmx before it is closed
+	_ = ptmx.Close() // a child still writing (Out failed) gets SIGHUP instead of blocking
+	// One that ignores SIGHUP (started under nohup) is killed.
+	kill := time.AfterFunc(5*time.Second, func() { _ = cmd.Process.Kill() })
+	defer kill.Stop()
 	return ExitStatus(cmd.Wait())
 }
 
-// pumpStdin copies the terminal's input to w until the returned func is
-// called, which returns only once nothing reads stdin any more, so input typed
+// pumpStdin copies the terminal fd's input to w until the returned func is
+// called, which returns only once nothing reads fd any more, so input typed
 // after the session goes to whatever runs next. It polls instead of making
-// stdin non-blocking, which would also affect stdout (same open file).
-func pumpStdin(w io.Writer) func() {
+// fd non-blocking, which would also affect stdout (same open file).
+func pumpStdin(fd int, w io.Writer) func() {
 	stop, done := make(chan struct{}), make(chan struct{})
-	fd := int(os.Stdin.Fd())
 	go func() {
 		defer close(done)
 		buf := make([]byte, 32<<10)

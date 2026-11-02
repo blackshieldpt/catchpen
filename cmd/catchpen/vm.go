@@ -103,9 +103,9 @@ func upEphemeral(cmd *cobra.Command, m *vm.Manager, name string, o vm.CreateOpts
 		if d := vm.WorkDir(s); d != "" {
 			remote = "cd " + shellQuote(d) + " && " + remote
 		}
-		return exitCode(m.Session(ctx, name, vm.KindSSH, remote))
+		return exitCode(session(ctx, m, name, vm.KindSSH, remote))
 	}
-	return exitCode(m.Session(ctx, name, vm.KindAttach, vm.AttachCommand(s)))
+	return exitCode(session(ctx, m, name, vm.KindAttach, vm.AttachCommand(s)))
 }
 
 func startCmd() *cobra.Command {
