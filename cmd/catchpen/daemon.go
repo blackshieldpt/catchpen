@@ -78,7 +78,7 @@ func daemonCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.AddCommand(install, uninstall, status)
+	c.AddCommand(install, uninstall, status, daemonInfoCmd(), daemonClientCmd())
 	return c
 }
 

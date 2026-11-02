@@ -52,6 +52,8 @@ const (
 	CanaryHit       = "canary.hit"
 	VMResume        = "vm.resume"
 	GC              = "gc"
+	APIClientAdd    = "api.client.add"
+	APIClientRemove = "api.client.rm"
 )
 
 // Event is one audit line.

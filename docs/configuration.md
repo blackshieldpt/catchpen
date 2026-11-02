@@ -19,6 +19,8 @@ files, not here.
   config.yaml                this file
   secrets.env                NAME=value secrets (must be 0600)
   forges.yaml                managed by catchpen forge add/rm
+  clients.yaml               API clients, managed by catchpen daemon client add/rm (0600: holds keys)
+  server.key, server.crt     the API's TLS key and certificate, made by catchpen daemon info
   ssh_config                 generated; catchpen setup-ssh includes it from ~/.ssh/config
   templates/<category>.yaml  your template sections (distros.yaml, runtimes.yaml, ...)
 ~/.local/share/catchpen/

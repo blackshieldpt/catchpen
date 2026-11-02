@@ -45,6 +45,9 @@ func (p Paths) ConfigFile() string    { return filepath.Join(p.Config, "config.y
 func (p Paths) SSHConfig() string     { return filepath.Join(p.Config, "ssh_config") }
 func (p Paths) SecretsFile() string   { return filepath.Join(p.Config, "secrets.env") }
 func (p Paths) Forges() string        { return filepath.Join(p.Config, "forges.yaml") }
+func (p Paths) Clients() string       { return filepath.Join(p.Config, "clients.yaml") } // the API's enrolled clients
+func (p Paths) ServerKey() string     { return filepath.Join(p.Config, "server.key") }   // the API's TLS key
+func (p Paths) ServerCert() string    { return filepath.Join(p.Config, "server.crt") }
 func (p Paths) Audit() string         { return filepath.Join(p.Data, "audit.jsonl") }
 func (p Paths) Recordings() string    { return filepath.Join(p.Data, "recordings") }
 func (p Paths) Transcripts() string   { return filepath.Join(p.Data, "transcripts") }

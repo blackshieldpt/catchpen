@@ -8,6 +8,10 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- `catchpen daemon client add|ls|rm` enrols API clients, by certificate (`--cert`) or
+  with a generated HMAC key (`--hmac`), into `clients.yaml`; `catchpen daemon info`
+  shows the API's socket and the pin of its TLS certificate, which it makes on first
+  use. Nothing listens on TCP yet.
 - `server: {}` in `config.yaml` makes `catchpen daemon` serve an HTTP API on a unix
   socket, `api.sock` in the data directory (mode 0600, its own user only). So far it
   only reports catchpen's version and the API version (`GET /v1/info`); the Go client is
