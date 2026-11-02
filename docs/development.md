@@ -21,7 +21,7 @@ Docker).
 | `cmd/catchpen/` | The CLI (spf13/cobra), one file per area. |
 | `internal/vm/` | The VM manager: lifecycle, sessions, exports, snapshots, pool, idle stop, gc, canary handling. A VM's files, state and lock go through `vmDir` (`vmdir.go`, which also gives the lock order). |
 | `internal/runner/` | Headless tasks: submit, schedule on the VM budget, supervise, export. |
-| `internal/vmtest/` | What the tests of `vm` and `runner` share: fake QEMU and supervisor processes, a catchpen home, a throwaway Gitea. |
+| `internal/vmtest/` | What the tests of `vm`, `runner` and `server` share: fake QEMU and supervisor processes, a catchpen home, a throwaway Gitea. |
 | `internal/template/` | Templates: category files, `-t` composition (`compose.go`), merging and validation; built-in category files in `builtin/`. |
 | `internal/cloudinit/` | Cloud-init and base build script generation, and the seed ISO. |
 | `internal/qemu/` | QEMU command lines, QMP and `qemu-img`. |
@@ -39,9 +39,9 @@ Docker).
 | `internal/config/`, `internal/paths/` | `config.yaml`, and where catchpen keeps its files. |
 | `internal/image/` | Downloading and verifying cloud images. |
 | `internal/fsutil/`, `internal/jsonl/`, `internal/safetar/` | Cross-process locks and atomic writes, size-rotated JSON-lines logs, unpacking a guest's tar stream. |
-| `internal/server/` | The API's handlers, unix socket and TLS listener, for the daemon; its certificate, enrolled clients (`clients.yaml`) and how they authenticate (mTLS or HMAC). |
+| `internal/server/` | The API's handlers (so far `/v1/info` and the VMs, read-only), unix socket and TLS listener, for the daemon; its certificate, enrolled clients (`clients.yaml`) and how they authenticate (mTLS or HMAC). |
 | `pkg/apiclient/` | A Go client of the API, for the web cockpit and other programs. Imports only `pkg/api` and the standard library. |
-| `pkg/api/` | The API's wire contract, for its clients too (the web cockpit): API version, error codes, stream frames, HMAC request signing, certificate pins. Standard library only; never imports `internal/`. |
+| `pkg/api/` | The API's wire contract, for its clients too (the web cockpit): API version, error codes, the paths and types of its endpoints, stream frames, HMAC request signing, certificate pins. Standard library only; never imports `internal/`. |
 | `internal/termfilter/` | Showing a guest's console and recorded output on a terminal without the escape sequences that act outside the screen. |
 
 ## CI and releases

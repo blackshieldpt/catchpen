@@ -1,7 +1,7 @@
 // Package api is the wire contract of the catchpen API that `catchpen daemon`
-// serves: the API version, error codes, stream frames and HMAC request
-// signing. The server and its clients (pkg/apiclient, the cockpit) both use
-// it, so the two can't drift. It imports only the standard library.
+// serves: the API version, error codes, the paths and types of its
+// endpoints, stream frames and HMAC request signing. The server and its
+// clients (pkg/apiclient, the cockpit) both use it, so the two can't drift. It imports only the standard library.
 //
 // Text that came from a VM's guest (task output, egress hosts, audit details,
 // terminal bytes) is passed on as data: a client must make it safe before

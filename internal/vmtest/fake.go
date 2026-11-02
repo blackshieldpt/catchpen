@@ -1,5 +1,5 @@
-// Package vmtest holds what the tests of internal/vm and internal/runner
-// share. It does not import vm, so vm's own tests can use it.
+// Package vmtest holds what the tests of internal/vm, internal/runner and
+// internal/server share. It does not import vm, so vm's own tests can use it.
 package vmtest
 
 import (

@@ -100,6 +100,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 			}
 			ls = append(ls, tl)
 		}
+		d.API.Manager, d.API.Logf = d.Manager, d.logf
 		h := d.API.Handler()
 		for _, l := range ls {
 			d.logf("api: serving on %s", l.Addr())

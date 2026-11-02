@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/blackshieldpt/catchpen/internal/vm"
 	"github.com/blackshieldpt/catchpen/pkg/api"
 )
 
@@ -26,6 +27,12 @@ type Server struct {
 	uid     int    // the only user whose unix socket connections are served
 	clients string // the clients file: who may connect over TCP
 	hmac    *api.Verifier
+
+	// Manager builds the Manager each request reads the VMs with (nil: the
+	// VM endpoints answer internal).
+	Manager func() (*vm.Manager, error)
+	// Logf logs what a client isn't told: why a request failed (nil: nothing).
+	Logf func(format string, a ...any)
 }
 
 // New returns the API of catchpen at version, for this process's user over
@@ -42,6 +49,9 @@ func New(version, clients string) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+api.PathInfo, s.info)
+	mux.HandleFunc("GET "+api.PathVMs, s.vms)
+	mux.HandleFunc("GET "+api.PathVMs+"/{name}", s.vm)
+	mux.HandleFunc("GET "+api.PathVMs+"/{name}/snapshots", s.snapshots)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, api.CodeNotFound, "no such endpoint")
 	})

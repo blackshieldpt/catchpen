@@ -150,6 +150,34 @@ func (c *Client) Info(ctx context.Context) (*api.Info, error) {
 	return &i, nil
 }
 
+// VMs lists every VM, warm pool VMs included (Pool).
+func (c *Client) VMs(ctx context.Context) ([]api.VMInfo, error) {
+	var vms []api.VMInfo
+	if err := c.get(ctx, api.PathVMs, &vms); err != nil {
+		return nil, err
+	}
+	return vms, nil
+}
+
+// VM is the VM named name; one there is none of is an *api.Error with
+// api.CodeNotFound.
+func (c *Client) VM(ctx context.Context, name string) (*api.VMInfo, error) {
+	var v api.VMInfo
+	if err := c.get(ctx, api.PathVM(name), &v); err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+// Snapshots lists a VM's snapshots, oldest first.
+func (c *Client) Snapshots(ctx context.Context, name string) ([]api.SnapshotInfo, error) {
+	var ss []api.SnapshotInfo
+	if err := c.get(ctx, api.PathSnapshots(name), &ss); err != nil {
+		return nil, err
+	}
+	return ss, nil
+}
+
 // get decodes path's response into out. A response that isn't a success is
 // an *api.Error.
 func (c *Client) get(ctx context.Context, path string, out any) error {

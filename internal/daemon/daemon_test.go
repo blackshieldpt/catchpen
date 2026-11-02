@@ -159,6 +159,12 @@ func tcpDaemon(m *vm.Manager, serve bool, listen string) (*Daemon, *syncLog) {
 
 func TestRunServesAPI(t *testing.T) {
 	m := testManager(t)
+	if err := os.MkdirAll(m.P.VM("vm1"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(m.P.VM("vm1"), "vm.json"), []byte(`{"name":"vm1"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	d, log := apiDaemon(m, true)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -174,6 +180,10 @@ func TestRunServesAPI(t *testing.T) {
 	}
 	if i, err := c.Info(ctx); err != nil || i.Version != "1.2.3" {
 		t.Errorf("info %+v, %v", i, err)
+	}
+	// The API reads the daemon's own VMs.
+	if vms, err := c.VMs(ctx); err != nil || len(vms) != 1 || vms[0].Name != "vm1" {
+		t.Errorf("VMs %+v, %v", vms, err)
 	}
 	// A second daemon fails, and leaves the first one's socket alone.
 	d2, _ := apiDaemon(m, true)

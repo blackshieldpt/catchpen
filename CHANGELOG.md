@@ -8,6 +8,11 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- The API lists the VMs (`GET /v1/vms`, warm pool VMs marked `pool`), shows one
+  (`GET /v1/vms/<name>`) and lists its snapshots (`GET /v1/vms/<name>/snapshots`), with
+  `pkg/apiclient`'s `VMs`, `VM` and `Snapshots`. It tells a VM's state, template, size,
+  egress mode and the ports QEMU forwards, never its environment, forge credentials,
+  agent settings or canaries.
 - `server: { listen: host:port }` makes `catchpen daemon` serve the API over TLS 1.3 to
   clients enrolled with `catchpen daemon client add`, by certificate (mTLS) or by HMAC
   signed requests; it refuses to start with no client enrolled, and a removed client is
@@ -19,8 +24,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
   shows the API's socket and the pin of its TLS certificate, which it makes on first
   use.
 - `server: {}` in `config.yaml` makes `catchpen daemon` serve an HTTP API on a unix
-  socket, `api.sock` in the data directory (mode 0600, its own user only). So far it
-  only reports catchpen's version and the API version (`GET /v1/info`); the Go client is
+  socket, `api.sock` in the data directory (mode 0600, its own user only). It reports
+  catchpen's version and the API version (`GET /v1/info`); the Go client is
   `pkg/apiclient`.
 - `catchpen egress config` records each change in the audit log (`egress.config`), with
   the old and new values, as allowlist and denylist edits already were.
