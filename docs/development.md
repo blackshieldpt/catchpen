@@ -39,6 +39,7 @@ Docker).
 | `internal/config/`, `internal/paths/` | `config.yaml`, and where catchpen keeps its files. |
 | `internal/image/` | Downloading and verifying cloud images. |
 | `internal/fsutil/`, `internal/jsonl/`, `internal/safetar/` | Cross-process locks and atomic writes, size-rotated JSON-lines logs, unpacking a guest's tar stream. |
+| `pkg/api/` | The API's wire contract, for its clients too (the web cockpit): API version, error codes, stream frames, HMAC request signing. Standard library only; never imports `internal/`. |
 | `internal/termfilter/` | Showing a guest's console and recorded output on a terminal without the escape sequences that act outside the screen. |
 
 ## CI and releases
