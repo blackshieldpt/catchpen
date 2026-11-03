@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/blackshieldpt/catchpen/pkg/api"
@@ -176,6 +177,74 @@ func (c *Client) Snapshots(ctx context.Context, name string) ([]api.SnapshotInfo
 		return nil, err
 	}
 	return ss, nil
+}
+
+// Templates is the template categories, their sections and defaults.
+func (c *Client) Templates(ctx context.Context) ([]api.TemplateCategory, error) {
+	var cs []api.TemplateCategory
+	if err := c.get(ctx, api.PathTemplates, &cs); err != nil {
+		return nil, err
+	}
+	return cs, nil
+}
+
+// Tasks is every headless task, newest first.
+func (c *Client) Tasks(ctx context.Context) ([]api.TaskInfo, error) {
+	var ts []api.TaskInfo
+	if err := c.get(ctx, api.PathTasks, &ts); err != nil {
+		return nil, err
+	}
+	return ts, nil
+}
+
+// Task is the task with id; one there is none of is an *api.Error with
+// api.CodeNotFound.
+func (c *Client) Task(ctx context.Context, id string) (*api.TaskInfo, error) {
+	var t api.TaskInfo
+	if err := c.get(ctx, api.PathTask(id), &t); err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+// AuditQuery picks a page of the audit log. Zero values: every VM's events,
+// api.DefaultAuditLimit of them, the newest.
+type AuditQuery struct {
+	VM     string
+	Limit  int
+	Before string // the previous page's Next
+}
+
+// Audit is a page of the audit log, newest first.
+func (c *Client) Audit(ctx context.Context, q AuditQuery) (*api.AuditPage, error) {
+	v := url.Values{}
+	if q.VM != "" {
+		v.Set("vm", q.VM)
+	}
+	if q.Limit != 0 {
+		v.Set("limit", strconv.Itoa(q.Limit))
+	}
+	if q.Before != "" {
+		v.Set("before", q.Before)
+	}
+	path := api.PathAudit
+	if len(v) > 0 {
+		path += "?" + v.Encode()
+	}
+	var p api.AuditPage
+	if err := c.get(ctx, path, &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// Cache is what the host's package caches hold.
+func (c *Client) Cache(ctx context.Context) (*api.CacheInfo, error) {
+	var ci api.CacheInfo
+	if err := c.get(ctx, api.PathCache, &ci); err != nil {
+		return nil, err
+	}
+	return &ci, nil
 }
 
 // get decodes path's response into out. A response that isn't a success is

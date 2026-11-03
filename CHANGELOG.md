@@ -8,6 +8,15 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- The API lists the template categories and their sections (`GET /v1/templates`), the
+  headless tasks (`GET /v1/tasks`, `GET /v1/tasks/<id>`), the audit log a page at a time
+  (`GET /v1/audit`, newest first, with `vm`, `limit` and `before`) and what the package
+  caches hold (`GET /v1/cache`), with `pkg/apiclient`'s `Templates`, `Tasks`, `Task`,
+  `Audit` and `Cache`. It never returns a section's settings or a task's prompt or
+  command. A `--repo` with a user or password is shown without them, and that task's
+  error is withheld (`catchpen task show` prints it); other text loses a plain
+  `scheme://user:password@` URL's. A task's output and errors, and audit details, can
+  name host paths, as `catchpen task ls` and `catchpen audit` show them.
 - The API lists the VMs (`GET /v1/vms`, warm pool VMs marked `pool`), shows one
   (`GET /v1/vms/<name>`) and lists its snapshots (`GET /v1/vms/<name>/snapshots`), with
   `pkg/apiclient`'s `VMs`, `VM` and `Snapshots`. It tells a VM's state, template, size,

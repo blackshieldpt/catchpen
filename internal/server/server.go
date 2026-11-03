@@ -52,6 +52,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathVMs, s.vms)
 	mux.HandleFunc("GET "+api.PathVMs+"/{name}", s.vm)
 	mux.HandleFunc("GET "+api.PathVMs+"/{name}/snapshots", s.snapshots)
+	mux.HandleFunc("GET "+api.PathTemplates, s.templates)
+	mux.HandleFunc("GET "+api.PathTasks, s.tasks)
+	mux.HandleFunc("GET "+api.PathTasks+"/{id}", s.task)
+	mux.HandleFunc("GET "+api.PathAudit, s.audit)
+	mux.HandleFunc("GET "+api.PathCache, s.cache)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, api.CodeNotFound, "no such endpoint")
 	})
