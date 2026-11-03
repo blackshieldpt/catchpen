@@ -131,13 +131,18 @@ func (s *Server) restoreSnapshot(w http.ResponseWriter, r *http.Request) {
 	if !ok || held(w, v, true) {
 		return
 	}
-	if !req.Confirm {
+	switch {
+	case !req.Confirm && v.Hit:
+		writeError(w, api.CodeConfirmRequired, "restoring "+v.Name+" to "+snap+` loses what changed since it was saved, a canary hit's traces included: send "confirm": true, with "canary_hit": true`)
+	case !req.Confirm:
 		writeError(w, api.CodeConfirmRequired, "restoring "+v.Name+" to "+snap+` loses what changed since it was saved: send "confirm": true`)
-		return
+	case req.CanaryHit != v.Hit:
+		writeError(w, api.CodeConflict, "the VM's canary hit is not the one confirmed: read the VM again")
+	default:
+		s.startJob(w, r, m, api.JobVMRestore, v.Name, func(ctx context.Context, m *vm.Manager) error {
+			return m.Restore(ctx, v.Name, snap, req.DiskOnly)
+		})
 	}
-	s.startJob(w, r, m, api.JobVMRestore, v.Name, func(ctx context.Context, m *vm.Manager) error {
-		return m.Restore(ctx, v.Name, snap, req.DiskOnly)
-	})
 }
 
 func (s *Server) deleteSnapshot(w http.ResponseWriter, r *http.Request) {

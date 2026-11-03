@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"path/filepath"
@@ -15,6 +16,52 @@ import (
 	"github.com/blackshieldpt/catchpen/internal/vmtest"
 	"github.com/blackshieldpt/catchpen/pkg/api"
 )
+
+// A restore of a VM whose canaries were found in use needs canary_hit too,
+// as the VM tells it, running or not; one that doesn't match it is refused,
+// and no refused call starts a job.
+func TestRestoreCanaryHit(t *testing.T) {
+	h := home(t, nil)
+	m := &vm.Manager{P: h.p}
+	vmtest.FakeQEMU(t, h.p.VM("gamma"), "gamma", 512, func() bool { _, ok := m.Running("gamma"); return ok })
+	for _, n := range []string{"alpha", "beta", "gamma"} {
+		h.writeVM(t, vm.State{Name: n, Template: "base", Created: created})
+		h.disk(t, n, "s1")
+	}
+	for _, n := range []string{"alpha", "gamma"} {
+		write(t, filepath.Join(h.p.VM(n), "canary-hit.json"), "{}")
+	}
+	c := h.client(t)
+	wait := waiter(t, c)
+	ctx := context.Background()
+	for _, n := range []string{"alpha", "gamma"} {
+		_, err := c.RestoreSnapshot(ctx, n, "s1", api.RestoreSnapshotRequest{})
+		var e *api.Error
+		if !errors.As(err, &e) || e.Code != api.CodeConfirmRequired || e.Message != `restoring `+n+` to s1 loses what changed since it was saved, `+
+			`a canary hit's traces included: send "confirm": true, with "canary_hit": true` {
+			t.Errorf("%s without confirm: %v", n, err)
+		}
+		_, err = c.RestoreSnapshot(ctx, n, "s1", api.RestoreSnapshotRequest{Confirm: true})
+		if !errors.As(err, &e) || e.Code != api.CodeConflict || e.Message != "the VM's canary hit is not the one confirmed: read the VM again" {
+			t.Errorf("%s, hit not confirmed: %v", n, err)
+		}
+	}
+	if _, err := c.RestoreSnapshot(ctx, "beta", "s1", api.RestoreSnapshotRequest{Confirm: true, CanaryHit: true}); code(err) != api.CodeConflict {
+		t.Errorf("a hit confirmed that isn't there: %v", err)
+	}
+	if js, err := c.Jobs(ctx); err != nil || len(js) != 0 {
+		t.Errorf("jobs after the refusals: %+v %v", js, err)
+	}
+	if j, _ := wait(c.RestoreSnapshot(ctx, "alpha", "s1", api.RestoreSnapshotRequest{Confirm: true, CanaryHit: true})); j.State != api.JobDone || j.Kind != api.JobVMRestore || j.VM != "alpha" {
+		t.Errorf("restore: %+v", j)
+	}
+	if e := lastEvent(t, h.p, audit.VMRestore); e.VM != "alpha" || e.Detail["snapshot"] != "s1" {
+		t.Errorf("restore's audit: %+v", e)
+	}
+	if b, err := json.Marshal(api.RestoreSnapshotRequest{Confirm: true, CanaryHit: true}); string(b) != `{"confirm":true,"canary_hit":true}` {
+		t.Errorf("on the wire: %s %v", b, err)
+	}
+}
 
 // A reset needs confirm, with the snapshots and canary hit it deletes; its
 // job runs the Manager's Reset, onto the template's current base when Latest.

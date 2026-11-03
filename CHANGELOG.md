@@ -16,11 +16,12 @@ before 0.1.0 describe work on `master` before the first tagged release.
   `GET /v1/vms/<name>/reset` and `/rebase` tell what each loses. A reset needs
   `"confirm": true` and the snapshots and canary hit it deletes; a rebase of a VM with
   snapshots, `"confirm": true` and those snapshots (else 428, or 409 when they changed).
-  Restore and snapshot delete need `"confirm": true`, which the CLI doesn't ask; a
-  snapshot needs a name. Once the VM and snapshot are found, all six are refused (409) on
-  a VM a canary hit paused; reset, rebase and restore, which can start the VM, and push,
-  which can clone through its SSH agent, on one with an SSH agent (`ssh.agent` other than
-  `off`).
+  Restore and snapshot delete need `"confirm": true`, which the CLI doesn't ask, and a
+  restore the VM's canary hit (`canary_hit`, as `GET /v1/vms/<name>` tells; 409 when
+  it differs); a snapshot needs a name. Once the VM and snapshot are found, all six
+  are refused (409) on a VM a canary hit paused; reset, rebase and restore, which can
+  start the VM, and push, which can clone through its SSH agent, on one with an SSH
+  agent (`ssh.agent` other than `off`).
 - The API creates, starts, stops, destroys and resumes VMs (`POST /v1/vms`,
   `POST /v1/vms/<name>/start`, `/stop`, `/destroy`, `/resume`), each as a job that runs on
   in the daemon when its client goes, read with `GET /v1/jobs` and

@@ -59,12 +59,15 @@ func PathVMPush(name string) string { return PathVM(name) + "/push" }
 // PathSnapshotRestore is POST, with a RestoreSnapshotRequest: return the VM
 // to the snapshot, as catchpen restore does (one that stops a running VM
 // treats a canary hit as reset does). Without Confirm it is refused
-// with CodeConfirmRequired; a snapshot the VM hasn't, with CodeNotFound. The
+// with CodeConfirmRequired; with a CanaryHit other than the VM's (VMInfo's
+// CanaryHit), with CodeConflict; a snapshot the VM hasn't, with CodeNotFound. The
 // snapshot's name is escaped as PathVM's is.
 func PathSnapshotRestore(name, snap string) string { return pathSnapshot(name, snap) + "/restore" }
 
 // PathSnapshotDelete is POST, with a DeleteSnapshotRequest: delete the
-// snapshot, as catchpen rmsnap does; refused as PathSnapshotRestore is.
+// snapshot, as catchpen rmsnap does. Without Confirm it is refused with
+// CodeConfirmRequired; a snapshot the VM hasn't, with CodeNotFound; it takes
+// no CanaryHit.
 func PathSnapshotDelete(name, snap string) string { return pathSnapshot(name, snap) + "/delete" }
 
 func pathSnapshot(name, snap string) string {
@@ -120,10 +123,11 @@ type CreateSnapshotRequest struct {
 }
 
 // RestoreSnapshotRequest confirms a restore: what changed since the
-// snapshot was saved is lost.
+// snapshot was saved is lost, a canary hit's traces in the VM included.
 type RestoreSnapshotRequest struct {
-	Confirm  bool `json:"confirm"`
-	DiskOnly bool `json:"disk_only,omitempty"` // only the disk of a memory snapshot, booting afresh
+	Confirm   bool `json:"confirm"`
+	DiskOnly  bool `json:"disk_only,omitempty"` // only the disk of a memory snapshot, booting afresh
+	CanaryHit bool `json:"canary_hit"`          // the VMInfo's, as read before
 }
 
 // DeleteSnapshotRequest confirms a snapshot's deletion.

@@ -330,7 +330,8 @@ func (c *Client) CreateSnapshot(ctx context.Context, name string, r api.CreateSn
 }
 
 // RestoreSnapshot starts a job returning the VM to snapshot snap; without
-// r.Confirm it is an *api.Error with api.CodeConfirmRequired.
+// r.Confirm it is an *api.Error with api.CodeConfirmRequired, and with an
+// r.CanaryHit other than the VM's, with api.CodeConflict.
 func (c *Client) RestoreSnapshot(ctx context.Context, name, snap string, r api.RestoreSnapshotRequest) (*api.JobInfo, error) {
 	return c.job(ctx, api.PathSnapshotRestore(name, snap), r)
 }

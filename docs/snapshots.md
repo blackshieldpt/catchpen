@@ -69,19 +69,20 @@ these runs as a job:
 | Call | As | Needs |
 |---|---|---|
 | `POST /v1/vms/<name>/snapshots` | `snapshot` | `{"name": …}` (no default name); `"disk_only": true` for `--disk-only` |
-| `POST /v1/vms/<name>/snapshots/<snap>/restore` | `restore` | `"confirm": true`; `"disk_only": true` for `--disk-only` |
+| `POST /v1/vms/<name>/snapshots/<snap>/restore` | `restore` | `"confirm": true`, with the `canary_hit` that `GET /v1/vms/<name>` tells; `"disk_only": true` for `--disk-only` |
 | `POST /v1/vms/<name>/snapshots/<snap>/delete` | `rmsnap` | `"confirm": true` |
 | `POST /v1/vms/<name>/reset` | `reset` | `"confirm": true`, with the `snapshots` and `canary_hit` that `GET` on the same path tells; `"latest": true` for `--latest` |
 | `POST /v1/vms/<name>/rebase` | `rebase` | with snapshots, `"confirm": true` and the `snapshots` that `GET` on the same path tells |
 | `POST /v1/vms/<name>/push` | `creds push` | nothing |
 
 Restore and snapshot delete ask for the confirmation the CLI doesn't. A reset whose
-snapshots or canary hit, or a rebase whose snapshots, changed since the client read them
-is refused (409): read them again. All six are refused on a VM a canary hit paused when
-the call is made: resume, stop or destroy it first (to keep a paused VM's memory and disk
-as evidence, use `catchpen snapshot`). Reset, rebase and restore can start the VM, and
-push can clone a repo again through the VM's SSH agent, so they are refused on a VM with
-`ssh.agent` other than `off`, which loads or forwards your SSH keys: use the CLI there.
+snapshots or canary hit, a restore whose canary hit, or a rebase whose snapshots,
+changed since the client read them is refused (409): read them again. All six are
+refused on a VM a canary hit paused when the call is made: resume, stop or destroy it
+first (to keep a paused VM's memory and disk as evidence, use `catchpen snapshot`).
+Reset, rebase and restore can start the VM, and push can clone a repo again through the
+VM's SSH agent, so they are refused on a VM with `ssh.agent` other than `off`, which
+loads or forwards your SSH keys: use the CLI there.
 
 ## Garbage collection
 
