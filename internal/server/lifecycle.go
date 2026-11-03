@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/blackshieldpt/catchpen/internal/canary"
 	"github.com/blackshieldpt/catchpen/internal/template"
 	"github.com/blackshieldpt/catchpen/internal/vm"
 	"github.com/blackshieldpt/catchpen/pkg/api"
@@ -58,7 +59,8 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 func (s *Server) startJob(w http.ResponseWriter, r *http.Request, m *vm.Manager, kind, name string,
 	op func(ctx context.Context, m *vm.Manager) error) {
 	client := clientOf(r)
-	info, err := s.jobs.start(kind, name, client, func(ctx context.Context, out io.Writer) error {
+	dw := &watch{scan: decoyScan(m, name), hit: func(c *canary.Canary) { m.CanaryHit(name, c, "in an API job's output") }}
+	info, err := s.jobs.start(kind, name, client, dw, func(ctx context.Context, out io.Writer) error {
 		m.Out, m.In, m.Client = out, nil, client // the progress, no terminal, the audit's client
 		return op(ctx, m)
 	})
@@ -69,6 +71,20 @@ func (s *Server) startJob(w http.ResponseWriter, r *http.Request, m *vm.Manager,
 		writeError(w, api.CodeInternal, err.Error()) // errStopping
 	default:
 		writeJSON(w, http.StatusAccepted, info)
+	}
+}
+
+// decoyScan finds name's decoys in a text: those it has when the job
+// starts, else (Create plants them) those it has by then.
+func decoyScan(m *vm.Manager, name string) func(string) (*canary.Canary, error) {
+	cs, err := m.Decoys(name)
+	return func(s string) (*canary.Canary, error) {
+		if err != nil || len(cs) == 0 {
+			if cs, err = m.Decoys(name); err != nil {
+				return nil, err
+			}
+		}
+		return vm.DecoyIn(cs, s), nil
 	}
 }
 

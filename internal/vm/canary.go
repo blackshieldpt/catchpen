@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 	"time"
@@ -30,6 +31,14 @@ const (
 // CanaryHit records one of name's canaries found in use (where: how it was
 // seen) and acts on it as config canary_action says.
 func (m *Manager) CanaryHit(name string, c *canary.Canary, where string) {
+	if _, err := os.Stat(m.dir(name)); errors.Is(err, fs.ErrNotExist) {
+		// Destroyed (an API job's output is scanned to its end): nothing to
+		// act on, and no directory for the records below, but it is recorded.
+		m.audit(audit.CanaryHit, name, map[string]any{"kind": c.Kind, "where": where, "action": "none"})
+		m.notify(notify.Event{Kind: notify.CanaryHit, VM: name, Title: "catchpen " + name + ": canary used",
+			Message: fmt.Sprintf("its %s decoy credentials were used (%s); it is destroyed", c.Kind, where)})
+		return
+	}
 	action := cmp.Or(m.Cfg.CanaryAction, config.CanaryPause)
 	_ = writeJSON(m.vm(name).path(hitFile), map[string]any{"kind": c.Kind, "where": where, "time": time.Now().UTC()})
 	// A guest retrying in a loop (action log) gets a few records, not one each
@@ -146,6 +155,21 @@ func (m *Manager) GuestText(name, s, what string) string {
 		return "(withheld: the VM's canaries couldn't be read)"
 	}
 	return s
+}
+
+// Decoys are the VM's canaries: none before Create plants them, or once it
+// is destroyed.
+func (m *Manager) Decoys(name string) ([]canary.Canary, error) { return canary.Load(m.dir(name)) }
+
+// DecoyIn returns the canary of cs that s carries, as GuestText finds it (as
+// written, or cleaned as clients and notifications show it), without acting
+// on it.
+func DecoyIn(cs []canary.Canary, s string) *canary.Canary {
+	if len(cs) == 0 || s == "" {
+		return nil
+	}
+	p := sshx.Printable(s)
+	return canary.In(cs, s+"\n"+p+"\n"+notify.Clean(p, len(p)+1))
 }
 
 // scanPatch is scanExport for a patch file, binary files included; unless

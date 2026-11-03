@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blackshieldpt/catchpen/internal/canary"
 	"github.com/blackshieldpt/catchpen/pkg/api"
 )
 
@@ -43,12 +44,29 @@ func newJobs() *jobs {
 	return js
 }
 
+// watch looks for a VM's decoys in a job's lines and error.
+type watch struct {
+	scan func(string) (*canary.Canary, error) // the decoy a text carries, if any
+	hit  func(*canary.Canary)                 // acts on the first found, at once, in a goroutine of its own
+}
+
+// What clients get in place of a job's lines and error once a decoy is
+// found in them, or the decoys can't be read.
+const (
+	withheldDecoy  = "(withheld: it contained the VM's decoy credentials)"
+	withheldUnread = "(withheld: the VM's canaries couldn't be read)"
+)
+
 // job is one job, and the writer its progress lines are written to.
 type job struct {
-	mu    sync.Mutex
-	info  api.JobInfo
-	lines []string // the last api.MaxJobLines
-	part  []byte   // the start of a line not ended yet
+	mu       sync.Mutex
+	info     api.JobInfo
+	lines    []string             // the last api.MaxJobLines
+	part     []byte               // the start of a line not ended yet
+	watch    *watch               // nil: not watched
+	act      func(*canary.Canary) // runs watch.hit, without waiting
+	hit      *canary.Canary
+	withheld string // what clients get in place of every line and the error ("": the text)
 }
 
 // Write takes progress output, a line at a time.
@@ -73,11 +91,35 @@ func (j *job) Write(b []byte) (int, error) {
 }
 
 func (j *job) add(line []byte) {
-	j.lines = append(j.lines, string(line[:min(len(line), api.MaxJobLine)]))
+	s := string(line[:min(len(line), api.MaxJobLine)])
+	prev := ""
+	if len(j.lines) > 0 {
+		prev = j.lines[len(j.lines)-1]
+	}
+	j.check(prev + s) // a decoy split across two lines too
+	j.lines = append(j.lines, s)
 	if len(j.lines) > api.MaxJobLines {
 		j.lines = slices.Delete(j.lines, 0, len(j.lines)-api.MaxJobLines)
 	}
 	j.info.Written++
+}
+
+// check looks for a decoy in s; one found, or decoys that can't be read,
+// withhold every line and the error from clients. The first found is acted
+// on without waiting: whoever wrote s may hold the VM's lock, which acting
+// can take. j.mu is held.
+func (j *job) check(s string) {
+	if j.watch == nil || j.hit != nil {
+		return
+	}
+	c, err := j.watch.scan(s)
+	switch {
+	case c != nil:
+		j.hit, j.withheld = c, withheldDecoy
+		j.act(c)
+	case err != nil && j.withheld == "":
+		j.withheld = withheldUnread
+	}
 }
 
 // end records how the job ended, its last line written out first.
@@ -90,6 +132,11 @@ func (j *job) end(err error) {
 	}
 	j.info.State, j.info.Ended = api.JobDone, time.Now().UTC()
 	if err != nil {
+		last := ""
+		if len(j.lines) > 0 {
+			last = j.lines[len(j.lines)-1]
+		}
+		j.check(last + err.Error()) // a decoy split from the last line too
 		j.info.State, j.info.Error = api.JobFailed, err.Error()
 	}
 }
@@ -97,7 +144,16 @@ func (j *job) end(err error) {
 func (j *job) get() api.JobInfo {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	return j.info
+	return j.shown()
+}
+
+// shown is the job's info as clients get it; j.mu is held.
+func (j *job) shown() api.JobInfo {
+	info := j.info
+	if j.withheld != "" && info.Error != "" {
+		info.Error = j.withheld
+	}
+	return info
 }
 
 // from is the job with its lines from the after-th on (those kept).
@@ -106,12 +162,19 @@ func (j *job) from(after int) api.Job {
 	defer j.mu.Unlock()
 	first := j.info.Written - len(j.lines) // the number of the first line kept
 	from := min(max(after, first), j.info.Written)
-	return api.Job{JobInfo: j.info, From: from, Lines: append([]string{}, j.lines[from-first:]...)}
+	lines := append([]string{}, j.lines[from-first:]...)
+	if j.withheld != "" {
+		for i := range lines {
+			lines[i] = j.withheld
+		}
+	}
+	return api.Job{JobInfo: j.shown(), From: from, Lines: lines}
 }
 
 // start runs fn as a job of kind on VM vm for client, with progress written
 // to out. fn's ctx is done when the server stops, not when the client goes.
-func (js *jobs) start(kind, vm, client string, fn func(ctx context.Context, out io.Writer) error) (api.JobInfo, error) {
+// w (nil: none) looks for the VM's decoys in the job's lines and error.
+func (js *jobs) start(kind, vm, client string, w *watch, fn func(ctx context.Context, out io.Writer) error) (api.JobInfo, error) {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 	if js.stopped {
@@ -129,7 +192,10 @@ func (js *jobs) start(kind, vm, client string, fn func(ctx context.Context, out 
 	id := make([]byte, 8)
 	_, _ = rand.Read(id)
 	j := &job{info: api.JobInfo{ID: hex.EncodeToString(id), Kind: kind, VM: vm, Client: client,
-		State: api.JobRunning, Created: time.Now().UTC()}}
+		State: api.JobRunning, Created: time.Now().UTC()}, watch: w}
+	if w != nil {
+		j.act = func(c *canary.Canary) { js.wg.Go(func() { w.hit(c) }) } // stop waits for it too
+	}
 	js.all = append(js.all, j)
 	js.wg.Go(func() {
 		err := run(js.ctx, j, fn)

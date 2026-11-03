@@ -42,7 +42,13 @@ The host keeps each VM's values in `vms/<name>/canaries.json`.
   - patches, which are made on the host from the commits they export, scanned first;
   - a PR's title and body;
   - a task's whole result (`catchpen task show`, its PR body and notifications) and an
-    agent's notification text.
+    agent's notification text;
+  - an API job's progress lines and error (`GET /v1/jobs`): once one carries a decoy,
+    all of them are withheld, and the hit is acted on at once. A decoy split across two
+    adjacent lines (or the last line and the error) is found; one split across more, with
+    other text between its halves, or over lines a client read before the second half
+    came, is not. A hit on a VM destroyed by then is audited and notified, with nothing
+    to act on.
 
 ## What happens on a hit
 
@@ -76,7 +82,8 @@ Tasks and the pool react on top of that:
   `catchpen pool drain`.
 
 If a VM's `canaries.json` can't be read, or isn't as catchpen wrote it, its proxy, cache
-and exports refuse everything, and its notifications and task results are withheld.
+and exports refuse everything, and its notifications, task results and API job output
+are withheld.
 
 ## Responding to a hit
 

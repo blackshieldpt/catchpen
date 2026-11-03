@@ -118,7 +118,9 @@ type JobInfo struct {
 	Written int       `json:"written"`         // progress lines written so far
 }
 
-// Job is a job and its progress lines, which can quote the guest.
+// Job is a job and its progress lines, which can quote the guest. Once its
+// lines or error carry one of the VM's decoy credentials, every line and the
+// error are a "(withheld: ...)" note instead, their count kept.
 type Job struct {
 	JobInfo
 	From  int      `json:"from"` // the number of Lines' first line: above the after asked for when older lines were dropped

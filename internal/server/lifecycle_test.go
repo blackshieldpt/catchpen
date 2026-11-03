@@ -362,7 +362,7 @@ func TestJobsBusy(t *testing.T) {
 func TestWaitJob(t *testing.T) {
 	h := home(t, nil)
 	release := make(chan struct{})
-	i, err := h.srv.jobs.start("k", "a", "me", func(_ context.Context, out io.Writer) error {
+	i, err := h.srv.jobs.start("k", "a", "me", nil, func(_ context.Context, out io.Writer) error {
 		for _, l := range []string{"1", "2", "3"} {
 			io.WriteString(out, l+"\n")
 			<-release

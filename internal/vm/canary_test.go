@@ -346,3 +346,45 @@ func TestPruneIncoming(t *testing.T) {
 		t.Errorf("left: %q", out)
 	}
 }
+
+// Decoys reads the VM's canaries (none when it has none); DecoyIn finds
+// one as written, or with control characters dropped, as clients show it.
+func TestDecoyIn(t *testing.T) {
+	m := testManager(t)
+	if err := os.MkdirAll(m.dir("d1"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cs := canary.Generate([]string{"aws"})
+	if err := canary.Save(m.dir("d1"), cs); err != nil {
+		t.Fatal(err)
+	}
+	got, err := m.Decoys("d1")
+	if err != nil || len(got) != 1 || got[0].Values[0] != cs[0].Values[0] {
+		t.Fatalf("Decoys: %v %v", got, err)
+	}
+	if none, err := m.Decoys("d2"); none != nil || err != nil {
+		t.Errorf("no VM: %v %v", none, err)
+	}
+	v := cs[0].Values[0]
+	for s, want := range map[string]bool{"x " + v + " y": true, v[:4] + "\x07\x1b" + v[4:]: true, "x " + v[:4] + " " + v[4:]: false, "all good": false, "": false} {
+		if c := DecoyIn(got, s); (c != nil) != want {
+			t.Errorf("%q: %v", s, c)
+		}
+	}
+	if DecoyIn(nil, v) != nil {
+		t.Error("no decoys: a hit")
+	}
+}
+
+// A hit on a VM without a directory (destroyed while an API job's output
+// was scanned) is audited and acted on no further.
+func TestCanaryHitGone(t *testing.T) {
+	m := testManager(t)
+	m.CanaryHit("gone", &canary.Canary{Kind: "git"}, "in a test")
+	if b, _ := os.ReadFile(m.P.Audit()); !strings.Contains(string(b), `"canary.hit"`) || !strings.Contains(string(b), `"action":"none"`) {
+		t.Errorf("audit log:\n%s", b)
+	}
+	if _, err := os.Stat(m.dir("gone")); err == nil {
+		t.Error("made its directory")
+	}
+}

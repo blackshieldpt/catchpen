@@ -91,13 +91,13 @@ func TestJobsBusyAndPruned(t *testing.T) {
 	block := func(context.Context, io.Writer) error { <-release; return nil }
 	var first []string
 	for _, vm := range []string{"a", "b"} {
-		i, err := js.start("k", vm, "me", block)
+		i, err := js.start("k", vm, "me", nil, block)
 		if err != nil {
 			t.Fatal(err)
 		}
 		first = append(first, i.ID)
 	}
-	if _, err := js.start("k", "c", "me", block); !errors.Is(err, errBusy) {
+	if _, err := js.start("k", "c", "me", nil, block); !errors.Is(err, errBusy) {
 		t.Errorf("a third job: %v", err)
 	}
 	close(release)
@@ -105,7 +105,7 @@ func TestJobsBusyAndPruned(t *testing.T) {
 		waitEnded(t, js, id)
 	}
 	for _, vm := range []string{"c", "d", "e"} {
-		i, err := js.start("k", vm, "me", func(context.Context, io.Writer) error { return nil })
+		i, err := js.start("k", vm, "me", nil, func(context.Context, io.Writer) error { return nil })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -128,7 +128,7 @@ func TestJobsBusyAndPruned(t *testing.T) {
 func TestJobsStop(t *testing.T) {
 	js := newJobs()
 	started := make(chan struct{})
-	i, err := js.start("k", "a", "me", func(ctx context.Context, out io.Writer) error {
+	i, err := js.start("k", "a", "me", nil, func(ctx context.Context, out io.Writer) error {
 		close(started)
 		<-ctx.Done()
 		time.Sleep(50 * time.Millisecond)
@@ -150,7 +150,7 @@ func TestJobsStop(t *testing.T) {
 	if g := j.from(0); g.State != api.JobFailed || g.Error != "context canceled" || !reflect.DeepEqual(g.Lines, []string{"cleaned up"}) {
 		t.Errorf("after stop: %+v", g)
 	}
-	if _, err := js.start("k", "b", "me", func(context.Context, io.Writer) error { return nil }); !errors.Is(err, errStopping) {
+	if _, err := js.start("k", "b", "me", nil, func(context.Context, io.Writer) error { return nil }); !errors.Is(err, errStopping) {
 		t.Errorf("a job after stop: %v", err)
 	}
 }
@@ -159,7 +159,7 @@ func TestJobsStop(t *testing.T) {
 func TestJobPanic(t *testing.T) {
 	js := newJobs()
 	t.Cleanup(js.stop)
-	i, err := js.start("k", "a", "me", func(context.Context, io.Writer) error { panic("boom") })
+	i, err := js.start("k", "a", "me", nil, func(context.Context, io.Writer) error { panic("boom") })
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -22,7 +22,12 @@ before 0.1.0 describe work on `master` before the first tagged release.
   than `off`) is refused by both create and start, which leave it to the CLI. The audit
   events these calls cause carry `client`: the enrolled client's name, or `@local` over
   the socket. Jobs live in the daemon's memory (16 running at most, the last 32 ended
-  kept); stopping the daemon cancels those running.
+  kept); stopping the daemon cancels those running. A job's progress and error are
+  scanned for the VM's decoy credentials (the guest can put text into both, as a failed
+  clone's output): once one is found, every line and the error are withheld, and the
+  hit is acted on at once as `canary_action` says (a stop waits for the VM's lock), audited
+  with the client. A canary hit
+  on a VM already destroyed is now audited and notified instead of dropped.
 - The unit `catchpen daemon install` writes has `KillMode=process`: VMs the daemon
   starts keep running when it stops or restarts. Run `catchpen daemon install` again to
   update an installed unit.
