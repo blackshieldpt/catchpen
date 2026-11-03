@@ -27,9 +27,11 @@ type Server struct {
 	uid     int    // the only user whose unix socket connections are served
 	clients string // the clients file: who may connect over TCP
 	hmac    *api.Verifier
+	jobs    *jobs
 
-	// Manager builds the Manager each request reads the VMs with (nil: the
-	// VM endpoints answer internal).
+	// Manager builds the Manager each request uses (nil: the VM endpoints
+	// answer internal). It must build a new one each call: a job sets its
+	// Out and Client.
 	Manager func() (*vm.Manager, error)
 	// Logf logs what a client isn't told: why a request failed (nil: nothing).
 	Logf func(format string, a ...any)
@@ -38,7 +40,7 @@ type Server struct {
 // New returns the API of catchpen at version, for this process's user over
 // the unix socket and for the clients in the clients file over TCP.
 func New(version, clients string) *Server {
-	s := &Server{version: version, uid: os.Getuid(), clients: clients}
+	s := &Server{version: version, uid: os.Getuid(), clients: clients, jobs: newJobs()}
 	s.hmac = api.NewVerifier(s.hmacKey)
 	return s
 }
@@ -57,6 +59,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathTasks+"/{id}", s.task)
 	mux.HandleFunc("GET "+api.PathAudit, s.audit)
 	mux.HandleFunc("GET "+api.PathCache, s.cache)
+	mux.HandleFunc("POST "+api.PathVMs, s.createVM)
+	mux.HandleFunc("POST "+api.PathVMs+"/{name}/start", s.startVM)
+	mux.HandleFunc("POST "+api.PathVMs+"/{name}/stop", s.stopVM)
+	mux.HandleFunc("GET "+api.PathVMs+"/{name}/destroy", s.vmDestroyLoss)
+	mux.HandleFunc("POST "+api.PathVMs+"/{name}/destroy", s.destroyVM)
+	mux.HandleFunc("POST "+api.PathVMs+"/{name}/resume", s.resumeVM)
+	mux.HandleFunc("GET "+api.PathJobs, s.listJobs)
+	mux.HandleFunc("GET "+api.PathJobs+"/{id}", s.getJob)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, api.CodeNotFound, "no such endpoint")
 	})
@@ -77,6 +87,10 @@ func (s *Server) Handler() http.Handler {
 		mux.ServeHTTP(w, r)
 	})
 }
+
+// StopJobs refuses new jobs, cancels those running and returns once they
+// have ended.
+func (s *Server) StopJobs() { s.jobs.stop() }
 
 func (s *Server) info(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, api.Info{Version: s.version, API: api.Version})

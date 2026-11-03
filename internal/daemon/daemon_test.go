@@ -28,6 +28,7 @@ func TestUnit(t *testing.T) {
 		"Environment=\"CATCHPEN_HOME=/srv/cur ral%%$x\"\n",
 		"Environment=\"PATH=/usr/bin:/bin\"\n",
 		"ExecStart=\"/opt/cur$$ral/bin/catchpen\" daemon\n",
+		"KillMode=process\n",
 		"WantedBy=default.target\n",
 	} {
 		if !strings.Contains(u, want) {

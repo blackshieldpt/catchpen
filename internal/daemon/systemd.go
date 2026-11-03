@@ -33,8 +33,10 @@ func Unit(bin string, env func(string) string) string {
 			fmt.Fprintf(&b, "Environment=%s\n", unitQuote(k+"="+v))
 		}
 	}
-	// ExecStart (unlike Environment) also expands $VARIABLES.
-	fmt.Fprintf(&b, "ExecStart=%s daemon\nRestart=on-failure\nRestartSec=30\n\n[Install]\nWantedBy=default.target\n", strings.ReplaceAll(unitQuote(bin), "$", "$$"))
+	// ExecStart (unlike Environment) also expands $VARIABLES. KillMode=process:
+	// the VMs the daemon starts (their QEMU and helpers) outlive it, as those
+	// catchpen start starts outlive the command.
+	fmt.Fprintf(&b, "ExecStart=%s daemon\nKillMode=process\nRestart=on-failure\nRestartSec=30\n\n[Install]\nWantedBy=default.target\n", strings.ReplaceAll(unitQuote(bin), "$", "$$"))
 	return b.String()
 }
 

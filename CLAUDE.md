@@ -11,10 +11,10 @@ agent; read it before changing code.
 go build -o ~/.local/bin/catchpen ./cmd/catchpen   # install at a stable path: QEMU and ssh call it back
 go vet ./... && go vet -tags integration ./...
 go test -race ./...                            # unit tests
-go test -p 1 -tags integration -timeout 60m ./internal/vm/ ./internal/runner/   # boots real VMs
+go test -p 1 -tags integration -timeout 60m ./internal/vm/ ./internal/runner/ ./internal/server/   # boots real VMs
 ```
 
-Keep `-p 1`: `vm` and `runner` both boot VMs. Docs site: `mkdocs build --strict`
+Keep `-p 1`: `vm`, `runner` and `server` all boot VMs. Docs site: `mkdocs build --strict`
 (mkdocs 1.6.1, mkdocs-material 9.7.7, as in `.github/workflows/docs.yml`).
 
 ## Rules that tests don't fully catch

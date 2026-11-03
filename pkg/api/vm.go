@@ -7,6 +7,8 @@ import (
 )
 
 // PathVMs is GET: every VM, as []VMInfo by name, warm pool VMs included.
+// It is also POST: create a VM from a CreateVMRequest, as catchpen up does,
+// without starting it (a job).
 const PathVMs = Prefix + "/vms"
 
 // PathVM is GET: one VM's VMInfo. The name is one escaped path segment,

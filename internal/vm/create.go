@@ -36,6 +36,7 @@ type CreateOpts struct {
 	AgentKeys  []string // added to ssh.agent_keys
 	Ephemeral  bool
 	Task       string
+	NoAgent    bool // refuse a template with an SSH agent (the API's create)
 	pool       bool // a warm pool VM: no repos, agents or credentials
 }
 
@@ -88,6 +89,9 @@ func (m *Manager) Create(ctx context.Context, name string, o CreateOpts) (_ *Sta
 		if err := r.T.SSH.Validate(); err != nil {
 			return nil, err
 		}
+	}
+	if o.NoAgent && r.T.SSH.Mode() != template.AgentOff {
+		return nil, fmt.Errorf("-t %s sets ssh.agent: %s, which loads or forwards the host's SSH keys: create it with catchpen up", r.T.Name, r.T.SSH.Mode())
 	}
 	// Before the pool strip: env decides the aws decoy.
 	kinds := canaryKinds(r.T)

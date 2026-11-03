@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blackshieldpt/catchpen/internal/vm"
 	"github.com/blackshieldpt/catchpen/pkg/api"
 	"github.com/blackshieldpt/catchpen/pkg/apiclient"
 )
@@ -37,7 +38,10 @@ type tcpAPI struct {
 	srv      *Server
 }
 
-func serveTCP(t *testing.T) *tcpAPI {
+func serveTCP(t *testing.T) *tcpAPI { return serveTCPManager(t, nil) }
+
+// serveTCPManager is serveTCP, with mgr as the server's Manager.
+func serveTCPManager(t *testing.T, mgr func() (*vm.Manager, error)) *tcpAPI {
 	t.Helper()
 	dir := t.TempDir()
 	a := &tcpAPI{clients: filepath.Join(dir, "clients.yaml")}
@@ -57,6 +61,7 @@ func serveTCP(t *testing.T) *tcpAPI {
 	}
 	a.pin = api.PublicKeyPin(cert.Leaf)
 	a.srv = New("1.2.3", a.clients)
+	a.srv.Manager = mgr
 	l, err := a.srv.ListenTCP("127.0.0.1:0", cert)
 	if err != nil {
 		t.Fatal(err)
@@ -70,6 +75,7 @@ func serveTCP(t *testing.T) *tcpAPI {
 		if err := <-done; err != nil {
 			t.Errorf("Serve: %v", err)
 		}
+		a.srv.StopJobs()
 	})
 	return a
 }

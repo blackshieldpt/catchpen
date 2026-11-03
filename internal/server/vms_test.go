@@ -40,10 +40,11 @@ type vmHost struct {
 	sock string
 	log  *strings.Builder
 	mu   *sync.Mutex
+	srv  *Server
 }
 
 // home makes an empty catchpen home and serves it, with mgr as its Manager
-// (nil: one for the home).
+// (nil: a new one for the home each call, as the daemon's).
 func home(t *testing.T, mgr func() (*vm.Manager, error)) *vmHost {
 	t.Helper()
 	h := &vmHost{root: t.TempDir(), log: &strings.Builder{}, mu: &sync.Mutex{}}
@@ -52,8 +53,9 @@ func home(t *testing.T, mgr func() (*vm.Manager, error)) *vmHost {
 		t.Fatal(err)
 	}
 	if mgr == nil {
-		m := &vm.Manager{P: h.p, Cfg: config.Default(), Tpl: template.Loader{UserDir: h.p.Templates()}}
-		mgr = func() (*vm.Manager, error) { return m, nil }
+		mgr = func() (*vm.Manager, error) {
+			return &vm.Manager{P: h.p, Cfg: config.Default(), Tpl: template.Loader{UserDir: h.p.Templates()}}, nil
+		}
 	}
 	h.sock = filepath.Join(t.TempDir(), "api.sock")
 	l, err := Listen(h.sock)
@@ -61,6 +63,7 @@ func home(t *testing.T, mgr func() (*vm.Manager, error)) *vmHost {
 		t.Fatal(err)
 	}
 	s := New("1.2.3", "")
+	h.srv = s
 	s.Manager = mgr
 	s.Logf = func(format string, a ...any) {
 		h.mu.Lock()
@@ -75,6 +78,7 @@ func home(t *testing.T, mgr func() (*vm.Manager, error)) *vmHost {
 		if err := <-done; err != nil {
 			t.Errorf("Serve: %v", err)
 		}
+		s.StopJobs()
 	})
 	return h
 }

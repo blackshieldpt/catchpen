@@ -55,8 +55,9 @@ systemctl --user restart catchpen
 daemon runs at a time (a lock on `~/.local/share/catchpen/daemon.lock`, which can't go
 stale).
 
-The unit runs `catchpen daemon` by its absolute path, with `Restart=on-failure` and the
-`PATH`, `CATCHPEN_HOME` and `XDG_*` variables of the shell you installed it from. Run
+The unit runs `catchpen daemon` by its absolute path, with `Restart=on-failure`,
+`KillMode=process` (VMs the daemon started over the API keep running when it stops) and
+the `PATH`, `CATCHPEN_HOME` and `XDG_*` variables of the shell you installed it from. Run
 `catchpen daemon install` again after moving the binary or changing those variables.
 
 The service doesn't see your shell's environment otherwise. Secrets it needs, such as

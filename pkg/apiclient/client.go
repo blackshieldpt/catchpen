@@ -247,12 +247,129 @@ func (c *Client) Cache(ctx context.Context) (*api.CacheInfo, error) {
 	return &ci, nil
 }
 
+// CreateVM starts a job creating a VM, as catchpen up does, without
+// starting it.
+func (c *Client) CreateVM(ctx context.Context, r api.CreateVMRequest) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathVMs, r)
+}
+
+// StartVM starts a job starting the VM.
+func (c *Client) StartVM(ctx context.Context, name string) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathVMStart(name), nil)
+}
+
+// StopVM starts a job shutting the VM down; force powers it off at once.
+func (c *Client) StopVM(ctx context.Context, name string, force bool) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathVMStop(name), api.StopVMRequest{Force: force})
+}
+
+// DestroyLoss is what destroying the VM would lose.
+func (c *Client) DestroyLoss(ctx context.Context, name string) (*api.VMLoss, error) {
+	var l api.VMLoss
+	if err := c.get(ctx, api.PathVMDestroy(name), &l); err != nil {
+		return nil, err
+	}
+	return &l, nil
+}
+
+// DestroyVM starts a job destroying the VM, its disk and snapshots
+// included; r confirms it, with the snapshots DestroyLoss told. Without
+// Confirm it is an *api.Error with api.CodeConfirmRequired, whose message
+// says what would be deleted; with other snapshots than the VM's, with
+// api.CodeConflict.
+func (c *Client) DestroyVM(ctx context.Context, name string, r api.DestroyVMRequest) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathVMDestroy(name), r)
+}
+
+// ResumeVM starts a job continuing a VM a canary hit paused.
+func (c *Client) ResumeVM(ctx context.Context, name string) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathVMResume(name), nil)
+}
+
+func (c *Client) job(ctx context.Context, path string, in any) (*api.JobInfo, error) {
+	var j api.JobInfo
+	if err := c.do(ctx, http.MethodPost, path, in, &j); err != nil {
+		return nil, err
+	}
+	return &j, nil
+}
+
+// Jobs lists the jobs running and the last ones that ended, newest first.
+func (c *Client) Jobs(ctx context.Context) ([]api.JobInfo, error) {
+	var js []api.JobInfo
+	if err := c.get(ctx, api.PathJobs, &js); err != nil {
+		return nil, err
+	}
+	return js, nil
+}
+
+// Job is the job with id, with its progress lines from the after-th on.
+func (c *Client) Job(ctx context.Context, id string, after int) (*api.Job, error) {
+	path := api.PathJob(id)
+	if after > 0 {
+		path += "?after=" + strconv.Itoa(after)
+	}
+	var j api.Job
+	if err := c.get(ctx, path, &j); err != nil {
+		return nil, err
+	}
+	return &j, nil
+}
+
+// jobPoll is how often WaitJob asks for a job.
+var jobPoll = 500 * time.Millisecond
+
+// WaitJob waits for the job with id to end, and returns it: a job that
+// failed has its Error set, and is not an error here. line, if not nil, is
+// called with each progress line as it comes; lines a job dropped before
+// they were read are not.
+func (c *Client) WaitJob(ctx context.Context, id string, line func(string)) (*api.JobInfo, error) {
+	after := 0
+	for {
+		j, err := c.Job(ctx, id, after)
+		if err != nil {
+			return nil, err
+		}
+		if line != nil {
+			for _, l := range j.Lines {
+				line(l)
+			}
+		}
+		after = j.From + len(j.Lines)
+		if j.State != api.JobRunning {
+			return &j.JobInfo, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(jobPoll):
+		}
+	}
+}
+
 // get decodes path's response into out. A response that isn't a success is
 // an *api.Error.
 func (c *Client) get(ctx context.Context, path string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	return c.do(ctx, http.MethodGet, path, nil, out)
+}
+
+// do sends in (nil: no body) as JSON, and decodes the response into out. A
+// response that isn't a success (200 or 202) is an *api.Error.
+func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
+	var rb io.Reader
+	if in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		rb = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.base+path, rb)
 	if err != nil {
 		return err
+	}
+	if in != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
@@ -260,7 +377,7 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	}
 	defer resp.Body.Close()
 	body := io.LimitReader(resp.Body, maxResponse)
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		var er api.ErrorResponse
 		if json.NewDecoder(body).Decode(&er) == nil && er.Error != nil {
 			return er.Error

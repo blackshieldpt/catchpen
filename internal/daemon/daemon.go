@@ -101,6 +101,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 			ls = append(ls, tl)
 		}
 		d.API.Manager, d.API.Logf = d.Manager, d.logf
+		// Jobs end with the daemon: they are cancelled, as catchpen is by a
+		// signal, and Run returns once they have cleaned up.
+		wg.Go(func() {
+			<-ctx.Done()
+			d.API.StopJobs()
+		})
 		h := d.API.Handler()
 		for _, l := range ls {
 			d.logf("api: serving on %s", l.Addr())

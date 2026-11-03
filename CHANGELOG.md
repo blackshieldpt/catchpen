@@ -8,6 +8,24 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- The API creates, starts, stops, destroys and resumes VMs (`POST /v1/vms`,
+  `POST /v1/vms/<name>/start`, `/stop`, `/destroy`, `/resume`), each as a job that runs on
+  in the daemon when its client goes, read with `GET /v1/jobs` and
+  `GET /v1/jobs/<id>?after=<n>` (its progress lines), with `pkg/apiclient`'s `CreateVM`,
+  `StartVM`, `StopVM`, `DestroyLoss`, `DestroyVM`, `ResumeVM`, `Jobs`, `Job` and
+  `WaitJob`. `GET /v1/vms/<name>/destroy` tells what a destroy loses (the disk, the
+  snapshots, a running or paused VM, a canary hit, its task); the destroy needs
+  `"confirm": true` and those snapshots, pause and canary hit, else it is refused (428,
+  or 409 when they changed). Stopping a paused VM needs `"force": true`. Create takes
+  `catchpen up`'s options but `--ssh-agent`, `--agent-key` and `--ephemeral`, and
+  refuses a repo with any of `@ ? # %`; a template with an SSH agent (`ssh.agent` other
+  than `off`) is refused by both create and start, which leave it to the CLI. The audit
+  events these calls cause carry `client`: the enrolled client's name, or `@local` over
+  the socket. Jobs live in the daemon's memory (16 running at most, the last 32 ended
+  kept); stopping the daemon cancels those running.
+- The unit `catchpen daemon install` writes has `KillMode=process`: VMs the daemon
+  starts keep running when it stops or restarts. Run `catchpen daemon install` again to
+  update an installed unit.
 - The API lists the template categories and their sections (`GET /v1/templates`), the
   headless tasks (`GET /v1/tasks`, `GET /v1/tasks/<id>`), the audit log a page at a time
   (`GET /v1/audit`, newest first, with `vm`, `limit` and `before`) and what the package

@@ -5,10 +5,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/blackshieldpt/catchpen/internal/audit"
 	"github.com/blackshieldpt/catchpen/internal/config"
 	"github.com/blackshieldpt/catchpen/internal/image"
 	"github.com/blackshieldpt/catchpen/internal/paths"
@@ -320,5 +322,27 @@ func TestSSHConfigLeavesOutBadStates(t *testing.T) {
 		if b, err := exec.Command("ssh", "-G", "-F", m.P.SSHConfig(), "catchpen-good").CombinedOutput(); err != nil {
 			t.Errorf("ssh -G: %v: %s", err, b)
 		}
+	}
+}
+
+// An API call's events name its client; the CLI's have no client, and the
+// caller's detail is left as it was.
+func TestAuditClient(t *testing.T) {
+	m := testManager(t)
+	m.audit(audit.VMStop, "a", map[string]any{"force": true})
+	m.Client = "cockpit"
+	detail := map[string]any{"force": false}
+	m.audit(audit.VMStop, "b", detail)
+	m.audit(audit.VMDestroy, "b", nil)
+	var got []map[string]any
+	if err := m.Audit().TailEvents(context.Background(), "", false, func(e audit.Event) error {
+		got = append(got, e.Detail)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := []map[string]any{{"force": true}, {"force": false, "client": "cockpit"}, {"client": "cockpit"}}
+	if !reflect.DeepEqual(got, want) || len(detail) != 1 {
+		t.Errorf("got %v (the caller's detail %v), want %v", got, detail, want)
 	}
 }

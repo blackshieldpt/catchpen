@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -115,6 +116,9 @@ type Manager struct {
 	Bin   string           // absolute path of the catchpen binary (ProxyCommand, guestfwd)
 	Debug bool             // stream the whole build log; log the serial console; keep failed VMs running
 	HTTP  *http.Client     // forge API client (nil: default)
+	// Client is the API client a call came from, added to the audit events it
+	// causes as "client" ("": none, the CLI or the daemon).
+	Client string
 }
 
 var nameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}[a-z0-9]$|^[a-z]$`)
@@ -218,6 +222,12 @@ func (m *Manager) Audit() audit.Log { return audit.Log{Path: m.P.Audit()} }
 
 // audit records an event in the host audit log; failures are warnings.
 func (m *Manager) audit(event, vm string, detail map[string]any) {
+	if m.Client != "" {
+		d := make(map[string]any, len(detail)+1)
+		maps.Copy(d, detail)
+		d["client"] = m.Client
+		detail = d
+	}
 	if err := (audit.Log{Path: m.P.Audit()}).Record(event, vm, detail); err != nil {
 		m.logf("warning: audit log: %v", err)
 	}
