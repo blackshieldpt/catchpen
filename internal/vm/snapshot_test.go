@@ -2,6 +2,7 @@ package vm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blackshieldpt/catchpen/internal/config"
 	"github.com/blackshieldpt/catchpen/internal/fsutil"
 	"github.com/blackshieldpt/catchpen/internal/image"
 	"github.com/blackshieldpt/catchpen/internal/task"
@@ -21,8 +23,8 @@ func TestValidSnap(t *testing.T) {
 		"20261020-153000": true, "before-upgrade": true, "a.b_c": true,
 		"": false, "12": false, "-x": false, "a b": false, "a;quit": false, strings.Repeat("a", 65): false,
 	} {
-		if err := validSnap(n); (err == nil) != ok {
-			t.Errorf("validSnap(%q) = %v", n, err)
+		if err := ValidSnap(n); (err == nil) != ok {
+			t.Errorf("ValidSnap(%q) = %v", n, err)
 		}
 	}
 }
@@ -506,5 +508,133 @@ func TestGCKeepsBasesWhileTemplatesAreBroken(t *testing.T) {
 	}
 	if _, err := os.Stat(r.basePath(m.P, 1)); err == nil {
 		t.Error("gc kept a base only a spec naming a missing section used")
+	}
+}
+
+// whileStopped refuses, nothing changed, a running VM a canary hit paused, or
+// one whose canaries were found in use since its caller began, or (running)
+// since it started, unless canary_action is log; leaves stopped one whose
+// canaries are found in use meanwhile; and otherwise starts again a VM that
+// ran, as before.
+func TestWhileStoppedHit(t *testing.T) {
+	const (
+		refused = "refused"
+		left    = "left stopped"
+		started = "started again"
+		stopped = "stays stopped" // it wasn't running
+	)
+	for _, c := range []struct {
+		name    string
+		running bool
+		paused  bool
+		hit     string // a hit recorded "before" the VM started, "since" (a minute ago), or "long" since (two hours ago, the VM having started three)
+		call    bool   // a hit recorded after the caller read the hit file's time
+		during  bool   // a hit recorded during the work
+		fnErr   bool
+		action  string
+		want    string
+	}{
+		{name: "paused", running: true, paused: true, want: refused},
+		{name: "paused, log", running: true, paused: true, action: config.CanaryLog, want: refused},
+		{name: "hit since it started", running: true, hit: "since", want: refused},
+		{name: "hit long since it started", running: true, hit: "long", want: refused},
+		{name: "hit since it started, log", running: true, hit: "since", action: config.CanaryLog, want: started},
+		{name: "hit before it started", running: true, hit: "before", want: started},
+		{name: "hit since the call", running: true, hit: "before", call: true, want: refused},
+		{name: "not running, hit since the call", hit: "before", call: true, want: refused},
+		{name: "not running, first hit since the call", call: true, want: refused},
+		{name: "not running, paused marker left by a crash", paused: true, want: stopped},
+		{name: "hit during", running: true, during: true, want: left},
+		{name: "an earlier hit, and one during", running: true, hit: "before", during: true, want: left},
+		{name: "hit during, log", running: true, during: true, action: config.CanaryLog, want: started},
+		{name: "none", running: true, want: started},
+		{name: "work fails", running: true, fnErr: true, want: started},
+		{name: "not running, an old hit", hit: "before", want: stopped},
+		{name: "not running, hit during", during: true, want: stopped},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := testManager(t)
+			m.Cfg.CanaryAction = c.action
+			dir := m.dir("v")
+			writeFile(t, filepath.Join(dir, stateFile), `{"name":"v","user":"agent"}`)
+			at := func(f string, ago time.Duration) {
+				writeFile(t, filepath.Join(dir, f), "{}")
+				if err := os.Chtimes(filepath.Join(dir, f), time.Now().Add(-ago), time.Now().Add(-ago)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if c.running {
+				fakeQEMU(t, m, "v", 512)
+				at(runtimeFile, time.Hour) // when it started (a stopped VM has none)
+				if c.hit == "long" {
+					at(runtimeFile, 3*time.Hour)
+				}
+			}
+			switch c.hit {
+			case "before":
+				at(hitFile, 4*time.Hour)
+			case "since":
+				at(hitFile, time.Minute)
+			case "long":
+				at(hitFile, 2*time.Hour)
+			}
+			if c.paused {
+				writeFile(t, filepath.Join(dir, pausedFile), "{}")
+			}
+			since := m.vm("v").modTime(hitFile) // as Restore, Reset and Rebase read it first
+			if c.call {
+				writeFile(t, filepath.Join(dir, hitFile), "{}")
+			}
+			ran, done := false, false
+			err := m.whileStopped(context.Background(), "v", since, func() error {
+				ran = true
+				if c.during {
+					writeFile(t, filepath.Join(dir, hitFile), "{}")
+				}
+				if c.fnErr {
+					return errors.New("the work failed")
+				}
+				return nil
+			}, func() { done = true })
+			msg := fmt.Sprint(err)
+			_, running := m.Running("v")
+			var ok bool
+			switch c.want {
+			case refused:
+				ok = !ran && running == c.running && strings.Contains(msg, "a canary hit paused v, or was found in it since it started or since this began: nothing was changed")
+				locked := make(chan error, 1)
+				go func() {
+					_, unlock, err := m.vm("v").lock()
+					if err == nil {
+						unlock()
+					}
+					locked <- err
+				}()
+				select {
+				case err := <-locked:
+					if err != nil {
+						t.Fatal(err)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("the VM's lock is still held after the refusal")
+				}
+			case left:
+				ok = ran && !running && strings.Contains(msg, "a canary hit was found in v meanwhile: it is left stopped") &&
+					!strings.Contains(msg, "base image") // Start didn't run
+			case started:
+				ok = ran && strings.Contains(msg, "base image  missing") // Start ran, and failed on the test VM
+			case stopped:
+				ok = ran && err == nil && !running
+			}
+			if ok && ran && done == c.fnErr {
+				t.Errorf("done ran %v after the work's error %v", done, c.fnErr)
+			}
+			if c.fnErr && !strings.Contains(msg, "the work failed") {
+				ok = false
+			}
+			if !ok {
+				t.Errorf("want %s: ran %v, running %v, err %v", c.want, ran, running, err)
+			}
+		})
 	}
 }

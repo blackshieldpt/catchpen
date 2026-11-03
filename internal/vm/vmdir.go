@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/blackshieldpt/catchpen/internal/fsutil"
 	"github.com/blackshieldpt/catchpen/internal/qemu"
@@ -92,3 +93,13 @@ func (d vmDir) running() (*Runtime, bool) {
 // canaries were found in use at all (kept until destroy).
 func (d vmDir) paused() bool { return d.has(pausedFile) }
 func (d vmDir) hit() bool    { return d.has(hitFile) }
+
+// modTime is when file f was last written (zero: it isn't there): for
+// hitFile, the last canary hit; for runtimeFile, the VM's start.
+func (d vmDir) modTime(f string) time.Time {
+	fi, err := os.Stat(d.path(f))
+	if err != nil {
+		return time.Time{}
+	}
+	return fi.ModTime()
+}

@@ -60,13 +60,14 @@ Continue a VM a canary hit paused. Look at what it did first (`catchpen audit`,
 
 Give a VM a fresh disk and run first boot again. Keys, forges and settings stay; repos
 are cloned again; snapshots are deleted. `--latest` uses the template's current base. A
-running VM is started again afterwards.
+running VM is started again afterwards (one with a canary hit: see
+[snapshots.md](snapshots.md)).
 
 ### `catchpen rebase <vm> [-y]`
 
 Move a VM's disk onto the template's current base, keeping its contents. New packages
 need `reset --latest`. Snapshots are deleted (it asks first when there are any); a
-running VM is restarted.
+running VM is restarted (one with a canary hit: see [snapshots.md](snapshots.md)).
 
 ### `catchpen gc [-n]`
 

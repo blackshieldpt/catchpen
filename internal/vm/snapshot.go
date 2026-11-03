@@ -16,6 +16,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/blackshieldpt/catchpen/internal/audit"
+	"github.com/blackshieldpt/catchpen/internal/config"
 	"github.com/blackshieldpt/catchpen/internal/fsutil"
 	"github.com/blackshieldpt/catchpen/internal/qemu"
 	"github.com/blackshieldpt/catchpen/internal/sshx"
@@ -31,7 +32,8 @@ const (
 // all-digit names are refused so a name never means another snapshot's id.
 var snapNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
-func validSnap(n string) error {
+// ValidSnap refuses a name catchpen doesn't give a snapshot.
+func ValidSnap(n string) error {
 	if _, err := strconv.Atoi(n); err == nil || !snapNameRe.MatchString(n) {
 		return fmt.Errorf("invalid snapshot name %q (letters, digits, . _ -, not only digits, at most 64)", n)
 	}
@@ -72,7 +74,7 @@ func (m *Manager) Snapshots(name string) ([]qemu.Snapshot, error) {
 }
 
 func (m *Manager) findSnap(name, snap string) (*qemu.Snapshot, error) {
-	if err := validSnap(snap); err != nil {
+	if err := ValidSnap(snap); err != nil {
 		return nil, err
 	}
 	ss, err := m.Snapshots(name)
@@ -119,7 +121,7 @@ func (m *Manager) Snapshot(ctx context.Context, name, snap string, diskOnly bool
 	if snap == "" {
 		snap = time.Now().UTC().Format("20060102-150405")
 	}
-	if err := validSnap(snap); err != nil {
+	if err := ValidSnap(snap); err != nil {
 		return "", err
 	}
 	_, unlock, err := m.vm(name).lock()
@@ -194,6 +196,7 @@ func (m *Manager) Snapshot(ctx context.Context, name, snap string, diskOnly bool
 // Credentials are pushed again afterwards: restored memory may hold ones
 // since rotated.
 func (m *Manager) Restore(ctx context.Context, name, snap string, diskOnly bool) error {
+	since := m.vm(name).modTime(hitFile) // before anything that waits or reads the guest
 	s, err := m.Load(name)
 	if err != nil {
 		return err
@@ -210,7 +213,7 @@ func (m *Manager) Restore(ctx context.Context, name, snap string, diskOnly bool)
 	}
 	m.saveTranscripts(name) // what the agents wrote since the snapshot
 	if sn.VMStateMB == 0 || diskOnly {
-		return m.whileStopped(ctx, name, func() error {
+		return m.whileStopped(ctx, name, since, func() error {
 			return qemu.SnapshotOffline("-a", snap, m.vm(name).path(diskFile))
 		}, func() { m.audit(audit.VMRestore, name, map[string]any{"snapshot": snap, "ram": false}) })
 	}
@@ -327,13 +330,25 @@ func (m *Manager) DeleteSnapshot(name, snap string) error {
 }
 
 // whileStopped runs fn with the VM stopped and locked; done runs if fn
-// succeeded. A VM that was running is started again either way.
-func (m *Manager) whileStopped(ctx context.Context, name string, fn func() error, done func()) error {
+// succeeded. A VM that was running is started again either way. Refused,
+// nothing changed, are a running VM a canary hit paused, and (canary_action
+// other than log) a VM whose canaries were found in use since the caller
+// began (since, the hit file's time it read first), or, running, since it
+// started: a pause holds it until resumed, a pending stop must not be undone,
+// and the hit's evidence must not be wiped. One whose canaries are found in
+// use meanwhile is left stopped.
+func (m *Manager) whileStopped(ctx context.Context, name string, since time.Time, fn func() error, done func()) error {
 	held, unlock, err := m.vm(name).lock()
 	if err != nil {
 		return err
 	}
 	_, running := m.Running(name)
+	act := m.Cfg.CanaryAction != config.CanaryLog
+	hit := m.vm(name).modTime(hitFile)
+	if running && m.Paused(name) || act && (!hit.Equal(since) || running && hit.After(m.vm(name).modTime(runtimeFile))) {
+		unlock()
+		return fmt.Errorf("a canary hit paused %s, or was found in it since it started or since this began: nothing was changed (see catchpen audit %s; stop a running VM first, then try again)", name, name)
+	}
 	if err := m.stopLocked(held, false); err != nil {
 		unlock()
 		return err
@@ -342,6 +357,9 @@ func (m *Manager) whileStopped(ctx context.Context, name string, fn func() error
 	unlock()
 	if err == nil {
 		done()
+	}
+	if running && act && !m.vm(name).modTime(hitFile).Equal(hit) {
+		return errors.Join(err, fmt.Errorf("a canary hit was found in %s meanwhile: it is left stopped (catchpen start %s starts it)", name, name))
 	}
 	if running {
 		if _, serr := m.Start(ctx, name); serr != nil {
@@ -437,6 +455,7 @@ func holdBase(base string) (release func(), err error) {
 // current base) and runs first boot again; keys, forges and settings stay,
 // repos are cloned again at start. Its snapshots are lost.
 func (m *Manager) Reset(ctx context.Context, name string, latest bool) error {
+	since := m.vm(name).modTime(hitFile) // before anything that waits or reads the guest
 	s, err := m.Load(name)
 	if err != nil {
 		return err
@@ -463,7 +482,7 @@ func (m *Manager) Reset(ctx context.Context, name string, latest bool) error {
 		return err
 	}
 	m.saveTranscripts(name)
-	return m.whileStopped(ctx, name, func() error {
+	return m.whileStopped(ctx, name, since, func() error {
 		disk := m.vm(name).path(diskFile)
 		tmp := disk + ".reset"
 		_ = os.Remove(tmp)
@@ -503,6 +522,7 @@ func (m *Manager) Reset(ctx context.Context, name string, latest bool) error {
 // changing what the guest sees, so the old base can be removed. Snapshots
 // refer to the old base and are deleted first.
 func (m *Manager) Rebase(ctx context.Context, name string) error {
+	since := m.vm(name).modTime(hitFile) // before anything that waits or reads the guest
 	s, err := m.Load(name)
 	if err != nil {
 		return err
@@ -525,7 +545,7 @@ func (m *Manager) Rebase(ctx context.Context, name string) error {
 	if _, err := os.Stat(s.Base); err != nil {
 		return fmt.Errorf("its base %s is missing: %w", s.Base, err)
 	}
-	return m.whileStopped(ctx, name, func() error {
+	return m.whileStopped(ctx, name, since, func() error {
 		disk := m.vm(name).path(diskFile)
 		ss, err := qemu.Snapshots(disk)
 		if err != nil {

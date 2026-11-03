@@ -93,7 +93,9 @@ are withheld.
    and disk for later analysis, and recordings are in `catchpen recordings <name>`.
    `catchpen transcripts` refuses a paused VM; copies made earlier are in
    `~/.local/share/catchpen/transcripts/<name>/`.
-3. Then `catchpen resume <name>` to continue, or `catchpen destroy <name>`.
+3. Then `catchpen resume <name>` to continue, or `catchpen destroy <name>`. A resumed
+   VM keeps the hit: `reset`, `rebase` and a disk-only `restore` refuse it until it is
+   stopped (see [snapshots.md](snapshots.md)).
 
 ## What goes unseen
 

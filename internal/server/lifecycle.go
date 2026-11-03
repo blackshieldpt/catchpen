@@ -186,13 +186,13 @@ func (s *Server) destroyVM(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	v, m, l, ok := s.destroyLoss(w, r)
+	v, m, l, ok := s.loss(w, r, (*vm.Manager).DestroyLoss)
 	if !ok {
 		return
 	}
 	switch {
 	case !req.Confirm:
-		writeError(w, api.CodeConfirmRequired, confirmMessage(v.Name, l))
+		writeError(w, api.CodeConfirmRequired, confirmMessage("destroying "+v.Name+" deletes all data inside it", "forces it off", l))
 	case !slices.Equal(api.List(req.Snapshots), l.Snapshots) || req.Paused != l.Paused || req.CanaryHit != l.CanaryHit:
 		writeError(w, api.CodeConflict, "the VM's snapshots, pause or canary hit are not those confirmed: read what destroying it loses again")
 	default:
@@ -200,16 +200,17 @@ func (s *Server) destroyVM(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// destroyLoss is what destroying the VM named in the path loses; it answers
-// a request it can't.
-func (s *Server) destroyLoss(w http.ResponseWriter, r *http.Request) (*vm.Info, *vm.Manager, api.VMLoss, bool) {
+// loss is what a call on the VM named in the path loses, as of tells (the
+// Manager's DestroyLoss, ResetLoss or RebaseLoss); it answers a request it
+// can't.
+func (s *Server) loss(w http.ResponseWriter, r *http.Request, of func(*vm.Manager, string) (vm.Loss, error)) (*vm.Info, *vm.Manager, api.VMLoss, bool) {
 	v, m, ok := s.findVM(w, r)
 	if !ok {
 		return nil, nil, api.VMLoss{}, false
 	}
-	l, err := m.DestroyLoss(v.Name)
+	l, err := of(m, v.Name)
 	if err != nil {
-		s.fail(w, r, "what destroying the VM deletes can't be read", err)
+		s.fail(w, r, "what the call deletes can't be read", err)
 		return nil, nil, api.VMLoss{}, false
 	}
 	return v, m, api.VMLoss{Disk: l.Disk, Snapshots: api.List(l.Snapshots), Running: l.Running,
@@ -217,19 +218,20 @@ func (s *Server) destroyLoss(w http.ResponseWriter, r *http.Request) (*vm.Info, 
 }
 
 func (s *Server) vmDestroyLoss(w http.ResponseWriter, r *http.Request) {
-	if _, _, l, ok := s.destroyLoss(w, r); ok {
+	if _, _, l, ok := s.loss(w, r, (*vm.Manager).DestroyLoss); ok {
 		writeJSON(w, http.StatusOK, l)
 	}
 }
 
-// confirmMessage says what destroying the VM deletes, as the confirm prompt.
-func confirmMessage(name string, l api.VMLoss) string {
-	msg := "destroying " + name + " deletes all data inside it"
+// confirmMessage says what a call deletes (what, then the snapshots) and
+// does to a running VM (running), as the confirm prompt.
+func confirmMessage(what, running string, l api.VMLoss) string {
+	msg := what
 	if len(l.Snapshots) > 0 {
 		msg += ", its snapshots (" + strings.Join(l.Snapshots, ", ") + ") included"
 	}
 	if l.Running {
-		msg += ", and forces it off"
+		msg += ", and " + running
 	}
 	return msg + `: send "confirm": true, with the snapshots it deletes (GET this path for all it loses)`
 }

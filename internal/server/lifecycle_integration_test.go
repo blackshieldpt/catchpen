@@ -18,8 +18,10 @@ import (
 )
 
 // TestLifecycle drives a real VM through the API: create, start (its
-// client gone as soon as the job is started), stop and destroy, each a job
-// whose audit event names the client.
+// client gone as soon as the job is started), a snapshot with its memory,
+// a credentials push, a restore and the snapshot's deletion while it runs,
+// stop, reset, a rebase onto the base it is on (refused), and destroy, each
+// a job whose audit event names the client.
 func TestLifecycle(t *testing.T) {
 	p, bin := vmtest.Home(t)
 	vmtest.Template(t, p.Templates(), "lc", "", "")
@@ -70,8 +72,32 @@ func TestLifecycle(t *testing.T) {
 	wait(j, err)
 	state(api.VMRunning)
 
+	wait(c.CreateSnapshot(ctx, "lc", api.CreateSnapshotRequest{Name: "s1"}))
+	if ss, err := c.Snapshots(ctx, "lc"); err != nil || len(ss) != 1 || ss[0].Name != "s1" || ss[0].MemoryMB == 0 {
+		t.Fatalf("snapshots: %+v %v", ss, err)
+	}
+	wait(c.PushCreds(ctx, "lc"))
+	if _, lines := wait(c.RestoreSnapshot(ctx, "lc", "s1", api.RestoreSnapshotRequest{Confirm: true})); !slices.Contains(lines, "lc restored") {
+		t.Errorf("restore's progress: %q", lines)
+	}
+	state(api.VMRunning)
+	wait(c.DeleteSnapshot(ctx, "lc", "s1", api.DeleteSnapshotRequest{Confirm: true}))
+
 	wait(c.StopVM(ctx, "lc", false))
 	state(api.VMStopped)
+
+	if _, lines := wait(c.ResetVM(ctx, "lc", api.ResetVMRequest{Confirm: true})); !slices.ContainsFunc(lines,
+		func(l string) bool { return strings.HasPrefix(l, "reset lc on ") }) {
+		t.Errorf("reset's progress: %q", lines)
+	}
+	state(api.VMStopped)
+	j, err = c.RebaseVM(ctx, "lc", api.RebaseVMRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if end, err := c.WaitJob(ctx, j.ID, func(string) {}); err != nil || end.State != api.JobFailed || end.Error != "lc is already on the current base" {
+		t.Errorf("rebase: %+v %v", end, err)
+	}
 
 	if _, err := c.DestroyVM(ctx, "lc", api.DestroyVMRequest{}); code(err) != api.CodeConfirmRequired {
 		t.Fatalf("destroy without confirm: %v", err)
@@ -80,7 +106,8 @@ func TestLifecycle(t *testing.T) {
 	if _, err := c.VM(ctx, "lc"); code(err) != api.CodeNotFound {
 		t.Errorf("after destroy: %v", err)
 	}
-	for _, ev := range []string{audit.VMCreate, audit.VMStart, audit.VMStop, audit.VMDestroy} {
+	for _, ev := range []string{audit.VMCreate, audit.VMStart, audit.VMSnapshot, audit.CredsPush, audit.VMRestore,
+		audit.VMSnapshotRm, audit.VMStop, audit.VMReset, audit.VMDestroy} {
 		if e := lastEvent(t, p, ev); e.VM != "lc" || e.Detail["client"] != api.ClientLocal {
 			t.Errorf("%s: %+v", ev, e)
 		}

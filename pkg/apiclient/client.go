@@ -286,6 +286,61 @@ func (c *Client) ResumeVM(ctx context.Context, name string) (*api.JobInfo, error
 	return c.job(ctx, api.PathVMResume(name), nil)
 }
 
+// ResetLoss is what resetting the VM would lose.
+func (c *Client) ResetLoss(ctx context.Context, name string) (*api.VMLoss, error) {
+	var l api.VMLoss
+	if err := c.get(ctx, api.PathVMReset(name), &l); err != nil {
+		return nil, err
+	}
+	return &l, nil
+}
+
+// ResetVM starts a job giving the VM a fresh disk; r confirms it, with the
+// snapshots and canary hit ResetLoss told. Without Confirm it is an
+// *api.Error with api.CodeConfirmRequired; with others than the VM's, with
+// api.CodeConflict.
+func (c *Client) ResetVM(ctx context.Context, name string, r api.ResetVMRequest) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathVMReset(name), r)
+}
+
+// RebaseLoss is what rebasing the VM would lose.
+func (c *Client) RebaseLoss(ctx context.Context, name string) (*api.VMLoss, error) {
+	var l api.VMLoss
+	if err := c.get(ctx, api.PathVMRebase(name), &l); err != nil {
+		return nil, err
+	}
+	return &l, nil
+}
+
+// RebaseVM starts a job moving the VM's disk onto its template's current
+// base; a VM with snapshots needs r to confirm them, as ResetVM.
+func (c *Client) RebaseVM(ctx context.Context, name string, r api.RebaseVMRequest) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathVMRebase(name), r)
+}
+
+// PushCreds starts a job pushing credentials, agent config, env, skills and
+// plugins into the running VM.
+func (c *Client) PushCreds(ctx context.Context, name string) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathVMPush(name), nil)
+}
+
+// CreateSnapshot starts a job saving a snapshot of the VM.
+func (c *Client) CreateSnapshot(ctx context.Context, name string, r api.CreateSnapshotRequest) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathSnapshots(name), r)
+}
+
+// RestoreSnapshot starts a job returning the VM to snapshot snap; without
+// r.Confirm it is an *api.Error with api.CodeConfirmRequired.
+func (c *Client) RestoreSnapshot(ctx context.Context, name, snap string, r api.RestoreSnapshotRequest) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathSnapshotRestore(name, snap), r)
+}
+
+// DeleteSnapshot starts a job deleting snapshot snap; without r.Confirm it
+// is an *api.Error with api.CodeConfirmRequired.
+func (c *Client) DeleteSnapshot(ctx context.Context, name, snap string, r api.DeleteSnapshotRequest) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathSnapshotDelete(name, snap), r)
+}
+
 func (c *Client) job(ctx context.Context, path string, in any) (*api.JobInfo, error) {
 	var j api.JobInfo
 	if err := c.do(ctx, http.MethodPost, path, in, &j); err != nil {

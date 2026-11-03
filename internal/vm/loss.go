@@ -12,9 +12,10 @@ import (
 type Loss struct {
 	Disk      bool     // everything on the VM's disk, if it has one (Reset, Destroy)
 	Snapshots []string // the snapshots deleted, oldest first
-	// Running: the VM runs, and is stopped: Reset and Rebase start it again,
-	// Destroy forces it off. A paused VM is forced off by all three, losing
-	// its frozen memory, and Reset and Rebase start it unpaused.
+	// Running: the VM runs, and is stopped: Reset and Rebase start it again
+	// (unless canary_action is log, they refuse one with a canary hit since it
+	// started, and leave stopped one hit meanwhile), Destroy forces it off. A paused VM is forced off by
+	// Destroy, losing its frozen memory; Reset and Rebase refuse it.
 	Running bool
 }
 

@@ -8,6 +8,19 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- The API resets, rebases and pushes credentials to VMs, and saves, restores and deletes
+  their snapshots (`POST /v1/vms/<name>/reset`, `/rebase`, `/push`,
+  `POST /v1/vms/<name>/snapshots`, `/snapshots/<snap>/restore`, `/snapshots/<snap>/delete`),
+  each as a job, with `pkg/apiclient`'s `ResetLoss`, `ResetVM`, `RebaseLoss`, `RebaseVM`,
+  `PushCreds`, `CreateSnapshot`, `RestoreSnapshot` and `DeleteSnapshot`.
+  `GET /v1/vms/<name>/reset` and `/rebase` tell what each loses. A reset needs
+  `"confirm": true` and the snapshots and canary hit it deletes; a rebase of a VM with
+  snapshots, `"confirm": true` and those snapshots (else 428, or 409 when they changed).
+  Restore and snapshot delete need `"confirm": true`, which the CLI doesn't ask; a
+  snapshot needs a name. Once the VM and snapshot are found, all six are refused (409) on
+  a VM a canary hit paused; reset, rebase and restore, which can start the VM, and push,
+  which can clone through its SSH agent, on one with an SSH agent (`ssh.agent` other than
+  `off`).
 - The API creates, starts, stops, destroys and resumes VMs (`POST /v1/vms`,
   `POST /v1/vms/<name>/start`, `/stop`, `/destroy`, `/resume`), each as a job that runs on
   in the daemon when its client goes, read with `GET /v1/jobs` and
@@ -64,6 +77,13 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Fixed
 
+- `catchpen reset`, `catchpen rebase` and a restore that stops a running VM (a disk-only
+  snapshot, or `--disk-only`) forced a VM a canary hit paused off and started it again
+  unpaused. They now refuse, changing nothing, a running VM a hit paused or whose
+  canaries were found in use since it started (stop it first), and any VM whose
+  canaries are found in use after they begin and before they take its lock; and leave
+  stopped a VM whose canaries are found in use while they stop it or work, failing
+  after their work. With `canary_action: log`, hits don't count (a paused VM is still refused).
 - `catchpen task run --file` refuses other task flags (`--prompt`, `--repo`, `-t`, …), as
   the docs say; it ignored them. `--parallel` and `--follow` still go with it.
 - Two `catchpen forge add` runs with the same name at once no longer both save it, which
