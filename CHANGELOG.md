@@ -8,6 +8,19 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- The API submits headless tasks (`POST /v1/tasks`, one task, the prompt as text),
+  cancels and deletes them (`POST /v1/tasks/<id>/cancel`, `/delete`, as jobs), and
+  builds and rebuilds template bases (`POST /v1/templates/build`, `/rebuild`, as jobs),
+  with `pkg/apiclient`'s `SubmitTask`, `CancelTask`, `DeleteTask`, `BuildTemplate` and
+  `RebuildTemplates`. Submitting needs a client enrolled with `--scope config:write`
+  (403 otherwise): a task's guest holds the template's secrets. A task's `into` is an
+  absolute, clean path, needed for `--out pr` and `bundle`; a repo with any of
+  `@ ? # %` and a template whose `ssh.agent` isn't `off` are refused. Cancel and delete
+  refuse a lost task whose VM a canary hit paused or whose decoys were used.
+  `GET /v1/tasks` and `/v1/tasks/<id>` withhold a task's error from a client without
+  `config:write`: it can quote the task's guest, which holds the template's secrets.
+- `catchpen task cancel` and `task rm` are recorded in the audit log (`task.cancel`,
+  `task.rm`).
 - The API lists, scans, adds, tests and removes forges (`GET /v1/forges`,
   `POST /v1/forges/scan`, `POST /v1/forges`, `POST /v1/forges/<name>/test`,
   `/delete`), and pulls branches from VMs and opens pull requests, as jobs

@@ -163,22 +163,27 @@ const (
 	JobFailed  = "failed"
 )
 
-// A job's kind: what it does, named as the audit event it records.
+// A job's kind: what it does, named as the audit event it records (template
+// builds and rebuilds record none).
 const (
-	JobVMCreate     = "vm.create"
-	JobVMStart      = "vm.start"
-	JobVMStop       = "vm.stop"
-	JobVMDestroy    = "vm.destroy"
-	JobVMResume     = "vm.resume"
-	JobVMReset      = "vm.reset"
-	JobVMRebase     = "vm.rebase"
-	JobCredsPush    = "creds.push"
-	JobVMSnapshot   = "vm.snapshot"
-	JobVMRestore    = "vm.restore"
-	JobVMSnapshotRm = "vm.snapshot.rm"
-	JobForwardOpen  = "forward.open"
-	JobExportPull   = "export.pull"
-	JobExportPR     = "export.pr"
+	JobVMCreate        = "vm.create"
+	JobVMStart         = "vm.start"
+	JobVMStop          = "vm.stop"
+	JobVMDestroy       = "vm.destroy"
+	JobVMResume        = "vm.resume"
+	JobVMReset         = "vm.reset"
+	JobVMRebase        = "vm.rebase"
+	JobCredsPush       = "creds.push"
+	JobVMSnapshot      = "vm.snapshot"
+	JobVMRestore       = "vm.restore"
+	JobVMSnapshotRm    = "vm.snapshot.rm"
+	JobForwardOpen     = "forward.open"
+	JobExportPull      = "export.pull"
+	JobExportPR        = "export.pr"
+	JobTaskCancel      = "task.cancel"
+	JobTaskDelete      = "task.rm"
+	JobTemplateBuild   = "template.build"
+	JobTemplateRebuild = "template.rebuild"
 )
 
 // ClientLocal is the client of a call over the unix socket, the daemon's

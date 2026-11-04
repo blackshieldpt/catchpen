@@ -192,7 +192,9 @@ their base and software; only `reset --latest` (a fresh disk on the new base) gi
 them the new software, while `rebase` moves a disk onto the new base without changing
 its files. See [snapshots.md](snapshots.md). `catchpen template build -t <picks> --rebuild`
 forces a build, re-checking the cloud image upstream, and `catchpen template rebuild --all`
-refreshes every base.
+refreshes every base. Over the API, `POST /v1/templates/build` (`template`, `rebuild`)
+and `POST /v1/templates/rebuild` (`templates`, at most 64, or `all`) do the same, as
+jobs.
 
 Base builds run with the same isolation as VMs, through a proxy that allows any public
 host but no private address, and use the template's package caches (Docker's excepted).

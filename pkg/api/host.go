@@ -56,8 +56,8 @@ type TaskInfo struct {
 	Created      time.Time `json:"created"`
 	Started      time.Time `json:"started,omitzero"`
 	Ended        time.Time `json:"ended,omitzero"`
-	Exit         *int      `json:"exit,omitempty"` // the agent's exit status
-	Error        string    `json:"error,omitempty"`
+	Exit         *int      `json:"exit,omitempty"`  // the agent's exit status
+	Error        string    `json:"error,omitempty"` // withheld from a client without config:write
 	Usage        TaskUsage `json:"usage"`
 	Branch       string    `json:"branch,omitempty"`
 	Commits      int       `json:"commits,omitempty"`

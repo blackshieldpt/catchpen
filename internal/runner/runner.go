@@ -84,7 +84,7 @@ func (r *Runner) Submit(spec task.Spec) (*task.Task, error) {
 		return nil, err
 	}
 	t, err = st.Update(id, func(t *task.Task) error { t.PID = cmd.Process.Pid; return nil })
-	_ = cmd.Process.Release()
+	go func() { _ = cmd.Wait() }() // reaps it when it ends, should this process (the daemon) outlive it
 	if err != nil {
 		return nil, err
 	}
@@ -482,15 +482,16 @@ func (r *Runner) Cancel(id string) error {
 		return fmt.Errorf("task %s is already %s", id, t.State)
 	}
 	if t.Alive() {
-		return t.Signal(syscall.SIGTERM)
+		err = t.Signal(syscall.SIGTERM)
+	} else if err = r.reapTask(t); err == nil {
+		_, err = r.M.Tasks().Update(id, func(t *task.Task) error {
+			t.State, t.Error, t.Ended = task.Cancelled, "cancelled after its supervisor died", time.Now().UTC()
+			return nil
+		})
 	}
-	if err := r.reapTask(t); err != nil {
-		return err
+	if err == nil {
+		r.M.AuditEvent(audit.TaskCancel, t.VM, map[string]any{"task": id})
 	}
-	_, err = r.M.Tasks().Update(id, func(t *task.Task) error {
-		t.State, t.Error, t.Ended = task.Cancelled, "cancelled after its supervisor died", time.Now().UTC()
-		return nil
-	})
 	return err
 }
 
@@ -516,5 +517,9 @@ func (r *Runner) Remove(id string) error {
 			return err
 		}
 	}
-	return os.RemoveAll(r.M.Tasks().Path(id, ""))
+	if err := os.RemoveAll(r.M.Tasks().Path(id, "")); err != nil {
+		return err
+	}
+	r.M.AuditEvent(audit.TaskRemove, t.VM, map[string]any{"task": id})
+	return nil
 }

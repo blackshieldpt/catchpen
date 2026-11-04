@@ -107,3 +107,32 @@ other task flags except `--parallel`, and `--follow` only for a batch of one tas
 - A task whose VM a canary hit paused fails at once, and its VM is kept for inspection.
   It holds its share of the budget until you destroy it.
 - Restore, reset and rebase refuse while a VM runs a task.
+- `task cancel` and `task rm` are recorded in the audit log (`task.cancel`, `task.rm`).
+
+## Over the API
+
+With the daemon's API on (`server:` in [configuration.md](configuration.md)):
+
+| Call | As | Takes |
+|---|---|---|
+| `POST /v1/tasks` | `task run`, one task | `template`, `repo`, `agent` (default `claude`), `cmd`, `prompt`, `timeout_s` (60 to 172800; default 7200), `max_budget_usd`, `out` (default `pr` with a repo, else `none`), `into`, `title`, `rw`, `keep` |
+| `POST /v1/tasks/<id>/cancel` | `task cancel`, as a job | nothing |
+| `POST /v1/tasks/<id>/delete` | `task rm`, as a job | nothing |
+
+Submitting needs a client enrolled with `--scope config:write` (403 otherwise; over the
+unix socket, every call is allowed): a task runs whatever its prompt or `cmd` says in a
+guest that holds the template's secrets, and can write them to its error (which the API
+returns only to `config:write` clients: others read it as withheld), its result or
+its commits. A submit answers with the task, queued; its
+supervisor is a process of the daemon's, so the task runs on with the daemon's
+environment (`--out pr` pushes with the daemon's git credentials) and outlives a
+restart. The prompt is sent as text: there is no `--prompt-file`, `--file` or
+`--follow`. `into` is the absolute path of a git repository on the daemon's host,
+written clean, and `--out pr` and `bundle` need it (there is no working directory to
+default to). A repo with any of `@ ? # %` is refused, as for a VM, and so is a template
+whose `ssh.agent` isn't `off` (409): the task's VM would load or forward the host's SSH
+keys. A cancel of a task that ended, and a delete of one whose supervisor runs, are
+refused (409); so are both on a lost task (its supervisor gone) whose VM a canary hit
+paused or whose decoys were used, which they would destroy: destroy that VM with its own
+call, which confirms the hit. Neither asks for `confirm`, as the CLI doesn't, and a
+cancel destroys commits the task hasn't exported. Their audit events carry `client`.

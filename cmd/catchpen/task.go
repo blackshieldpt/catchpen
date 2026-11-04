@@ -196,8 +196,8 @@ func taskLogsCmd() *cobra.Command {
 	return c
 }
 
-// followTask prints a task's output and status line until it ends, and fails
-// (exit status 1) unless it ended done.
+// followTask prints a task's output and status line until it ends or ctx
+// does, and fails (exit status 1) unless it ended done.
 func followTask(ctx context.Context, m *vm.Manager, id string, raw bool, stdout, stderr io.Writer) error {
 	t, err := m.Tasks().Follow(ctx, id, raw, stdout, stderr)
 	if err == nil && t.State != task.Done {

@@ -300,9 +300,10 @@ a removed client's next request. Enrolments go in `clients.yaml` in the config d
   with the same pin.
 - An HMAC client hex-decodes the printed key and signs with the 32 bytes. Save it where
   only you can read it: `(umask 077; catchpen daemon client add cockpit --hmac > cockpit.key)`.
-- `--scope config:write` lets the client scan, add and remove forges through the API
-  (their credentials are host secrets), and records that it may change `config.yaml` and
-  templates, which can run host commands; no API call does that yet.
+- `--scope config:write` lets the client scan, add and remove forges (their credentials
+  are host secrets) and submit tasks (their guests hold the template's secrets) through
+  the API, and records that it may change `config.yaml` and templates, which can run
+  host commands; no API call does that yet.
 - The CLI and the daemon must see the same config directory (`daemon info` prints it):
   a service installed with another `CATCHPEN_HOME` or `XDG_CONFIG_HOME` reads another
   `clients.yaml`.

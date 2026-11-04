@@ -141,6 +141,26 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) ([]*task.Task
 	return ts, true
 }
 
+// withheldError stands for a task's error to a client without config:write:
+// the error can quote the task's guest, which holds the template's secrets.
+const withheldError = "withheld: a task's error can quote its guest, which holds the template's secrets: reading it needs the config:write scope"
+
+// scoped reports whether the request's client has scope (over the unix
+// socket, every scope).
+func scoped(r *http.Request, scope string) bool {
+	c, ok := CallerOf(r.Context())
+	return !ok || slices.Contains(c.Scopes, scope)
+}
+
+// shownTask is what r's client may read of t.
+func shownTask(r *http.Request, t *task.Task) api.TaskInfo {
+	i := taskInfo(t)
+	if i.Error != "" && !scoped(r, ScopeConfigWrite) {
+		i.Error = withheldError
+	}
+	return i
+}
+
 func (s *Server) tasks(w http.ResponseWriter, r *http.Request) {
 	ts, ok := s.listTasks(w, r)
 	if !ok {
@@ -148,7 +168,7 @@ func (s *Server) tasks(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]api.TaskInfo, 0, len(ts))
 	for _, t := range ts {
-		out = append(out, taskInfo(t))
+		out = append(out, shownTask(r, t))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -163,7 +183,7 @@ func (s *Server) task(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	for _, t := range ts {
 		if t.ID == id {
-			writeJSON(w, http.StatusOK, taskInfo(t))
+			writeJSON(w, http.StatusOK, shownTask(r, t))
 			return
 		}
 	}

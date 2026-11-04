@@ -44,6 +44,8 @@ const (
 	Copy            = "cp"
 	TaskSubmit      = "task.submit"
 	TaskEnd         = "task.end"
+	TaskCancel      = "task.cancel"
+	TaskRemove      = "task.rm"
 	VMSnapshot      = "vm.snapshot"
 	VMRestore       = "vm.restore"
 	VMSnapshotRm    = "vm.snapshot.rm"

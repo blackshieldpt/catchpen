@@ -445,6 +445,35 @@ func (c *Client) DeleteForge(ctx context.Context, name string, confirm bool) ([]
 	return fs, nil
 }
 
+// SubmitTask queues a headless task, and returns it as queued.
+func (c *Client) SubmitTask(ctx context.Context, r api.SubmitTaskRequest) (*api.TaskInfo, error) {
+	var t api.TaskInfo
+	if err := c.do(ctx, http.MethodPost, api.PathTasks, r, &t); err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+// CancelTask starts a job cancelling a task.
+func (c *Client) CancelTask(ctx context.Context, id string) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathTaskCancel(id), struct{}{})
+}
+
+// DeleteTask starts a job deleting an ended task's record.
+func (c *Client) DeleteTask(ctx context.Context, id string) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathTaskDelete(id), struct{}{})
+}
+
+// BuildTemplate starts a job building a template's base.
+func (c *Client) BuildTemplate(ctx context.Context, r api.BuildTemplateRequest) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathTemplateBuild, r)
+}
+
+// RebuildTemplates starts a job building new base generations.
+func (c *Client) RebuildTemplates(ctx context.Context, r api.RebuildTemplatesRequest) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathTemplateRebuild, r)
+}
+
 // PullVM starts a job fetching a branch of the VM's into a host repository.
 func (c *Client) PullVM(ctx context.Context, name string, r api.PullVMRequest) (*api.JobInfo, error) {
 	return c.job(ctx, api.PathVMPull(name), r)

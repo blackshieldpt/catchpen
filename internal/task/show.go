@@ -12,7 +12,7 @@ import (
 )
 
 // AsBatch makes specs one batch: they share a new batch id, and parallel is
-// their batch-wide limit (0: only the budget limits them).
+// their batch-wide limit (≤0: only the budget limits them).
 func AsBatch(specs []Spec, parallel int) {
 	batch := NewID()
 	for i := range specs {
@@ -29,7 +29,8 @@ func orDash(s string) string {
 
 // Show writes what catchpen task show prints about t: its fields, then its
 // result. The text that can quote the agent is written without control
-// characters.
+// characters. t must be loaded from s: the result's path is built from t.ID
+// unchecked.
 func (s Store) Show(w io.Writer, t *Task) error {
 	fmt.Fprintf(w, "task     %s (%s)\nagent    %s\nrepo     %s\nVM       %s\n", t.ID, t.Status(), t.Spec.Agent, orDash(t.Spec.Repo), t.VM)
 	if t.Branch != "" {

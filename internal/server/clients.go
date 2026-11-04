@@ -29,7 +29,8 @@ const (
 )
 
 // ScopeConfigWrite lets a client change config.yaml and templates, which can
-// run host commands, and the forges, whose credentials are host secrets.
+// run host commands, and the forges, whose credentials are host secrets, and
+// submit tasks, whose guests hold the template's secrets.
 const ScopeConfigWrite = "config:write"
 
 // KeyBytes is the size of a generated HMAC key.
