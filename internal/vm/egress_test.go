@@ -371,6 +371,47 @@ func TestPromptDecider(t *testing.T) {
 	}
 }
 
+// A list edit and a prompt's answer are audited with the Manager's client,
+// as its other events are, and a failed audit write is a warning.
+func TestEgressAuditsClient(t *testing.T) {
+	m := testManager(t)
+	m.Client = "cockpit"
+	egressVM(t, m, "e1", egress.ModeAllowlist)
+	if err := m.EditEgressList("e1", egress.DenylistFile, true, []string{"evil.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	slow := m.PromptDecider(func(ctx context.Context, r egress.Request) egress.Decision {
+		time.Sleep(400 * time.Millisecond)
+		return egress.DecisionDeny
+	})
+	slow(context.Background(), egress.Request{VM: "e1", Host: "pypi.org", Method: "CONNECT", Port: 443})
+	ev := auditEvents(t, m)
+	if len(ev) != 2 || ev[0].Event != audit.EgressDeny || ev[1].Event != audit.EgressPrompt {
+		t.Fatalf("audit %v", ev)
+	}
+	for _, e := range ev {
+		if e.Detail["client"] != "cockpit" {
+			t.Errorf("%s: %v", e.Event, e.Detail)
+		}
+	}
+
+	var out strings.Builder
+	m.Out = &out
+	if err := os.Remove(m.P.Audit()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(m.P.Audit(), 0o700); err != nil { // the log can't be written
+		t.Fatal(err)
+	}
+	if err := m.EditEgressList("e1", egress.DenylistFile, false, []string{"evil.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	slow(context.Background(), egress.Request{VM: "e1", Host: "pypi.org", Method: "CONNECT", Port: 443})
+	if n := strings.Count(out.String(), "warning: audit log: "); n != 2 {
+		t.Errorf("%d warnings: %q", n, out.String())
+	}
+}
+
 func toString(v any) string {
 	b, _ := json.Marshal(v)
 	return strings.Trim(string(b), `"`)

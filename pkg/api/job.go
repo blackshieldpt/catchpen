@@ -176,6 +176,7 @@ const (
 	JobVMSnapshot   = "vm.snapshot"
 	JobVMRestore    = "vm.restore"
 	JobVMSnapshotRm = "vm.snapshot.rm"
+	JobForwardOpen  = "forward.open"
 )
 
 // ClientLocal is the client of a call over the unix socket, the daemon's

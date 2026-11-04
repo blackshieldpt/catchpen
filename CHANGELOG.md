@@ -8,6 +8,16 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- The API reads and changes a VM's egress (`GET /v1/vms/<name>/egress`;
+  `POST /v1/vms/<name>/egress/allow`, `/unallow`, `/deny`, `/undeny` with 1 to 64
+  entries, all checked before any is applied; `POST /v1/vms/<name>/egress/config`) and
+  lists, opens and stops its forwards (`GET /v1/vms/<name>/forwards`;
+  `POST /v1/vms/<name>/forwards`, a job; `POST /v1/vms/<name>/forwards/stop`), with
+  `pkg/apiclient`'s `Egress`, `EditEgress`, `SetEgressConfig`, `Forwards`, `OpenForward`
+  and `StopForwards`. Egress changes are refused (409) on a warm pool VM and on a VM
+  whose mode isn't allowlist; a forward on a VM a canary hit paused, one that isn't
+  running, a warm pool VM and one with an SSH agent (`ssh.agent` other than `off`),
+  which the session's ssh would forward. Their audit events carry `client`.
 - The API resets, rebases and pushes credentials to VMs, and saves, restores and deletes
   their snapshots (`POST /v1/vms/<name>/reset`, `/rebase`, `/push`,
   `POST /v1/vms/<name>/snapshots`, `/snapshots/<snap>/restore`, `/snapshots/<snap>/delete`),
@@ -78,6 +88,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Fixed
 
+- `catchpen egress allow`, `unallow`, `deny` and `undeny`, and answered egress prompts,
+  warn when the audit log can't be written, as other commands do; they went on silently.
 - `catchpen reset`, `catchpen rebase` and a restore that stops a running VM (a disk-only
   snapshot, or `--disk-only`) forced a VM a canary hit paused off and started it again
   unpaused. They now refuse, changing nothing, a running VM a hit paused or whose

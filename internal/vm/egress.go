@@ -43,7 +43,7 @@ func (m *Manager) EditEgressList(name, list string, add bool, entries []string) 
 		if err != nil {
 			return err
 		}
-		_ = m.Audit().Record(ev, s.Name, map[string]any{"entry": e, "add": add})
+		m.audit(ev, s.Name, map[string]any{"entry": e, "add": add})
 	}
 	return nil
 }
@@ -129,7 +129,7 @@ func (m *Manager) SetEgressConfig(name string, set EgressSettings) (egress.Confi
 // request, with the egress.prompt notification and the audit record of the
 // answer.
 func (m *Manager) PromptDecider(inner egress.Decider) egress.Decider {
-	alog, nt := m.Audit(), m.Notifier()
+	nt := m.Notifier()
 	return func(ctx context.Context, r egress.Request) egress.Decision {
 		if nt.Wants(notify.EgressPrompt) {
 			go func() {
@@ -145,7 +145,7 @@ func (m *Manager) PromptDecider(inner egress.Decider) egress.Decider {
 		// a guest could otherwise flood the audit log until it rotates. So could
 		// a decider failing at once (notify-send without a notification server).
 		if ctx.Err() == nil && time.Since(start) > 300*time.Millisecond {
-			_ = alog.Record(audit.EgressPrompt, r.VM, map[string]any{"host": r.Host, "port": r.Port, "method": r.Method, "decision": string(d)})
+			m.audit(audit.EgressPrompt, r.VM, map[string]any{"host": r.Host, "port": r.Port, "method": r.Method, "decision": string(d)})
 		}
 		return d
 	}

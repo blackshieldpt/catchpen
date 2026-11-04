@@ -69,6 +69,23 @@ catchpen egress config dev --on-deny prompt   # ask instead of just logging
 List edits (`egress.allow`, `egress.deny`) and setting changes (`egress.config`, with the
 old and new values) are recorded in the audit log.
 
+### Over the API
+
+With the daemon's API on (`server:` in [configuration.md](configuration.md)),
+`GET /v1/vms/<name>/egress` reads a VM's mode and, in allowlist mode, its settings and
+lists (`on_deny`, `prompt_timeout`, `allow_private`, `allow`, `deny`). These change them
+and answer with the same, as changed:
+
+| Call | As | Takes |
+|---|---|---|
+| `POST /v1/vms/<name>/egress/allow`, `/unallow`, `/deny`, `/undeny` | `egress allow` and so on | `{"entries": [...]}`, 1 to 64 |
+| `POST /v1/vms/<name>/egress/config` | `egress config` | any of `on_deny`, `prompt_timeout` (such as `"45s"`) and `allow_private` |
+
+Every entry is checked before any is applied, where the CLI stops at a bad one. Both are
+refused (409) on a warm pool VM, whose lists and settings are rewritten when it is
+claimed, and on a VM whose mode isn't allowlist; a VM a canary hit paused takes them.
+Their audit events carry `client`. The egress log isn't served yet.
+
 ## Prompting on deny
 
 With `on_deny: prompt`, a blocked request waits up to `prompt_timeout` (30 s by default)

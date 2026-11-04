@@ -342,6 +342,61 @@ func (c *Client) DeleteSnapshot(ctx context.Context, name, snap string, r api.De
 	return c.job(ctx, api.PathSnapshotDelete(name, snap), r)
 }
 
+// Egress is the VM's egress mode and, in allowlist mode, its settings and
+// lists.
+func (c *Client) Egress(ctx context.Context, name string) (*api.EgressInfo, error) {
+	var e api.EgressInfo
+	if err := c.get(ctx, api.PathEgress(name), &e); err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+// EditEgress edits one of the VM's lists, verb being api.EgressAllow,
+// api.EgressUnallow, api.EgressDeny or api.EgressUndeny, and returns its
+// egress after the change; an entry that isn't a host[:port] is an
+// *api.Error with api.CodeBadRequest, nothing changed.
+func (c *Client) EditEgress(ctx context.Context, name, verb string, entries []string) (*api.EgressInfo, error) {
+	var e api.EgressInfo
+	if err := c.do(ctx, http.MethodPost, api.PathEgressEdit(name, verb), api.EgressEntriesRequest{Entries: entries}, &e); err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+// SetEgressConfig changes the VM's egress settings, and returns its egress
+// after the change.
+func (c *Client) SetEgressConfig(ctx context.Context, name string, r api.EgressConfigRequest) (*api.EgressInfo, error) {
+	var e api.EgressInfo
+	if err := c.do(ctx, http.MethodPost, api.PathEgressConfig(name), r, &e); err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+// Forwards lists the VM's live forward sessions.
+func (c *Client) Forwards(ctx context.Context, name string) ([]api.ForwardInfo, error) {
+	var fs []api.ForwardInfo
+	if err := c.get(ctx, api.PathForwards(name), &fs); err != nil {
+		return nil, err
+	}
+	return fs, nil
+}
+
+// OpenForward starts a job opening a forward session on the VM.
+func (c *Client) OpenForward(ctx context.Context, name string, r api.ForwardRequest) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathForwards(name), r)
+}
+
+// StopForwards ends the VM's forward sessions, and returns those left.
+func (c *Client) StopForwards(ctx context.Context, name string) ([]api.ForwardInfo, error) {
+	var fs []api.ForwardInfo
+	if err := c.do(ctx, http.MethodPost, api.PathForwardsStop(name), struct{}{}, &fs); err != nil {
+		return nil, err
+	}
+	return fs, nil
+}
+
 func (c *Client) job(ctx context.Context, path string, in any) (*api.JobInfo, error) {
 	var j api.JobInfo
 	if err := c.do(ctx, http.MethodPost, path, in, &j); err != nil {

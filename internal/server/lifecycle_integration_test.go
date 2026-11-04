@@ -4,7 +4,10 @@ package server
 
 import (
 	"context"
+	"io"
+	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +21,8 @@ import (
 )
 
 // TestLifecycle drives a real VM through the API: create, start (its
-// client gone as soon as the job is started), a snapshot with its memory,
+// client gone as soon as the job is started), a forward and its stop, a
+// denylist entry, a snapshot with its memory,
 // a credentials push, a restore and the snapshot's deletion while it runs,
 // stop, reset, a rebase onto the base it is on (refused), and destroy, each
 // a job whose audit event names the client.
@@ -72,6 +76,37 @@ func TestLifecycle(t *testing.T) {
 	wait(j, err)
 	state(api.VMRunning)
 
+	// A forward of the guest's sshd to a free port on the host, then its stop.
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
+	l.Close()
+	if _, lines := wait(c.OpenForward(ctx, "lc", api.ForwardRequest{Local: []string{port + ":22"}})); !slices.ContainsFunc(lines,
+		func(l string) bool { return strings.HasPrefix(l, "forwarding (pid ") }) {
+		t.Errorf("forward's progress: %q", lines)
+	}
+	if fs, err := c.Forwards(ctx, "lc"); err != nil || len(fs) != 1 || !slices.Equal(fs[0].Specs, []string{"-L 127.0.0.1:" + port + ":localhost:22"}) {
+		t.Errorf("forwards: %+v %v", fs, err)
+	}
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+port, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+	banner := make([]byte, 8)
+	if _, err := io.ReadFull(conn, banner); err != nil || string(banner) != "SSH-2.0-" {
+		t.Errorf("through the forward: %q %v", banner, err)
+	}
+	conn.Close()
+	if fs, err := c.StopForwards(ctx, "lc"); err != nil || len(fs) != 0 {
+		t.Errorf("stop forwards: %+v %v", fs, err)
+	}
+	if e, err := c.EditEgress(ctx, "lc", api.EgressDeny, []string{"evil.example.com"}); err != nil || !slices.Equal(e.Deny, []string{"evil.example.com"}) {
+		t.Errorf("deny: %+v %v", e, err)
+	}
+
 	wait(c.CreateSnapshot(ctx, "lc", api.CreateSnapshotRequest{Name: "s1"}))
 	if ss, err := c.Snapshots(ctx, "lc"); err != nil || len(ss) != 1 || ss[0].Name != "s1" || ss[0].MemoryMB == 0 {
 		t.Fatalf("snapshots: %+v %v", ss, err)
@@ -106,8 +141,8 @@ func TestLifecycle(t *testing.T) {
 	if _, err := c.VM(ctx, "lc"); code(err) != api.CodeNotFound {
 		t.Errorf("after destroy: %v", err)
 	}
-	for _, ev := range []string{audit.VMCreate, audit.VMStart, audit.VMSnapshot, audit.CredsPush, audit.VMRestore,
-		audit.VMSnapshotRm, audit.VMStop, audit.VMReset, audit.VMDestroy} {
+	for _, ev := range []string{audit.VMCreate, audit.VMStart, audit.ForwardOpen, audit.ForwardStop, audit.EgressDeny,
+		audit.VMSnapshot, audit.CredsPush, audit.VMRestore, audit.VMSnapshotRm, audit.VMStop, audit.VMReset, audit.VMDestroy} {
 		if e := lastEvent(t, p, ev); e.VM != "lc" || e.Detail["client"] != api.ClientLocal {
 			t.Errorf("%s: %+v", ev, e)
 		}

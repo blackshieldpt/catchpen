@@ -17,6 +17,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/blackshieldpt/catchpen/internal/egress"
 	"github.com/blackshieldpt/catchpen/internal/vm"
 	"github.com/blackshieldpt/catchpen/pkg/api"
 )
@@ -73,6 +74,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/snapshots", s.createSnapshot)
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/snapshots/{snap}/restore", s.restoreSnapshot)
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/snapshots/{snap}/delete", s.deleteSnapshot)
+	mux.HandleFunc("GET "+api.PathVMs+"/{name}/egress", s.egress)
+	mux.HandleFunc("POST "+api.PathVMs+"/{name}/egress/"+api.EgressAllow, s.editEgress(egress.AllowlistFile, true))
+	mux.HandleFunc("POST "+api.PathVMs+"/{name}/egress/"+api.EgressUnallow, s.editEgress(egress.AllowlistFile, false))
+	mux.HandleFunc("POST "+api.PathVMs+"/{name}/egress/"+api.EgressDeny, s.editEgress(egress.DenylistFile, true))
+	mux.HandleFunc("POST "+api.PathVMs+"/{name}/egress/"+api.EgressUndeny, s.editEgress(egress.DenylistFile, false))
+	mux.HandleFunc("POST "+api.PathVMs+"/{name}/egress/config", s.setEgressConfig)
+	mux.HandleFunc("GET "+api.PathVMs+"/{name}/forwards", s.forwards)
+	mux.HandleFunc("POST "+api.PathVMs+"/{name}/forwards", s.openForward)
+	mux.HandleFunc("POST "+api.PathVMs+"/{name}/forwards/stop", s.stopForwards)
 	mux.HandleFunc("GET "+api.PathJobs, s.listJobs)
 	mux.HandleFunc("GET "+api.PathJobs+"/{id}", s.getJob)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
