@@ -83,6 +83,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathVMs+"/{name}/forwards", s.forwards)
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/forwards", s.openForward)
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/forwards/stop", s.stopForwards)
+	mux.HandleFunc("POST "+api.PathVMs+"/{name}/pull", s.pullVM)
+	mux.HandleFunc("POST "+api.PathVMs+"/{name}/pr", s.prVM)
+	mux.HandleFunc("GET "+api.PathForges, s.forges)
+	mux.HandleFunc("POST "+api.PathForges, s.addForge)
+	mux.HandleFunc("POST "+api.PathForgeScan, s.scanForge)
+	mux.HandleFunc("POST "+api.PathForges+"/{name}/test", s.testForge)
+	mux.HandleFunc("POST "+api.PathForges+"/{name}/delete", s.deleteForge)
 	mux.HandleFunc("GET "+api.PathJobs, s.listJobs)
 	mux.HandleFunc("GET "+api.PathJobs+"/{id}", s.getJob)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

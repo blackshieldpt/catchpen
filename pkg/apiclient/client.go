@@ -397,6 +397,64 @@ func (c *Client) StopForwards(ctx context.Context, name string) ([]api.ForwardIn
 	return fs, nil
 }
 
+// Forges lists the forges VMs clone from.
+func (c *Client) Forges(ctx context.Context) ([]api.ForgeInfo, error) {
+	var fs []api.ForgeInfo
+	if err := c.get(ctx, api.PathForges, &fs); err != nil {
+		return nil, err
+	}
+	return fs, nil
+}
+
+// ScanForge is the SSH host keys of a forge to add, to confirm.
+func (c *Client) ScanForge(ctx context.Context, r api.ForgeScanRequest) (*api.ForgeScan, error) {
+	var s api.ForgeScan
+	if err := c.do(ctx, http.MethodPost, api.PathForgeScan, r, &s); err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// AddForge adds a forge, pinning the host keys r.Fingerprints confirmed;
+// keys that changed since are an *api.Error with api.CodeConflict.
+func (c *Client) AddForge(ctx context.Context, r api.AddForgeRequest) (*api.ForgeInfo, error) {
+	var f api.ForgeInfo
+	if err := c.do(ctx, http.MethodPost, api.PathForges, r, &f); err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+// TestForge checks a forge; a check that failed is the result's Error, not
+// an error here.
+func (c *Client) TestForge(ctx context.Context, name string) (*api.ForgeCheck, error) {
+	var r api.ForgeCheck
+	if err := c.do(ctx, http.MethodPost, api.PathForgeTest(name), struct{}{}, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// DeleteForge removes a forge, and returns those left; without confirm it
+// is an *api.Error with api.CodeConfirmRequired.
+func (c *Client) DeleteForge(ctx context.Context, name string, confirm bool) ([]api.ForgeInfo, error) {
+	var fs []api.ForgeInfo
+	if err := c.do(ctx, http.MethodPost, api.PathForgeDelete(name), api.DeleteForgeRequest{Confirm: confirm}, &fs); err != nil {
+		return nil, err
+	}
+	return fs, nil
+}
+
+// PullVM starts a job fetching a branch of the VM's into a host repository.
+func (c *Client) PullVM(ctx context.Context, name string, r api.PullVMRequest) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathVMPull(name), r)
+}
+
+// PRVM starts a job opening a pull request from a branch of the VM's.
+func (c *Client) PRVM(ctx context.Context, name string, r api.PRVMRequest) (*api.JobInfo, error) {
+	return c.job(ctx, api.PathVMPR(name), r)
+}
+
 func (c *Client) job(ctx context.Context, path string, in any) (*api.JobInfo, error) {
 	var j api.JobInfo
 	if err := c.do(ctx, http.MethodPost, path, in, &j); err != nil {

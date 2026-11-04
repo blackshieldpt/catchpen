@@ -96,6 +96,43 @@ an mbox, made on the host from the scanned commits.
 same forge repo, then opens the PR with the forge's API token. `--title`, `--body-file`,
 `--draft`, `--base` and `--head` adjust it.
 
+## Over the API
+
+With the daemon's API on (`server:` in [configuration.md](configuration.md)):
+
+| Call | As | Takes |
+|---|---|---|
+| `GET /v1/forges` | `forge ls` | nothing; it names each forge's secrets, never their values |
+| `POST /v1/forges/scan` | `forge add`'s scan | `type`, `host`, `http_url`, `ssh_port` |
+| `POST /v1/forges` | `forge add` | `name`, `type`, `host`, `http_url`, `ssh_port`, `mode`, `token_secret`, `user`, `password_secret`, `scopes`, and the scan's `fingerprints` you confirmed |
+| `POST /v1/forges/<name>/test` | `forge test` | nothing |
+| `POST /v1/forges/<name>/delete` | `forge rm` | `"confirm": true` |
+| `POST /v1/vms/<name>/pull` | `pull` | `into`, `repo`, `branch` |
+| `POST /v1/vms/<name>/pr` | `pr` | `pull`'s, and `title`, `body`, `draft`, `base`, `head` |
+
+Adding a forge takes two calls. The scan answers with the SSH host keys' fingerprints
+(github.com's from its API, with `"published": true`); the add scans again and pins the
+keys only if their fingerprints are those you sent (else 409: scan again). `deploy-key`
+and `agent` modes need them; the others may send none and pin nothing. A forge names
+host secrets that catchpen sends to the forge's host, so a client that can add one can
+have any secret in `secrets.env` sent to a host it chooses: scanning, adding and
+removing need a client enrolled with `--scope config:write` (403 otherwise; over the
+unix socket, every call is allowed); listing and testing don't. Adds and removals are
+audited (`forge.add`, with the secrets the forge names, and `forge.rm`, both with
+`client`); the CLI's aren't. A test answers with what passed and, in `error`, the check
+that failed, which can quote the forge's API (up to 300 characters) and its `login`.
+Calls that reach a forge answer within 60 s, and a TCP client has 90 s to read the
+answer.
+
+Pull and pr run as jobs. `into` is the absolute path of a git repository on the daemon's
+host, written clean (no trailing `/`, `.` or `..`; 400 otherwise). There is no
+`--patches`, and pr takes its description as `body`, not a file, so `into` is the only
+host path a call names. pr pushes with the daemon's git credentials, from its
+environment, not your shell's, and only onto a branch under `catchpen/` (`head`, default
+`catchpen/<vm>/<branch>`; 400 otherwise), so not onto the repo's default branch; a push
+can still run the forge's CI on that branch, as the CLI's does. Both are refused (409)
+on a VM a canary hit paused, and their audit events (`export.pull`, `export.pr`) carry `client`.
+
 ## SSH agent
 
 A VM's agent comes from `ssh.yaml`, a one-choice category: the default is `ssh-off`

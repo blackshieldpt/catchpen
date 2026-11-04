@@ -116,13 +116,13 @@ cd /workspace/lib && echo x > x.txt && git add x.txt && git commit -qm "Add x" &
 	if out, _ := exec.Command("git", "-C", host, "log", "-1", "--format=%s", p.Ref).Output(); strings.TrimSpace(string(out)) != "Local change" {
 		t.Errorf("pulled commit: %q", out)
 	}
-	url, err := m.PR(ctx, "fg1", PROpts{PullOpts: PullOpts{Repo: "app", Into: host}})
+	url, err := m.PR(ctx, "fg1", PROpts{PullOpts: PullOpts{Repo: "app", Into: host}, Body: "From the API"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var prs []map[string]any
 	g.API("GET", "/repos/bot/app/pulls?state=open", nil, &prs)
-	if len(prs) != 1 || prs[0]["title"] != "Local change" || prs[0]["html_url"] != url {
+	if len(prs) != 1 || prs[0]["title"] != "Local change" || prs[0]["html_url"] != url || prs[0]["body"] != "From the API" {
 		t.Errorf("pulls: %v (url %s)", prs, url)
 	}
 

@@ -8,6 +8,19 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- The API lists, scans, adds, tests and removes forges (`GET /v1/forges`,
+  `POST /v1/forges/scan`, `POST /v1/forges`, `POST /v1/forges/<name>/test`,
+  `/delete`), and pulls branches from VMs and opens pull requests, as jobs
+  (`POST /v1/vms/<name>/pull`, `/pr`), with `pkg/apiclient`'s `Forges`, `ScanForge`,
+  `AddForge`, `TestForge`, `DeleteForge`, `PullVM` and `PRVM`. A forge is added in two
+  calls: a scan tells its SSH host keys' fingerprints, and the add scans again and pins
+  the keys only if they are those confirmed (409 otherwise). Scanning, adding and
+  removing need a client enrolled with `--scope config:write` (403 otherwise), since a
+  forge names host secrets that are sent to its host; removing needs `"confirm": true`.
+  Adds and removals are audited (`forge.add`, `forge.rm`). Pull and pr take `into`, an
+  absolute, clean path, and pr its description as `body`: no `--patches` or
+  `--body-file`, so `into` is the only host path a call names; pr's `head` must be under
+  `catchpen/`. Both are refused (409) on a VM a canary hit paused.
 - The API reads and changes a VM's egress (`GET /v1/vms/<name>/egress`;
   `POST /v1/vms/<name>/egress/allow`, `/unallow`, `/deny`, `/undeny` with 1 to 64
   entries, all checked before any is applied; `POST /v1/vms/<name>/egress/config`) and

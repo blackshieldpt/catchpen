@@ -28,6 +28,8 @@ const (
 	DeployKeyRemove = "forge.deploy_key.remove"
 	TokenMint       = "forge.token.mint"
 	TokenDelete     = "forge.token.delete"
+	ForgeAdd        = "forge.add"
+	ForgeRemove     = "forge.rm"
 	AgentStart      = "ssh_agent.start"
 	EgressAllow     = "egress.allow"
 	EgressDeny      = "egress.deny"

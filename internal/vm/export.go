@@ -282,7 +282,8 @@ func (m *Manager) FormatPatch(ctx context.Context, name, dir, ref string, bases 
 type PROpts struct {
 	PullOpts
 	Title    string
-	BodyFile string
+	BodyFile string // the description, read from this file
+	Body     string // the description, when BodyFile is ""
 	Draft    bool
 	Base     string // default: the repo's default branch
 	Head     string // branch to push on the forge (default catchpen/<vm>/<branch>)
@@ -312,13 +313,9 @@ func (m *Manager) PR(ctx context.Context, name string, o PROpts) (string, error)
 	if err := validBranch(head); err != nil {
 		return "", err
 	}
-	body := fmt.Sprintf("Opened by catchpen from VM `%s` (branch `%s`).", name, p.Branch)
-	if o.BodyFile != "" {
-		b, err := os.ReadFile(o.BodyFile)
-		if err != nil {
-			return "", err
-		}
-		body = string(b)
+	body, err := o.body(name, p.Branch)
+	if err != nil {
+		return "", err
 	}
 	// A task's body carries the agent's result (the title is a commit's, scanned).
 	if err := m.scanExport(name, strings.NewReader(o.Title+"\n"+body), "in the pull request"); err != nil {
@@ -354,6 +351,19 @@ func (m *Manager) PR(ctx context.Context, name string, o PROpts) (string, error)
 	m.logf("opened %s", url)
 	m.audit(audit.ExportPR, name, map[string]any{"repo": p.Repo.Repo.String(), "branch": head, "base": base, "url": url})
 	return url, nil
+}
+
+// body is the pull request's description: BodyFile's, Body, or a line
+// naming the VM and branch.
+func (o PROpts) body(name, branch string) (string, error) {
+	switch {
+	case o.BodyFile != "":
+		b, err := os.ReadFile(o.BodyFile)
+		return string(b), err
+	case o.Body != "":
+		return o.Body, nil
+	}
+	return fmt.Sprintf("Opened by catchpen from VM `%s` (branch `%s`).", name, branch), nil
 }
 
 // apiClient builds a host-side API client for PRs: the forge's token, or for
