@@ -365,3 +365,89 @@ func TestEgressOverTCP(t *testing.T) {
 		}
 	}
 }
+
+// Over TCP, a task's VM (task-<id>) has its egress changed, a forward
+// opened, or is started, stopped, resumed, restored or destroyed only by a
+// client with config:write, the scope that submits tasks; one without is
+// refused before the VM is looked up or the body checked. The name decides:
+// task-hand, made with the CLI for no task, is one too. Its egress, forwards
+// and what destroying it loses are read, and its forwards stopped, by any
+// client, and other VMs' egress changed by any.
+func TestTaskVMScope(t *testing.T) {
+	h := egressHost(t)
+	h.writeVM(t, vm.State{Name: "task-a1", Template: "base", Created: created, Egress: "allowlist", Task: "a1"})
+	h.writeVM(t, vm.State{Name: "task-hand", Template: "base", Created: created, Egress: "allowlist"})
+	h.disk(t, "task-a1", "s1")
+	a := serveTCPManager(t, func() (*vm.Manager, error) {
+		return &vm.Manager{P: h.p, Cfg: config.Default(), Tpl: template.Loader{UserDir: h.p.Templates()}}, nil
+	})
+	ctx := context.Background()
+	laptop := a.client(t, apiclient.Options{Cert: &a.laptop}) // no scope
+	const msg = "this call needs the config:write scope (catchpen daemon client add --scope config:write)"
+	prompt := "prompt"
+	for _, name := range []string{"task-a1", "task-hand", "task-nope"} {
+		for _, tc := range []struct {
+			what string
+			err  error
+		}{
+			{"allow", second(laptop.EditEgress(ctx, name, api.EgressAllow, []string{"evil.example.com"}))},
+			{"unallow", second(laptop.EditEgress(ctx, name, api.EgressUnallow, []string{"pypi.org"}))},
+			{"deny", second(laptop.EditEgress(ctx, name, api.EgressDeny, []string{"pypi.org"}))},
+			{"undeny", second(laptop.EditEgress(ctx, name, api.EgressUndeny, []string{"evil.example.com"}))},
+			{"no entries", second(laptop.EditEgress(ctx, name, api.EgressAllow, nil))},
+			{"config", second(laptop.SetEgressConfig(ctx, name, api.EgressConfigRequest{OnDeny: &prompt}))},
+			{"forward", second(laptop.OpenForward(ctx, name, api.ForwardRequest{Local: []string{"3000"}}))},
+			{"no forwards", second(laptop.OpenForward(ctx, name, api.ForwardRequest{}))},
+			{"resume", second(laptop.ResumeVM(ctx, name))},
+			{"restore", second(laptop.RestoreSnapshot(ctx, name, "s1", api.RestoreSnapshotRequest{Confirm: true}))},
+			{"start", second(laptop.StartVM(ctx, name))},
+			{"stop", second(laptop.StopVM(ctx, name, false))},
+			{"force stop", second(laptop.StopVM(ctx, name, true))},
+			{"destroy", second(laptop.DestroyVM(ctx, name, api.DestroyVMRequest{}))},
+		} {
+			refused(t, name+" "+tc.what, tc.err, api.CodeForbidden, msg)
+		}
+	}
+	if e, err := laptop.Egress(ctx, "task-a1"); err != nil || fmt.Sprintf("%v %v %s", e.Allow, e.Deny, e.OnDeny) != "[] [] log" {
+		t.Errorf("read: %+v %v", e, err)
+	}
+	if fs, err := laptop.Forwards(ctx, "task-a1"); err != nil || len(fs) != 0 {
+		t.Errorf("forwards: %+v %v", fs, err)
+	}
+	if _, err := laptop.StopForwards(ctx, "task-a1"); err != nil {
+		t.Errorf("stop: %v", err)
+	}
+	if l, err := laptop.DestroyLoss(ctx, "task-a1"); err != nil || fmt.Sprint(l.Snapshots) != "[s1]" {
+		t.Errorf("destroy loss: %+v %v", l, err)
+	}
+	if e, err := laptop.EditEgress(ctx, "alpha", api.EgressAllow, []string{"pypi.org"}); err != nil || fmt.Sprint(e.Allow) != "[pypi.org]" {
+		t.Errorf("alpha: %+v %v", e, err)
+	}
+	if js, err := laptop.Jobs(ctx); err != nil || len(js) != 0 {
+		t.Errorf("jobs after the refusals: %+v %v", js, err)
+	}
+
+	cockpit := a.client(t, apiclient.Options{HMAC: &apiclient.HMAC{Name: "cockpit", Key: a.key}})
+	if e, err := cockpit.EditEgress(ctx, "task-a1", api.EgressAllow, []string{"pypi.org"}); err != nil || fmt.Sprint(e.Allow) != "[pypi.org]" {
+		t.Errorf("with the scope: %+v %v", e, err)
+	}
+	if e, err := cockpit.SetEgressConfig(ctx, "task-a1", api.EgressConfigRequest{OnDeny: &prompt}); err != nil || e.OnDeny != "prompt" {
+		t.Errorf("config with the scope: %+v %v", e, err)
+	}
+	refused(t, "forward with the scope", second(cockpit.OpenForward(ctx, "task-a1", api.ForwardRequest{Local: []string{"3000"}})),
+		api.CodeConflict, "the VM isn't running: start it first")
+	refused(t, "resume with the scope", second(cockpit.ResumeVM(ctx, "task-nope")), api.CodeNotFound, "no such VM")
+	refused(t, "start with the scope", second(cockpit.StartVM(ctx, "task-nope")), api.CodeNotFound, "no such VM")
+	refused(t, "stop with the scope", second(cockpit.StopVM(ctx, "task-nope", true)), api.CodeNotFound, "no such VM")
+	refused(t, "destroy with the scope", second(cockpit.DestroyVM(ctx, "task-a1", api.DestroyVMRequest{})),
+		api.CodeConfirmRequired, "destroying task-a1 deletes all data inside it, its snapshots (s1) included")
+	refused(t, "restore with the scope", second(cockpit.RestoreSnapshot(ctx, "task-a1", "s1", api.RestoreSnapshotRequest{})),
+		api.CodeConfirmRequired, `restoring task-a1 to s1 loses what changed since it was saved: send "confirm": true`)
+	if e := lastEvent(t, h.p, audit.EgressAllow); e.VM != "task-a1" || e.Detail["client"] != "cockpit" {
+		t.Errorf("audit: %+v", e)
+	}
+	// Over the unix socket, every scope.
+	if e, err := h.client(t).EditEgress(ctx, "task-a1", api.EgressDeny, []string{"evil.example.com"}); err != nil || fmt.Sprint(e.Deny) != "[evil.example.com]" {
+		t.Errorf("over the socket: %+v %v", e, err)
+	}
+}

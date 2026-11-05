@@ -278,8 +278,8 @@ func TestCreateVMOptions(t *testing.T) {
 	}
 }
 
-// CreateVM refuses at once a bad name, a name in use, a repo with an @ and
-// a body it doesn't know.
+// CreateVM refuses at once a bad name, a name in use, a task VM's name, a
+// repo with an @ and a body it doesn't know.
 func TestCreateVMRefused(t *testing.T) {
 	h := home(t, nil)
 	noBases(t, h)
@@ -313,6 +313,9 @@ func TestCreateVMRefused(t *testing.T) {
 			t.Errorf("%.40q: %d %s, want %d", body, got, b, st)
 		}
 	}
+	// A task's VM is named task-<id>: a client could take a queued task's.
+	refused(t, "task-", second(c.CreateVM(context.Background(), api.CreateVMRequest{Name: "task-0123abcd"})),
+		api.CodeBadRequest, "VM names starting with task- are kept for tasks' VMs: choose another name")
 	if js, err := c.Jobs(context.Background()); err != nil || len(js) != 0 {
 		t.Errorf("jobs: %+v %v", js, err)
 	}

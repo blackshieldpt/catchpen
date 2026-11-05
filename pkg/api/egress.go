@@ -9,7 +9,9 @@ func PathEgress(name string) string { return PathVM(name) + "/egress" }
 // The calls that change a VM's egress (POST) answer with its EgressInfo
 // after the change. They are refused with CodeConflict on a warm pool VM
 // (claiming it rewrites its lists and settings) and on a VM whose egress
-// mode isn't allowlist.
+// mode isn't allowlist. On a task's VM (named task-…) they need the
+// client's config:write scope (CodeForbidden otherwise, before the VM is
+// looked up), as opening a forward on one does.
 
 // PathEgressEdit is POST, with an EgressEntriesRequest: edit one of the
 // VM's lists as catchpen egress <verb> does, verb being EgressAllow,
@@ -35,7 +37,8 @@ func PathEgressConfig(name string) string { return PathEgress(name) + "/config" 
 // catchpen forward does, as a job; it is refused with CodeVMPaused on a VM a
 // canary hit paused, and with CodeConflict on a warm pool VM, a VM that isn't
 // running and a VM with an SSH agent (ssh.agent other than off), which the
-// session's ssh would forward.
+// session's ssh would forward. On a task's VM it needs config:write, as the
+// calls that change its egress do.
 func PathForwards(name string) string { return PathVM(name) + "/forwards" }
 
 // PathForwardsStop is POST, with no body (or {}): end all the VM's forward

@@ -146,3 +146,13 @@ refused (409); so are both on a lost task (its supervisor gone) whose VM a canar
 paused or whose decoys were used, which they would destroy: destroy that VM with its own
 call, which confirms the hit. Neither asks for `confirm`, as the CLI doesn't, and a
 cancel destroys commits the task hasn't exported. Their audit events carry `client`.
+On a task's VM (any VM named `task-…`), changing its egress or opening a forward (see
+[egress.md](egress.md#over-the-api) and [forges.md](forges.md#port-forwards)),
+starting, stopping (with `force` or not), resuming or destroying it (see the `server`
+row in [configuration.md](configuration.md)) and restoring a snapshot (see
+[snapshots.md](snapshots.md#over-the-api)) need `config:write` too (403 otherwise; a
+client on the unix socket has every scope): they let the unattended agent a
+`config:write` client submitted reach further, run on or stop. Reading the VM, its
+egress and forwards, stopping its forwards and `GET /v1/vms/<name>/destroy` need no
+scope. The API creates no VM whose name starts with `task-`, for any client (400, on
+the unix socket too), so none can take a queued task's VM name; the CLI still can.

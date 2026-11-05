@@ -63,10 +63,27 @@ func (s *Server) egressVM(w http.ResponseWriter, r *http.Request) (*vm.Info, *vm
 	return nil, nil, false
 }
 
+// taskVMPrefix begins every task's VM's name: runner.Submit names it
+// "task-" + the task's id (TestSubmitTask checks its names against this).
+const taskVMPrefix = "task-"
+
+// taskAllowed is whether the request's client may change the egress of,
+// open a forward on, start, stop, resume, restore or destroy the VM named in
+// the path: on a task's VM (any VM so named, one made with the CLI too) an
+// unattended agent a config:write client submitted runs, so these need
+// config:write, the scope that submits tasks. It looks at the name alone,
+// before the body or the VM, and answers a client it refuses.
+func taskAllowed(w http.ResponseWriter, r *http.Request) bool {
+	return !strings.HasPrefix(r.PathValue("name"), taskVMPrefix) || allowed(w, r, ScopeConfigWrite)
+}
+
 // editEgress edits list (egress.AllowlistFile or egress.DenylistFile),
 // adding the entries or removing them.
 func (s *Server) editEgress(list string, add bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !taskAllowed(w, r) {
+			return
+		}
 		var req api.EgressEntriesRequest
 		if !decode(w, r, &req) {
 			return
@@ -98,6 +115,9 @@ func (s *Server) editEgress(list string, add bool) http.HandlerFunc {
 }
 
 func (s *Server) setEgressConfig(w http.ResponseWriter, r *http.Request) {
+	if !taskAllowed(w, r) {
+		return
+	}
 	var req api.EgressConfigRequest
 	if !decode(w, r, &req) {
 		return
@@ -149,6 +169,9 @@ func (s *Server) writeForwards(w http.ResponseWriter, r *http.Request, m *vm.Man
 // openForward checks the forwards before the job, so a refused one is told
 // as the client sent it; the job's error can quote the guest's ssh server.
 func (s *Server) openForward(w http.ResponseWriter, r *http.Request) {
+	if !taskAllowed(w, r) {
+		return
+	}
 	var req api.ForwardRequest
 	if !decode(w, r, &req) {
 		return

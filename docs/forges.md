@@ -195,4 +195,6 @@ at most) opens one as a job, and `POST /v1/vms/<name>/forwards/stop` ends them a
 session's ssh runs on the daemon's host: `local` and `dynamic` listen on its 127.0.0.1,
 and `remote` reaches what it can reach. Opening one is refused (409) on a VM a canary
 hit paused, one that isn't running, a warm pool VM, and one with `ssh.agent` other than
-`off`: use the CLI there.
+`off`: use the CLI there. Opening one on a task's VM (any VM named `task-…`) needs a
+client enrolled with `--scope config:write` (403 otherwise; a client on the unix socket
+has every scope); listing and stopping don't.

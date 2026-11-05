@@ -97,6 +97,10 @@ func (s *Server) createVM(w http.ResponseWriter, r *http.Request) {
 		writeError(w, api.CodeBadRequest, err.Error())
 		return
 	}
+	if strings.HasPrefix(req.Name, taskVMPrefix) { // a queued task's VM is made later, by its supervisor
+		writeError(w, api.CodeBadRequest, "VM names starting with task- are kept for tasks' VMs: choose another name")
+		return
+	}
 	// A URL's user, password or query token would be kept as typed in
 	// vm.json, and quoted in errors any client can read.
 	for _, repo := range req.Repos {
@@ -134,6 +138,9 @@ func (s *Server) vmJob(w http.ResponseWriter, r *http.Request, kind string, op f
 // startVM refuses a VM with an SSH agent: its start loads the host's keys
 // (asking for passphrases on the host's desktop) or forwards its agent.
 func (s *Server) startVM(w http.ResponseWriter, r *http.Request) {
+	if !taskAllowed(w, r) {
+		return
+	}
 	if !decode(w, r, &struct{}{}) {
 		return
 	}
@@ -152,6 +159,9 @@ func (s *Server) startVM(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) stopVM(w http.ResponseWriter, r *http.Request) {
+	if !taskAllowed(w, r) { // with force or not: either ends the task's run
+		return
+	}
 	var req api.StopVMRequest
 	if !decode(w, r, &req) {
 		return
@@ -170,6 +180,9 @@ func (s *Server) stopVM(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resumeVM(w http.ResponseWriter, r *http.Request) {
+	if !taskAllowed(w, r) { // a resume lets a paused task's agent go on
+		return
+	}
 	if !decode(w, r, &struct{}{}) {
 		return
 	}
@@ -182,6 +195,9 @@ func (s *Server) resumeVM(w http.ResponseWriter, r *http.Request) {
 // client was told it loses. A snapshot taken after this check and before
 // Destroy locks the VM is deleted too.
 func (s *Server) destroyVM(w http.ResponseWriter, r *http.Request) {
+	if !taskAllowed(w, r) {
+		return
+	}
 	var req api.DestroyVMRequest
 	if !decode(w, r, &req) {
 		return

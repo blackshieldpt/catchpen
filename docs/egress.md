@@ -84,6 +84,11 @@ and answer with the same, as changed:
 Every entry is checked before any is applied, where the CLI stops at a bad one. Both are
 refused (409) on a warm pool VM, whose lists and settings are rewritten when it is
 claimed, and on a VM whose mode isn't allowlist; a VM a canary hit paused takes them.
+On a task's VM (any VM named `task-…`, see [tasks.md](tasks.md)) both need a client
+enrolled with `--scope config:write`, the scope that submits tasks (403 otherwise,
+whether or not the VM exists; a client on the unix socket has every scope): an
+unattended agent that a `config:write` client submitted runs there, and only such a
+client widens its ways out. Reading its egress needs no scope.
 Their audit events carry `client`. The egress log isn't served yet.
 
 ## Prompting on deny

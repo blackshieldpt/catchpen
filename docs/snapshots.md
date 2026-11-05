@@ -69,7 +69,7 @@ these runs as a job:
 | Call | As | Needs |
 |---|---|---|
 | `POST /v1/vms/<name>/snapshots` | `snapshot` | `{"name": …}` (no default name); `"disk_only": true` for `--disk-only` |
-| `POST /v1/vms/<name>/snapshots/<snap>/restore` | `restore` | `"confirm": true`, with the `canary_hit` that `GET /v1/vms/<name>` tells; `"disk_only": true` for `--disk-only` |
+| `POST /v1/vms/<name>/snapshots/<snap>/restore` | `restore` | `"confirm": true`, with the `canary_hit` that `GET /v1/vms/<name>` tells; `"disk_only": true` for `--disk-only`; on a task's VM, a client with `config:write` |
 | `POST /v1/vms/<name>/snapshots/<snap>/delete` | `rmsnap` | `"confirm": true` |
 | `POST /v1/vms/<name>/reset` | `reset` | `"confirm": true`, with the `snapshots` and `canary_hit` that `GET` on the same path tells; `"latest": true` for `--latest` |
 | `POST /v1/vms/<name>/rebase` | `rebase` | with snapshots, `"confirm": true` and the `snapshots` that `GET` on the same path tells |
@@ -82,7 +82,10 @@ refused on a VM a canary hit paused when the call is made: resume, stop or destr
 first (to keep a paused VM's memory and disk as evidence, use `catchpen snapshot`).
 Reset, rebase and restore can start the VM, and push can clone a repo again through the
 VM's SSH agent, so they are refused on a VM with `ssh.agent` other than `off`, which
-loads or forwards your SSH keys: use the CLI there.
+loads or forwards your SSH keys: use the CLI there. Restoring a task's VM (any VM named
+`task-…`) needs a client enrolled with `--scope config:write`, the scope that submits
+tasks (403 otherwise, before anything else is checked; a client on the unix socket has
+every scope): a memory snapshot's restore runs the unattended agent's guest again.
 
 ## Garbage collection
 

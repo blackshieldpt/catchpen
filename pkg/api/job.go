@@ -11,22 +11,27 @@ import (
 // client stays. GET PathJob follows it.
 
 // PathVMStart is POST, with no body (or {}): start the VM. A VM with an
-// SSH agent (ssh.agent other than off) is refused with CodeConflict.
+// SSH agent (ssh.agent other than off) is refused with CodeConflict. On a
+// task's VM it needs config:write, as PathVMResume does.
 func PathVMStart(name string) string { return PathVM(name) + "/start" }
 
 // PathVMStop is POST, with a StopVMRequest or no body: shut the VM down. A
-// VM a canary hit paused is refused with CodeVMPaused without Force.
+// VM a canary hit paused is refused with CodeVMPaused without Force. On a
+// task's VM it needs config:write, with Force or not, as PathVMResume does.
 func PathVMStop(name string) string { return PathVM(name) + "/stop" }
 
 // PathVMDestroy is GET: the VMLoss destroying the VM would cause. It is
 // also POST, with a DestroyVMRequest: stop the VM and delete it, its disk
 // and snapshots included. Without Confirm it is refused with
 // CodeConfirmRequired; with snapshots, a pause or a canary hit other than the
-// VM's (what the client was shown is out of date), with CodeConflict.
+// VM's (what the client was shown is out of date), with CodeConflict. On a
+// task's VM the POST needs config:write, as PathVMResume does; the GET
+// doesn't.
 func PathVMDestroy(name string) string { return PathVM(name) + "/destroy" }
 
 // PathVMResume is POST, with no body (or {}): continue a VM a canary hit
-// paused.
+// paused. On a task's VM (named task-…) it needs the client's config:write
+// scope (CodeForbidden otherwise, before the VM is looked up).
 func PathVMResume(name string) string { return PathVM(name) + "/resume" }
 
 // Reset, rebase, push and the snapshot calls (POST) are refused with
@@ -60,8 +65,9 @@ func PathVMPush(name string) string { return PathVM(name) + "/push" }
 // to the snapshot, as catchpen restore does (one that stops a running VM
 // treats a canary hit as reset does). Without Confirm it is refused
 // with CodeConfirmRequired; with a CanaryHit other than the VM's (VMInfo's
-// CanaryHit), with CodeConflict; a snapshot the VM hasn't, with CodeNotFound. The
-// snapshot's name is escaped as PathVM's is.
+// CanaryHit), with CodeConflict; a snapshot the VM hasn't, with CodeNotFound. On
+// a task's VM it needs config:write, as PathVMResume does. The snapshot's name
+// is escaped as PathVM's is.
 func PathSnapshotRestore(name, snap string) string { return pathSnapshot(name, snap) + "/restore" }
 
 // PathSnapshotDelete is POST, with a DeleteSnapshotRequest: delete the
@@ -76,7 +82,7 @@ func pathSnapshot(name, snap string) string {
 
 // CreateVMRequest is a VM to create. Unknown fields are refused.
 type CreateVMRequest struct {
-	Name       string   `json:"name"`
+	Name       string   `json:"name"`               // none starting with task-, which tasks' VMs are named
 	Template   string   `json:"template,omitempty"` // a -t spec; "": every category's default
 	CPUs       int      `json:"cpus,omitempty"`
 	Memory     string   `json:"memory,omitempty"` // e.g. 8G

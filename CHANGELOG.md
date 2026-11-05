@@ -77,6 +77,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
   and `StopForwards`. Egress changes are refused (409) on a warm pool VM and on a VM
   whose mode isn't allowlist; a forward on a VM a canary hit paused, one that isn't
   running, a warm pool VM and one with an SSH agent (`ssh.agent` other than `off`).
+  On a task's VM (named `task-…`), egress changes and opening a forward need a client
+  enrolled with `--scope config:write` (403 otherwise), as submitting a task does.
   Their audit events carry `client`.
 - The API resets, rebases and pushes credentials to VMs, and saves, restores and deletes
   their snapshots (`POST /v1/vms/<name>/reset`, `/rebase`, `/push`,
@@ -88,7 +90,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
   snapshots, `"confirm": true` and those snapshots (else 428, or 409 when they changed).
   Restore and snapshot delete need `"confirm": true`, which the CLI doesn't ask, and a
   restore the VM's canary hit (`canary_hit`, as `GET /v1/vms/<name>` tells; 409 when
-  it differs); a snapshot needs a name. Once the VM and snapshot are found, all six
+  it differs), and on a task's VM (named `task-…`) a client with `config:write` (403
+  otherwise); a snapshot needs a name. Once the VM and snapshot are found, all six
   are refused (409) on a VM a canary hit paused; reset, rebase and restore, which can
   start the VM, and push, which can clone through its SSH agent, on one with an SSH
   agent (`ssh.agent` other than `off`).
@@ -100,10 +103,13 @@ before 0.1.0 describe work on `master` before the first tagged release.
   `WaitJob`. `GET /v1/vms/<name>/destroy` tells what a destroy loses (the disk, the
   snapshots, a running or paused VM, a canary hit, its task); the destroy needs
   `"confirm": true` and those snapshots, pause and canary hit, else it is refused (428,
-  or 409 when they changed). Stopping a paused VM needs `"force": true`. Create takes
+  or 409 when they changed). Stopping a paused VM needs `"force": true`. On a task's VM
+  (named `task-…`), start, stop (with `force` or not), destroy and resume need a client
+  with `config:write` (403 otherwise; `GET /v1/vms/<name>/destroy` doesn't). Create takes
   `catchpen up`'s options but `--ssh-agent`, `--agent-key` and `--ephemeral`, and
-  refuses a repo with any of `@ ? # %`; a template with an SSH agent (`ssh.agent` other
-  than `off`) is refused by both create and start, which leave it to the CLI. The audit
+  refuses a name starting with `task-` (tasks' VMs; the CLI still takes one) and a repo
+  with any of `@ ? # %`; a template with an SSH agent (`ssh.agent` other than `off`) is
+  refused by both create and start, which leave it to the CLI. The audit
   events these calls cause carry `client`: the enrolled client's name, or `@local` over
   the socket. Jobs live in the daemon's memory (16 running at most, the last 32 ended
   kept); stopping the daemon cancels those running. A job's progress and error are

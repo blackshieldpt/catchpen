@@ -83,7 +83,7 @@ func TestSubmitTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tk.State != task.Queued || tk.Agent != "cmd" || tk.Out != task.OutNone || tk.VM != "task-"+tk.ID || tk.Timeout != 7200 || tk.Template != "default" {
+	if tk.State != task.Queued || tk.Agent != "cmd" || tk.Out != task.OutNone || tk.VM != taskVMPrefix+tk.ID || tk.Timeout != 7200 || tk.Template != "default" {
 		t.Errorf("submitted: %+v", tk)
 	}
 	started(t, log, "task-supervise "+tk.ID, 1)

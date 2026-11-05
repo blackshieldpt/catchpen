@@ -123,6 +123,9 @@ func (s *Server) createSnapshot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) restoreSnapshot(w http.ResponseWriter, r *http.Request) {
+	if !taskAllowed(w, r) { // a memory snapshot's restore runs its guest again
+		return
+	}
 	var req api.RestoreSnapshotRequest
 	if !decode(w, r, &req) {
 		return
