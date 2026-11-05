@@ -274,15 +274,20 @@ func (m *Manager) AuditEvent(event, vm string, detail map[string]any) { m.audit(
 // Hit reports whether the VM's canaries were found in use.
 func (m *Manager) Hit(name string) bool { return m.vm(name).hit() }
 
-// ErrHit refuses DestroyWithoutTranscripts: a canary hit paused the VM, or
-// its canaries were found in use by the time it stopped, so it is kept as
-// the evidence.
+// ErrHit refuses DestroyWithoutTranscripts and DestroyUnlessHit: a canary
+// hit paused the VM, or its canaries were found in use by the time it
+// stopped, so it is kept as the evidence.
 var ErrHit = errors.New("its canaries were found in use: kept")
 
 // DestroyWithoutTranscripts destroys a task's VM whose transcripts were
 // copied. It keeps one a canary hit paused, as it is, and one whose canaries
 // were found in use by the time it stopped, stopped; either is ErrHit.
 func (m *Manager) DestroyWithoutTranscripts(name string) error { return m.destroy(name, false, true) }
+
+// DestroyUnlessHit is Destroy for a task's VM whose supervisor is gone: it
+// copies the transcripts first, then keeps the VM as DestroyWithoutTranscripts
+// does (ErrHit).
+func (m *Manager) DestroyUnlessHit(name string) error { return m.destroy(name, true, true) }
 
 // IsCommitID reports whether s is a full git commit id.
 func IsCommitID(s string) bool { return commitID.MatchString(s) }

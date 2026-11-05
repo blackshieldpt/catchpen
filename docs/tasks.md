@@ -53,7 +53,10 @@ catchpen task rm <id>
 
 A task moves through `queued`, `starting` (it holds a budget slot while its VM is
 created), `running` and `exporting`, and ends `done`, `failed` or `cancelled`. A task
-whose supervisor died shows as `lost`; `cancel` or `rm` destroys its VM.
+whose supervisor died shows as `lost`; `cancel` or `rm` destroys its VM. If a canary hit
+that VM, both fail instead, keeping it (paused as the hit left it, or else stopped) and
+the task as it was: look at the VM, destroy it with `catchpen destroy`, then cancel or
+remove the task.
 
 ## Output
 
@@ -109,15 +112,17 @@ other task flags except `--parallel`, and `--follow` only for a batch of one tas
   It holds its share of the budget until you destroy it.
 - Restore, reset and rebase refuse while a VM runs a task.
 - `task cancel` and `task rm` are recorded in the audit log (`task.cancel`, `task.rm`).
+- `task rm` refuses a task, ended or lost, whose VM a canary hit while that VM exists:
+  the task's directory (its prompt, output and `supervisor.log`) goes with the evidence.
+  Destroy the VM first (`catchpen destroy task-<id>`).
 - `task cancel` sends the task's supervisor SIGTERM; it ends the task and tears its VM
   down. The supervisor drops every SIGINT, SIGTERM or SIGHUP after the first for the rest
   of its life, so another cancel doesn't cut that short; but a first cancel while it waits on something
   that doesn't watch for it (another process building the template's base image or
   downloading its cloud image) ends the task only once that wait is over. To stop a
   supervisor at once, send it SIGKILL or SIGQUIT (its pid is `pid` in `task.json`): the
-  task then shows as `lost`. `task cancel` or `task rm` from the CLI then destroys its
-  VM, even one a canary hit (the API refuses to): look at a VM with a hit first, and
-  destroy it with `catchpen destroy`.
+  task then shows as `lost`, and `task cancel` or `task rm` destroys its VM, unless a
+  canary hit it.
 
 ## Over the API
 
@@ -143,9 +148,12 @@ default to). A repo with any of `@ ? # %` is refused, as for a VM, and so is a t
 whose `ssh.agent` isn't `off` (409): the task's VM would load or forward the host's SSH
 keys. A cancel of a task that ended, and a delete of one whose supervisor runs, are
 refused (409); so are both on a lost task (its supervisor gone) whose VM a canary hit
-paused or whose decoys were used, which they would destroy: destroy that VM with its own
-call, which confirms the hit. Neither asks for `confirm`, as the CLI doesn't, and a
-cancel destroys commits the task hasn't exported. Their audit events carry `client`.
+paused or whose decoys were used, which they would destroy, and a delete of an ended task
+whose VM a canary hit, while that VM exists: destroy that VM first with its own call,
+which confirms the hit. A hit after that check fails their job instead, keeping
+a lost task's VM and its record, as `task cancel` and `task rm` do. Neither asks for `confirm`, as
+the CLI doesn't, and a cancel destroys commits the task hasn't exported. Their audit
+events carry `client`.
 On a task's VM (any VM named `task-…`), changing its egress or opening a forward (see
 [egress.md](egress.md#over-the-api) and [forges.md](forges.md#port-forwards)),
 starting, stopping (with `force` or not), resuming or destroying it (see the `server`

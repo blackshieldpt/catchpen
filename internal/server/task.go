@@ -97,14 +97,15 @@ func (s *Server) findTask(w http.ResponseWriter, r *http.Request) (*task.Task, *
 	return nil, nil, false
 }
 
-// taskHeld answers a lost task (not ended, its supervisor gone) whose VM a
-// canary hit paused, or whose decoys were used: cancelling or deleting it
-// destroys that VM, the evidence. A live supervisor keeps a hit VM itself.
+// taskHeld answers a task whose VM a canary hit paused, or whose decoys were
+// used: cancelling or deleting a lost one (not ended, its supervisor gone)
+// destroys that VM, the evidence, and deleting an ended one deletes its
+// record, which goes with that VM. A live supervisor keeps a hit VM itself.
 func taskHeld(w http.ResponseWriter, m *vm.Manager, t *task.Task) bool {
-	if task.Final(t.State) || t.Alive() || (!m.Paused(t.VM) && !m.Hit(t.VM)) {
+	if (!task.Final(t.State) && t.Alive()) || (!m.Paused(t.VM) && !m.Hit(t.VM)) {
 		return false
 	}
-	writeError(w, api.CodeConflict, "a canary hit "+t.VM+", which this call can destroy: destroy it with POST "+api.PathVMDestroy(t.VM)+", which confirms the hit")
+	writeError(w, api.CodeConflict, "a canary hit "+t.VM+": destroy it first with POST "+api.PathVMDestroy(t.VM)+", which confirms the hit")
 	return true
 }
 

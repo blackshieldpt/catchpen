@@ -177,6 +177,18 @@ before 0.1.0 describe work on `master` before the first tagged release.
   `task.end` audit event, for a later cancel or `task rm` to destroy its VM. The
   supervisor now drops every SIGINT, SIGTERM or SIGHUP after the first and ends the task
   (SIGKILL or SIGQUIT still stop it).
+- `catchpen task cancel` and `task rm` on a `lost` task (its supervisor gone) destroyed
+  its VM even when a canary hit it, the evidence. They now fail, keeping the VM (paused
+  as the hit left it, or else stopped) and the task as it was:
+  `task <id>: task-<id>: its canaries were found in use: kept, with the task; destroy the
+  VM first (catchpen destroy task-<id>)`. Over the API, cancel and delete already
+  refused such a task (409); a hit after that check now fails their job with that error
+  instead of losing the VM. `task rm` and `POST /v1/tasks/<id>/delete` of an ended task
+  whose VM a canary hit (kept by its supervisor) deleted the task's directory, its
+  prompt, output and `supervisor.log` included; both now refuse while that VM exists,
+  with the same error (the API with 409, `a canary hit task-<id>: destroy it first with
+  POST /v1/vms/task-<id>/destroy, which confirms the hit`, which is now also its message
+  for a lost task).
 - `catchpen egress allow`, `unallow`, `deny` and `undeny`, and answered egress prompts,
   warn when the audit log can't be written, as other commands do; they went on silently.
 - `catchpen reset`, `catchpen rebase` and a restore that stops a running VM (a disk-only

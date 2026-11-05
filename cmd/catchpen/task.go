@@ -211,7 +211,7 @@ func followTask(ctx context.Context, m *vm.Manager, id string, raw bool, stdout,
 func taskCancelCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "cancel <id>...",
-		Short: "Cancel tasks (destroying their VMs, unless --keep or a canary hit; a lost task's always)",
+		Short: "Cancel tasks (destroying their VMs, unless --keep or a canary hit; a lost task's even with --keep)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()
@@ -230,7 +230,7 @@ func taskCancelCmd() *cobra.Command {
 func taskRmCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "rm <id>...",
-		Short: "Delete finished tasks' records",
+		Short: "Delete finished tasks' records (not while a canary hit their VM)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()

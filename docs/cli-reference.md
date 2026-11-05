@@ -257,8 +257,8 @@ Queue a headless task, or a batch of them (`--file`). See [tasks.md](tasks.md).
 | `catchpen task ls` | List tasks with state, agent, repo, duration, cost and output. |
 | `catchpen task show <id>` | Show a task and its result. |
 | `catchpen task logs <id> [-f] [--raw]` | The agent's output, rendered, or as the raw event stream (`--raw`). |
-| `catchpen task cancel <id>...` | Cancel tasks and destroy their VMs (not with `--keep` or after a canary hit, but a lost task's always). |
-| `catchpen task rm <id>...` | Delete finished tasks' records. |
+| `catchpen task cancel <id>...` | Cancel tasks and destroy their VMs (not after a canary hit, nor with `--keep` unless the task is lost). |
+| `catchpen task rm <id>...` | Delete finished tasks' records (not while a canary hit their VM: destroy it first). |
 | `catchpen transcripts <name>` | Copy a running VM's agent sessions to the host, and list the copies. |
 
 ## Snapshots

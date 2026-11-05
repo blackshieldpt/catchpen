@@ -237,8 +237,8 @@ func TestCancelTask(t *testing.T) {
 	var e *api.Error
 	for id, want := range map[string]string{
 		"bbbbbbb2": "task bbbbbbb2 is already done",
-		"ccccccc3": "a canary hit task-ccccccc3, which this call can destroy: destroy it with POST /v1/vms/task-ccccccc3/destroy, which confirms the hit",
-		"ddddddd4": "a canary hit task-ddddddd4, which this call can destroy",
+		"ccccccc3": "a canary hit task-ccccccc3: destroy it first with POST /v1/vms/task-ccccccc3/destroy, which confirms the hit",
+		"ddddddd4": "a canary hit task-ddddddd4: destroy it first",
 	} {
 		if _, err := c.CancelTask(ctx, id); !errors.As(err, &e) || e.Code != api.CodeConflict || !strings.HasPrefix(e.Message, want) {
 			t.Errorf("%s: %v", id, err)
@@ -261,7 +261,7 @@ func TestCancelTask(t *testing.T) {
 }
 
 // Deleting an ended or lost task removes its record, audited; one whose
-// supervisor runs, or a lost one holding a hit VM, is refused.
+// supervisor runs, or one holding a hit VM, ended or lost, is refused.
 func TestDeleteTask(t *testing.T) {
 	h, log := supervisor(t)
 	c := h.client(t)
@@ -286,12 +286,6 @@ func TestDeleteTask(t *testing.T) {
 	}
 	h.task(t, task.Task{ID: "ccccccc3", State: task.Failed, VM: "task-ccccccc3", Created: created})
 	heldVM(t, h, "task-ccccccc3", "canary-hit.json")
-	if j, _ := wait(c.DeleteTask(ctx, "ccccccc3")); j.State != api.JobDone {
-		t.Errorf("an ended task with a hit VM: %+v", j)
-	}
-	if _, err := os.Stat(h.p.VM("task-ccccccc3")); err != nil {
-		t.Errorf("its VM: %v", err)
-	}
 
 	tk, err := c.SubmitTask(ctx, api.SubmitTaskRequest{Agent: "cmd", Cmd: "true", Prompt: "p"})
 	if err != nil {
@@ -303,11 +297,15 @@ func TestDeleteTask(t *testing.T) {
 	var e *api.Error
 	for id, want := range map[string]string{
 		tk.ID:      "task " + tk.ID + " is queued: cancel it first",
-		"ddddddd4": "a canary hit task-ddddddd4, which this call can destroy",
+		"ccccccc3": "a canary hit task-ccccccc3: destroy it first",
+		"ddddddd4": "a canary hit task-ddddddd4: destroy it first",
 	} {
 		if _, err := c.DeleteTask(ctx, id); !errors.As(err, &e) || e.Code != api.CodeConflict || !strings.HasPrefix(e.Message, want) {
 			t.Errorf("%s: %v", id, err)
 		}
+	}
+	if _, err := os.Stat(h.p.VM("task-ccccccc3")); err != nil {
+		t.Errorf("an ended task's hit VM: %v", err)
 	}
 	if _, err := c.DeleteTask(ctx, "eeeeeee5"); code(err) != api.CodeNotFound {
 		t.Errorf("no such task: %v", err)
@@ -315,7 +313,7 @@ func TestDeleteTask(t *testing.T) {
 	if st, body := h.post(t, api.PathTaskDelete(tk.ID), `{"confirm":true}`); st != http.StatusBadRequest {
 		t.Errorf("with a body: %d %s", st, body)
 	}
-	if ts, err := st.List(); err != nil || len(ts) != 2 {
+	if ts, err := st.List(); err != nil || len(ts) != 3 {
 		t.Errorf("left: %+v %v", ts, err)
 	}
 }

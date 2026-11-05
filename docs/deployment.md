@@ -139,8 +139,9 @@ On a host without a desktop session:
 ## After a host reboot
 
 VMs don't start on their own: run `catchpen start <name>` for the ones you need. Tasks
-that were running show as `lost`; `catchpen task cancel <id>` destroys their VMs. Pool VMs
-are still valid, and the daemon (with lingering enabled) starts again.
+that were running show as `lost`; `catchpen task cancel <id>` destroys their VMs, except
+one a canary hit. Pool VMs are still valid, and the daemon (with lingering enabled)
+starts again.
 
 ## Upgrading catchpen
 

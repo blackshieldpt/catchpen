@@ -481,7 +481,8 @@ func firstLine(s string) string {
 }
 
 // Cancel stops a task's supervisor, which then destroys its VM. A task
-// whose supervisor died is marked cancelled and its VM destroyed here.
+// whose supervisor died is marked cancelled and its VM destroyed here,
+// unless a canary hit the VM: then both are kept, and the error says so.
 func (r *Runner) Cancel(id string) error {
 	t, err := r.M.Tasks().Load(id)
 	if err != nil {
@@ -504,15 +505,28 @@ func (r *Runner) Cancel(id string) error {
 	return err
 }
 
-// reapTask destroys the VM of a task whose supervisor is gone.
+// reapTask destroys the VM of a task whose supervisor is gone. One a canary
+// hit is kept (vm.ErrHit), and the caller leaves the task's record as it is.
 func (r *Runner) reapTask(t *task.Task) error {
 	if _, err := os.Stat(r.M.Dir(t.VM)); err != nil {
 		return nil
 	}
-	return r.M.Destroy(t.VM)
+	err := r.M.DestroyUnlessHit(t.VM)
+	if errors.Is(err, vm.ErrHit) {
+		return errHeld(t)
+	}
+	return err
 }
 
-// Remove deletes a finished task's record.
+// errHeld refuses to cancel or remove task t: a canary hit its VM, which is
+// kept as the evidence, and so is the task's record.
+func errHeld(t *task.Task) error {
+	return fmt.Errorf("task %s: %s: %w, with the task; destroy the VM first (catchpen destroy %[2]s)", t.ID, t.VM, vm.ErrHit)
+}
+
+// Remove deletes a finished task's record. A task whose supervisor died has
+// its VM destroyed first; one a canary hit keeps both, as Cancel does. An
+// ended task whose VM a canary hit keeps its record while that VM exists.
 func (r *Runner) Remove(id string) error {
 	t, err := r.M.Tasks().Load(id)
 	if err != nil {
@@ -525,6 +539,8 @@ func (r *Runner) Remove(id string) error {
 		if err := r.reapTask(t); err != nil {
 			return err
 		}
+	} else if r.M.Hit(t.VM) || r.M.Paused(t.VM) {
+		return errHeld(t)
 	}
 	if err := os.RemoveAll(r.M.Tasks().Path(id, "")); err != nil {
 		return err

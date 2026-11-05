@@ -234,7 +234,8 @@ limits.
 
 **State `lost`**: its supervisor process died (a reboot or a kill). Read
 `tasks/<id>/supervisor.log`, then `catchpen task cancel <id>` or `catchpen task rm <id>`,
-which destroy its VM.
+which destroy its VM. If a canary hit it, they fail and keep it: look at it, then
+`catchpen destroy` it first.
 
 **`kept <vm> because its N commit(s) weren't exported`**: committing, counting or
 exporting the task's commits failed.
