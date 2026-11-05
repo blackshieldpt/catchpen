@@ -639,7 +639,8 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 }
 
 // do sends in (nil: no body) as JSON, and decodes the response into out. A
-// response that isn't a success (200 or 202) is an *api.Error.
+// POST says it is JSON with or without a body: the server refuses one that
+// doesn't. A response that isn't a success (200 or 202) is an *api.Error.
 func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
 	var rb io.Reader
 	if in != nil {
@@ -653,7 +654,7 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any) error
 	if err != nil {
 		return err
 	}
-	if in != nil {
+	if method == http.MethodPost {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := c.hc.Do(req)

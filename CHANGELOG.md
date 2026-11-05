@@ -8,6 +8,11 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- The API refuses a `POST` whose `Content-Type` isn't `application/json` (415
+  `unsupported_media_type`; parameters such as `charset=utf-8` are allowed), with a body
+  or without, from any client: a web page could otherwise have a browser that holds an
+  enrolled client's certificate change config, secrets or VMs. `pkg/apiclient` sends the
+  type on every `POST`, `StartVM`, `ResumeVM` and `PushCreds` included.
 - The API lists the secrets in `secrets.env` (`GET /v1/secrets`: names, and whether a
   `config.yaml` `secrets:` source shadows each), sets them (`POST /v1/secrets/<NAME>`,
   `"confirm": true` to replace a value) and unsets them (`POST /v1/secrets/<NAME>/delete`,

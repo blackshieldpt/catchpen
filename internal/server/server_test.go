@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blackshieldpt/catchpen/pkg/api"
@@ -88,6 +90,58 @@ func TestServeHeadersAndUnknownPaths(t *testing.T) {
 			t.Errorf("GET %s: %d %+v", p, resp.StatusCode, er.Error)
 		}
 	}
+}
+
+// A POST is refused unless its Content-Type is application/json, with a
+// body or without, before its handler runs: a web page can make a browser
+// send any other type, and no type, without a CORS preflight.
+func TestPostNeedsJSON(t *testing.T) {
+	h := home(t, nil)
+	hc := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", h.sock)
+	}}}
+	post := func(path, ctype, body string) (int, api.Error) {
+		t.Helper()
+		var rb io.Reader
+		if body != "" {
+			rb = strings.NewReader(body)
+		}
+		r, err := http.NewRequest("POST", "http://catchpen"+path, rb)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ctype != "-" {
+			r.Header.Set("Content-Type", ctype)
+		}
+		resp, err := hc.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var er api.ErrorResponse
+		if json.NewDecoder(resp.Body).Decode(&er) != nil || er.Error == nil {
+			return resp.StatusCode, api.Error{}
+		}
+		return resp.StatusCode, *er.Error
+	}
+	refused := api.Error{Code: "unsupported_media_type", Message: `a POST needs "Content-Type: application/json"`}
+	for _, ct := range []string{"-", "", "text/plain", "text/plain;charset=UTF-8", "application/x-www-form-urlencoded",
+		"multipart/form-data; boundary=x", "application/jsonx", "application/merge-patch+json", "application/json; charset"} {
+		for _, body := range []string{`{"value":"v"}`, ""} {
+			if st, e := post(api.PathSecret("TOKEN"), ct, body); st != http.StatusUnsupportedMediaType || e != refused {
+				t.Errorf("Content-Type %q, body %q: %d %+v", ct, body, st, e)
+			}
+		}
+	}
+	if _, err := os.Stat(h.p.SecretsFile()); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a refused POST wrote secrets.env: %v", err)
+	}
+	for i, ct := range []string{"application/json", "application/json; charset=utf-8", "Application/JSON"} {
+		if st, e := post(api.PathSecret("TOKEN_"+"ABC"[i:i+1]), ct, `{"value":"v"}`); st != http.StatusOK {
+			t.Errorf("Content-Type %q: %d %+v", ct, st, e)
+		}
+	}
+	fileIs(t, h.p.SecretsFile(), "TOKEN_A=v\nTOKEN_B=v\nTOKEN_C=v\n", 0o600)
 }
 
 // A connection from another user, or one whose user isn't known, is refused.

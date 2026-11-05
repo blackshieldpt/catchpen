@@ -43,6 +43,9 @@ const (
 	CodeTooLarge        = "too_large"        // over MaxRequestBody
 	CodeRateLimited     = "rate_limited"
 	CodeInternal        = "internal"
+	// A POST whose Content-Type isn't application/json (parameters such as
+	// charset=utf-8 aside), with a body or without.
+	CodeUnsupportedMediaType = "unsupported_media_type"
 )
 
 // Status is the HTTP status a server answers with for code; an unknown code
@@ -65,6 +68,8 @@ func Status(code string) int {
 		return http.StatusRequestEntityTooLarge
 	case CodeRateLimited:
 		return http.StatusTooManyRequests
+	case CodeUnsupportedMediaType:
+		return http.StatusUnsupportedMediaType
 	}
 	return http.StatusInternalServerError
 }

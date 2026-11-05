@@ -239,6 +239,40 @@ func TestTCPReplayStaleAndLarge(t *testing.T) {
 	}
 }
 
+// Over TCP, a POST that isn't application/json is refused from an mTLS
+// client, whose certificate a browser can hold, and from an HMAC one alike;
+// a client that isn't authenticated is refused as before, whatever its type.
+func TestTCPPostNeedsJSON(t *testing.T) {
+	a := serveTCP(t)
+	body := []byte(`{"value":"v"}`)
+	post := func(ctype string) *http.Request {
+		r, err := http.NewRequest("POST", a.url+api.PathSecret("TOKEN"), bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Header.Set("Content-Type", ctype)
+		return r
+	}
+	laptop := pinned(a, &a.laptop)
+	if st, c := send(t, laptop, post("text/plain")); st != http.StatusUnsupportedMediaType || c != api.CodeUnsupportedMediaType {
+		t.Errorf("mTLS, text/plain: %d %s", st, c)
+	}
+	// laptop hasn't config:write: past the type check, the handler refuses it.
+	if st, c := send(t, laptop, post("application/json")); st != http.StatusForbidden || c != api.CodeForbidden {
+		t.Errorf("mTLS, application/json: %d %s", st, c)
+	}
+	signed := post("text/plain")
+	if err := api.Sign(signed, "cockpit", a.key, body); err != nil {
+		t.Fatal(err)
+	}
+	if st, c := send(t, pinned(a, nil), signed); st != http.StatusUnsupportedMediaType || c != api.CodeUnsupportedMediaType {
+		t.Errorf("HMAC, text/plain: %d %s", st, c)
+	}
+	if st, c := send(t, pinned(a, nil), post("text/plain")); st != http.StatusUnauthorized || c != api.CodeUnauthorized {
+		t.Errorf("no credentials, text/plain: %d %s", st, c)
+	}
+}
+
 // A removed client is refused from its next request, even on a connection
 // it already has.
 func TestTCPRevocation(t *testing.T) {

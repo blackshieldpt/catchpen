@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -48,7 +49,11 @@ func New(version, clients string) *Server {
 
 // Handler is the API. A request is served on a unix socket connection from
 // this process's user, or on a TLS connection from an enrolled client (see
-// ListenTCP); anything else is refused.
+// ListenTCP); anything else is refused. A POST from either is refused
+// unless its Content-Type is application/json, body or not: a web page can
+// make a browser send any other POST, with the client certificate it
+// holds, without asking first, but asks (a CORS preflight, which the API
+// never allows) before sending that type.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+api.PathInfo, s.info)
@@ -122,6 +127,12 @@ func (s *Server) Handler() http.Handler {
 		} else if uid, ok := r.Context().Value(peerUID{}).(int); !ok || uid != s.uid {
 			writeError(w, api.CodeUnauthorized, "not a connection from this user")
 			return
+		}
+		if r.Method == http.MethodPost {
+			if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+				writeError(w, api.CodeUnsupportedMediaType, `a POST needs "Content-Type: application/json"`)
+				return
+			}
 		}
 		mux.ServeHTTP(w, r)
 	})

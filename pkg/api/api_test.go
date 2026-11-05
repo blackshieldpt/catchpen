@@ -11,7 +11,7 @@ func TestStatus(t *testing.T) {
 	for code, want := range map[string]int{
 		CodeBadRequest: 400, CodeUnauthorized: 401, CodeForbidden: 403, CodeNotFound: 404,
 		CodeConflict: 409, CodeVMPaused: 409, CodeConfirmRequired: 428, CodeTooLarge: 413,
-		CodeRateLimited: 429, CodeInternal: 500, "no_such_code": 500,
+		CodeRateLimited: 429, CodeInternal: 500, CodeUnsupportedMediaType: 415, "no_such_code": 500,
 	} {
 		if got := Status(code); got != want {
 			t.Errorf("Status(%q) = %d, want %d", code, got, want)
