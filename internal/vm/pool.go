@@ -278,7 +278,7 @@ func (m *Manager) recyclePool(wants []poolWant, complete bool) error {
 			continue
 		}
 		m.logf("removing pool VM %s", v.Name)
-		if err := m.destroy(v.Name, false); err != nil {
+		if err := m.destroy(v.Name, false, false); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -298,7 +298,7 @@ func (m *Manager) fillOne(ctx context.Context, e config.PoolEntry) (err error) {
 	}
 	defer func() {
 		if err != nil {
-			_ = m.destroy(name, false)
+			_ = m.destroy(name, false, false)
 		}
 	}()
 	if _, err := m.start(ctx, name, nil); err != nil {
@@ -345,7 +345,7 @@ func (m *Manager) DrainPool() (int, error) {
 	for _, v := range vms {
 		if v.Hit { // recycling keeps these for inspection; draining doesn't
 			m.logf("removing pool VM %s (its canaries were used)", v.Name)
-			errs = append(errs, m.destroy(v.Name, false))
+			errs = append(errs, m.destroy(v.Name, false, false))
 		}
 	}
 	return len(vms), errors.Join(errs...)

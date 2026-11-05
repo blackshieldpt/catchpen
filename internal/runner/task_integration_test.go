@@ -362,9 +362,60 @@ func TestCanaryTasks(t *testing.T) {
 	if _, err := os.Stat(m.Dir(tk.VM)); err != nil {
 		t.Fatalf("task VM not kept: %v", err)
 	}
+	// Kept by the teardown, which saw the hit: the destroy's own check
+	// would have stopped it first.
+	if _, ok := m.Running(tk.VM); !ok {
+		t.Errorf("task VM kept, but stopped: the teardown didn't keep it")
+	}
 	// Its result, beyond the first line too, is withheld.
 	cs, _ := canary.Load(m.Dir(tk.VM))
 	if b, _ := os.ReadFile(m.Tasks().Path(tk.ID, "result.md")); !strings.Contains(string(b), "(withheld") || strings.Contains(string(b), cs[1].Values[2]) {
 		t.Errorf("task result: %q", b)
+	}
+}
+
+// TestCanaryDuringTeardown: a guest that uses a decoy only once its
+// transcripts are being copied (its tar does) has its VM kept, as a hit while
+// the agent ran would. With canary_action pause the task fails and the VM is
+// kept paused; with log the task is done and the VM kept running (the
+// teardown saw the hit: the destroy's own check would have stopped it).
+func TestCanaryDuringTeardown(t *testing.T) {
+	r := integrationRunner(t)
+	m := r.M
+	vmtest.Template(t, m.P.Templates(), "cn", "", "canaries: [aws, env, git]\ncache: [go]\n")
+	tar := `#!/bin/sh` + "\n" + `. "$HOME/.env.production"; curl -s -m 60 "$INTERNAL_API_URL/x" >/dev/null 2>&1; sleep 30; exec /usr/bin/tar.real "$@"` + "\n"
+	spec := task.Spec{Template: "cn", Agent: "cmd", Prompt: "x", Timeout: 20 * time.Minute,
+		Cmd: `mkdir -p ~/.claude/projects && echo t > ~/.claude/projects/t.jsonl && sudo mv /usr/bin/tar /usr/bin/tar.real && ` +
+			`printf %s ` + shQuote(tar) + ` | sudo tee /usr/bin/tar >/dev/null && sudo chmod 755 /usr/bin/tar`}
+	dir := t.TempDir()
+	if err := spec.Normalize(dir, dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ action, state, error string }{
+		{"pause", task.Failed, "a canary hit paused"},
+		{"log", task.Done, "decoy credentials were used: kept"},
+	} {
+		t.Run(c.action, func(t *testing.T) {
+			if err := os.WriteFile(m.P.ConfigFile(), []byte("canary_action: "+c.action+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			tk, err := r.Submit(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = m.Destroy(tk.VM) })
+			until := time.Now().Add(10 * time.Minute)
+			for !task.Final(tk.State) && time.Now().Before(until) {
+				time.Sleep(2 * time.Second)
+				if tk, err = m.Tasks().Load(tk.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, running := m.Running(tk.VM)
+			if tk.State != c.state || !strings.Contains(tk.Error, c.error) || !running || m.Paused(tk.VM) != (c.action == "pause") {
+				b, _ := os.ReadFile(m.Tasks().Path(tk.ID, "supervisor.log"))
+				t.Fatalf("task %s: state %s, error %q; running %v, paused %v\n%s", tk.ID, tk.State, tk.Error, running, m.Paused(tk.VM), b)
+			}
+		})
 	}
 }

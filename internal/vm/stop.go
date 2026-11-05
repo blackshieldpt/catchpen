@@ -85,9 +85,9 @@ func (m *Manager) cleanupRuntime(name string) error {
 
 // Destroy stops and deletes a VM. It also works on a VM whose state file is
 // missing or corrupt (e.g. an interrupted create).
-func (m *Manager) Destroy(name string) error { return m.destroy(name, true) }
+func (m *Manager) Destroy(name string) error { return m.destroy(name, true, false) }
 
-func (m *Manager) destroy(name string, transcripts bool) error {
+func (m *Manager) destroy(name string, transcripts, keepHit bool) error {
 	if err := ValidName(name); err != nil {
 		return err
 	}
@@ -102,8 +102,16 @@ func (m *Manager) destroy(name string, transcripts bool) error {
 		return err
 	}
 	defer unlock()
+	// A VM a canary hit paused is kept as it is, its memory too.
+	if keepHit && held.paused() {
+		return ErrHit
+	}
 	if err := m.stopLocked(held, true); err != nil {
 		return err
+	}
+	// Looked at once the guest is gone: it can't use a decoy after this.
+	if keepHit && held.hit() {
+		return ErrHit
 	}
 	if s, err := m.Load(name); err == nil {
 		m.releaseForges(s)

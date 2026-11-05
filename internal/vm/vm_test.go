@@ -2,6 +2,7 @@ package vm
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -223,6 +224,54 @@ func TestDestroyBrokenVM(t *testing.T) {
 	}
 	if err := m.Destroy("../x"); err == nil {
 		t.Error("invalid name accepted")
+	}
+}
+
+// A task's VM a canary hit paused is kept as it is, running and paused, and
+// one whose canaries were found in use by the time it stopped is kept,
+// stopped: the evidence. One without a hit is destroyed, and Destroy (the
+// user's) destroys a VM with one.
+func TestDestroyWithoutTranscriptsKeepsHit(t *testing.T) {
+	m := testManager(t)
+	fakeQEMU(t, m, "hit", 512)
+	fakeQEMU(t, m, "paused", 512)
+	for _, n := range []string{"clean", "mine"} {
+		if err := os.MkdirAll(m.dir(n), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.save(&State{Name: n}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, n := range []string{"hit", "paused", "mine"} {
+		writeFile(t, m.vm(n).path(hitFile), "{}")
+	}
+	writeFile(t, m.vm("paused").path(pausedFile), "{}")
+	if err := m.DestroyWithoutTranscripts("paused"); !errors.Is(err, ErrHit) {
+		t.Errorf("paused: %v", err)
+	}
+	if _, ok := m.Running("paused"); !ok || !m.Paused("paused") {
+		t.Errorf("paused VM not kept as it was: running %v, paused %v", ok, m.Paused("paused"))
+	}
+	if err := m.DestroyWithoutTranscripts("hit"); !errors.Is(err, ErrHit) {
+		t.Errorf("hit: %v", err)
+	}
+	if _, err := os.Stat(m.vm("hit").path(hitFile)); err != nil {
+		t.Errorf("hit VM not kept: %v", err)
+	}
+	if _, ok := m.Running("hit"); ok {
+		t.Error("hit VM kept running, not stopped")
+	}
+	if err := m.DestroyWithoutTranscripts("clean"); err != nil {
+		t.Errorf("clean: %v", err)
+	}
+	if err := m.Destroy("mine"); err != nil {
+		t.Errorf("Destroy of a VM with a hit: %v", err)
+	}
+	for _, n := range []string{"clean", "mine"} {
+		if _, err := os.Stat(m.dir(n)); err == nil {
+			t.Errorf("%s not destroyed", n)
+		}
 	}
 }
 

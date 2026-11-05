@@ -74,7 +74,9 @@ The host keeps each VM's values in `vms/<name>/canaries.json`.
 Tasks and the pool react on top of that:
 
 - A task whose VM is paused fails at once.
-- A task VM with any canary hit is kept for inspection, whatever `canary_action` did.
+- A task VM with any canary hit by the time it stops, while its transcripts are copied
+  included, is kept for inspection, whatever `canary_action` did: as the hit left it,
+  or stopped if the hit came as the task's teardown was stopping it.
   While it runs (paused included), it counts against the task budget
   (`tasks.max_vms`, `tasks.max_memory`).
 - A pool VM with a hit is never handed out, nor counted in the pool: it's kept for

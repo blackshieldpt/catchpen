@@ -46,9 +46,10 @@ catchpen task rm <id>
    | `patch` | Writes an mbox in the task directory, made on the host from the scanned commits. |
    | `none` | Nothing is exported. |
 
-6. The VM is destroyed, unless `--keep`, the export failed, or a canary was hit. A VM
-   kept after a failed export holds the commits, and the task's error says how to pull
-   them.
+6. Its transcripts are copied (unless a canary hit paused it), then the VM is destroyed,
+   unless `--keep`, the export failed, or a canary was hit by the time it stops (while
+   the transcripts were copied included). A VM kept after a failed export holds the
+   commits, and the task's error says how to pull them.
 
 A task moves through `queued`, `starting` (it holds a budget slot while its VM is
 created), `running` and `exporting`, and ends `done`, `failed` or `cancelled`. A task
@@ -108,6 +109,15 @@ other task flags except `--parallel`, and `--follow` only for a batch of one tas
   It holds its share of the budget until you destroy it.
 - Restore, reset and rebase refuse while a VM runs a task.
 - `task cancel` and `task rm` are recorded in the audit log (`task.cancel`, `task.rm`).
+- `task cancel` sends the task's supervisor SIGTERM; it ends the task and tears its VM
+  down. The supervisor drops every SIGINT, SIGTERM or SIGHUP after the first for the rest
+  of its life, so another cancel doesn't cut that short; but a first cancel while it waits on something
+  that doesn't watch for it (another process building the template's base image or
+  downloading its cloud image) ends the task only once that wait is over. To stop a
+  supervisor at once, send it SIGKILL or SIGQUIT (its pid is `pid` in `task.json`): the
+  task then shows as `lost`. `task cancel` or `task rm` from the CLI then destroys its
+  VM, even one a canary hit (the API refuses to): look at a VM with a hit first, and
+  destroy it with `catchpen destroy`.
 
 ## Over the API
 

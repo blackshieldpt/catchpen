@@ -143,6 +143,18 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Fixed
 
+- A task's VM whose canaries were found in use while its transcripts were copied, at the
+  task's end, was destroyed with the evidence, paused or not. It is kept now, as for a
+  hit while the agent ran: one a hit paused fails the task (`a canary hit paused …`),
+  others say `its decoy credentials were used: kept …`. So does a hit as the VM is
+  destroyed: a VM already paused when the destroy starts is kept paused, and one hit up
+  to QEMU's exit is kept stopped. A hit recorded after that (from what the guest sent
+  just before it stopped) is usually still audited and notified, but the VM is gone.
+- A second `catchpen task cancel` (or `POST /v1/tasks/<id>/cancel`) while a task's
+  supervisor tore its VM down killed the supervisor: the task was left `lost`, with no
+  `task.end` audit event, for a later cancel or `task rm` to destroy its VM. The
+  supervisor now drops every SIGINT, SIGTERM or SIGHUP after the first and ends the task
+  (SIGKILL or SIGQUIT still stop it).
 - `catchpen egress allow`, `unallow`, `deny` and `undeny`, and answered egress prompts,
   warn when the audit log can't be written, as other commands do; they went on silently.
 - `catchpen reset`, `catchpen rebase` and a restore that stops a running VM (a disk-only

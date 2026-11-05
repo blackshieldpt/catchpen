@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -209,7 +211,7 @@ func followTask(ctx context.Context, m *vm.Manager, id string, raw bool, stdout,
 func taskCancelCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "cancel <id>...",
-		Short: "Cancel tasks (their VMs are destroyed)",
+		Short: "Cancel tasks (destroying their VMs, unless --keep or a canary hit; a lost task's always)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := manager()
@@ -251,6 +253,11 @@ func taskSuperviseCmd() *cobra.Command {
 		Hidden: true,
 		Args:   cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// The first signal cancels the task (cmd.Context()); later ones,
+			// as a second task cancel sends, are caught and dropped for the
+			// rest of its life, so the VM's teardown and the task's end
+			// aren't cut short.
+			signal.Notify(make(chan os.Signal, 1), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 			m, err := manager()
 			if err != nil {
 				return err

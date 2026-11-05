@@ -8,7 +8,8 @@ Exit status is 0 on success and 1 on error (printed as `catchpen: <error>`). `ss
 `attach`, `cp` and `up --ephemeral` pass on the exit status of what they ran. Commands
 that take several names (`stop`, `destroy`, `rmsnap`, `task cancel`, `task rm`,
 `creds push`) try them all and fail if any failed. A first SIGINT, SIGTERM or SIGHUP
-cancels the running command cleanly; a second one kills catchpen.
+cancels the running command cleanly; a second one kills catchpen, except a task's
+supervisor, which finishes tearing its task down.
 
 ## VM lifecycle
 
@@ -256,7 +257,7 @@ Queue a headless task, or a batch of them (`--file`). See [tasks.md](tasks.md).
 | `catchpen task ls` | List tasks with state, agent, repo, duration, cost and output. |
 | `catchpen task show <id>` | Show a task and its result. |
 | `catchpen task logs <id> [-f] [--raw]` | The agent's output, rendered, or as the raw event stream (`--raw`). |
-| `catchpen task cancel <id>...` | Cancel tasks and destroy their VMs. |
+| `catchpen task cancel <id>...` | Cancel tasks and destroy their VMs (not with `--keep` or after a canary hit, but a lost task's always). |
 | `catchpen task rm <id>...` | Delete finished tasks' records. |
 | `catchpen transcripts <name>` | Copy a running VM's agent sessions to the host, and list the copies. |
 

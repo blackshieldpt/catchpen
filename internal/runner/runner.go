@@ -202,11 +202,21 @@ func (r *Runner) Run(ctx context.Context, id string) (err error) {
 				err = errors.New(g)
 			}
 		}
+		if created && !r.M.Paused(t.VM) { // a paused guest doesn't answer
+			// Copy transcripts without the signal's context, before what
+			// follows looks for a canary hit: the guest runs meanwhile.
+			bg, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+			if _, terr := r.M.CopyTranscripts(bg, t.VM); terr != nil {
+				r.M.Logf("warning: %v", terr)
+			}
+			cancel()
+		}
 		state, msg := task.Done, ""
+		pausedMsg := fmt.Sprintf("a canary hit paused %s; kept it (catchpen resume %[1]s, or catchpen destroy %[1]s)", t.VM)
 		paused := created && r.M.Paused(t.VM)
 		switch {
 		case paused:
-			state, msg = task.Failed, fmt.Sprintf("a canary hit paused %s; kept it (catchpen resume %[1]s, or catchpen destroy %[1]s)", t.VM)
+			state, msg = task.Failed, pausedMsg
 		case ctx.Err() != nil:
 			state, msg = task.Cancelled, "cancelled"
 		case err != nil:
@@ -219,21 +229,20 @@ func (r *Runner) Run(ctx context.Context, id string) (err error) {
 		if unexported && state == task.Failed && !t.Spec.Keep && !paused {
 			msg += fmt.Sprintf("; kept %s because its %d commit(s) weren't exported (catchpen pull %s --branch %s, then catchpen destroy %s)", t.VM, t.Commits, t.VM, t.Branch, t.VM)
 		}
+		if created && !paused && !keep {
+			// A hit meanwhile keeps it: paused as it is, else stopped.
+			switch derr := r.M.DestroyWithoutTranscripts(t.VM); {
+			case errors.Is(derr, vm.ErrHit):
+				hit = true
+				if paused = r.M.Paused(t.VM); paused {
+					state, msg = task.Failed, pausedMsg
+				}
+			case derr != nil:
+				r.M.Logf("warning: destroying %s: %v", t.VM, derr)
+			}
+		}
 		if hit && !paused {
 			msg = strings.TrimPrefix(msg+fmt.Sprintf("; its decoy credentials were used: kept %s (catchpen destroy %[1]s)", t.VM), "; ")
-		}
-		if created && !paused { // a paused guest doesn't answer
-			// Copy transcripts and tear down without the signal's context.
-			bg, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-			if _, terr := r.M.CopyTranscripts(bg, t.VM); terr != nil {
-				r.M.Logf("warning: %v", terr)
-			}
-			cancel()
-			if !keep {
-				if derr := r.M.DestroyWithoutTranscripts(t.VM); derr != nil {
-					r.M.Logf("warning: destroying %s: %v", t.VM, derr)
-				}
-			}
 		}
 		set(func(t *task.Task) { t.State, t.Error, t.Ended = state, msg, time.Now().UTC() })
 		r.M.AuditEvent(audit.TaskEnd, t.VM, map[string]any{"task": id, "state": state, "output": t.Output, "commits": t.Commits})
