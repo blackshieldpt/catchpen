@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -134,4 +135,117 @@ func ParseFile(path string) (map[string]string, error) {
 		out[k] = v
 	}
 	return out, sc.Err()
+}
+
+// NameRe is what a secret's name must match to be listed, set or unset over
+// the API: letters, digits, _, . and -, not starting with a digit, . or -.
+var NameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.-]{0,127}$`)
+
+// MaxValue is the longest value Set takes: ParseFile reads lines of at most
+// 64 KiB (bufio.Scanner's limit), and a longer one would break the file.
+const MaxValue = 32 << 10
+
+// CheckName reports why name can't be a secret's name over the API.
+func CheckName(name string) error {
+	if !NameRe.MatchString(name) {
+		return errors.New("a secret's name is letters, digits, _, . and -, not starting with a digit, . or -, up to 128")
+	}
+	return nil
+}
+
+// CheckValue reports why v can't be a secret's value in secrets.env.
+func CheckValue(v string) error {
+	switch {
+	case v == "":
+		return errors.New("the value is empty: unset the secret instead")
+	case strings.ContainsAny(v, "\n\r\x00"):
+		return errors.New("the value contains a newline, CR or NUL")
+	case len(v) > MaxValue:
+		return fmt.Errorf("the value is longer than %d bytes", MaxValue)
+	}
+	return nil
+}
+
+// parsed is the name and value a secrets.env line sets, as ParseFile reads
+// them; ok is false for a blank line or a comment.
+func parsed(line string) (name, value string, ok bool) {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "#") {
+		return "", "", false
+	}
+	k, v, _ := strings.Cut(strings.TrimPrefix(line, "export "), "=")
+	v = strings.TrimSpace(v)
+	if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
+		v = v[1 : len(v)-1]
+	}
+	return strings.TrimSpace(k), v, true
+}
+
+// Set returns b, a secrets.env file ParseFile reads, with name set to v, and
+// whether a line it replaced or removed held a value. The last line setting
+// name is replaced, keeping its `export `, and the others setting it are
+// removed; with none, the first `# NAME=` line (as catchpen init writes
+// them) is replaced, or the line is appended. Every other line is kept as it
+// is. A name CheckName refuses or a value CheckValue refuses is an error.
+func Set(b []byte, name, v string) ([]byte, bool, error) {
+	if err := CheckName(name); err != nil {
+		return nil, false, err
+	}
+	if err := CheckValue(v); err != nil {
+		return nil, false, err
+	}
+	if v != strings.TrimSpace(v) || len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
+		v = `"` + v + `"` // ParseFile strips one pair of matching quotes
+	}
+	lines := strings.SplitAfter(string(b), "\n")
+	at, replaced := -1, false
+	for i, l := range lines {
+		if k, old, ok := parsed(l); ok && k == name {
+			at, replaced = i, replaced || old != ""
+		}
+	}
+	if at < 0 {
+		for i, l := range lines {
+			if c, ok := strings.CutPrefix(strings.TrimSpace(l), "#"); ok && strings.TrimSpace(c) == name+"=" {
+				at = i
+				break
+			}
+		}
+	}
+	line := name + "=" + v + "\n"
+	if at < 0 {
+		if n := len(b); n > 0 && b[n-1] != '\n' {
+			line = "\n" + line
+		}
+		return append(b[:len(b):len(b)], line...), false, nil
+	}
+	if strings.HasPrefix(strings.TrimSpace(lines[at]), "export ") {
+		line = "export " + line
+	}
+	var out strings.Builder
+	for i, l := range lines {
+		k, _, ok := parsed(l)
+		switch {
+		case i == at:
+			out.WriteString(line)
+		case !ok || k != name:
+			out.WriteString(l)
+		}
+	}
+	return []byte(out.String()), replaced, nil
+}
+
+// Unset returns b, a secrets.env file ParseFile reads, without the lines
+// that set name, and whether there was one.
+func Unset(b []byte, name string) ([]byte, bool) {
+	var out strings.Builder
+	found := false
+	for _, l := range strings.SplitAfter(string(b), "\n") {
+		if k, _, ok := parsed(l); ok && k == name {
+			found = true
+			continue
+		}
+		out.WriteString(l)
+	}
+	return []byte(out.String()), found
 }

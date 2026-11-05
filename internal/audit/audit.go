@@ -59,6 +59,8 @@ const (
 	APIClientAdd    = "api.client.add"
 	APIClientRemove = "api.client.rm"
 	ConfigWrite     = "config.write"
+	SecretSet       = "secret.set"
+	SecretUnset     = "secret.unset"
 )
 
 // Event is one audit line.

@@ -8,6 +8,17 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- The API lists the secrets in `secrets.env` (`GET /v1/secrets`: names, and whether a
+  `config.yaml` `secrets:` source shadows each), sets them (`POST /v1/secrets/<NAME>`,
+  `"confirm": true` to replace a value) and unsets them (`POST /v1/secrets/<NAME>/delete`,
+  with `"confirm": true`), with `pkg/apiclient`'s `Secrets`, `SetSecret` and `UnsetSecret`.
+  Every call needs a client enrolled with `--scope config:write` (403 otherwise; over the
+  unix socket, every call is allowed), and none returns a value. A set changes only the
+  lines of its name (filling in `catchpen init`'s `# NAME=` placeholder) and keeps the
+  file's mode; symbolic links, hard links, another user's, read-only and non-regular files
+  are refused (409), as for `config.yaml`. Changes are audited as `secret.set` and
+  `secret.unset`, with the name, which `GET /v1/audit` shows only to `config:write`
+  clients.
 - The API reads and writes `config.yaml` (`GET /v1/config`, `POST /v1/config`) and your
   template category files (`GET /v1/templates/files/<category>`, `POST` to write or
   create one, `POST .../delete` to remove one), and shows what a `-t` spec gives
@@ -25,7 +36,7 @@ before 0.1.0 describe work on `master` before the first tagged release.
   entries; not repos, open egress or `ssh.agent: restricted`, which need a flag or a
   repo) fail them, and a new `pool:` entry must pass (400). Writes are audited as
   `config.write`, with the file and its old and new hashes, which `GET /v1/audit` shows
-  only to `config:write` clients. `secrets.env` isn't read or written over the API.
+  only to `config:write` clients.
 - The API submits headless tasks (`POST /v1/tasks`, one task, the prompt as text),
   cancels and deletes them (`POST /v1/tasks/<id>/cancel`, `/delete`, as jobs), and
   builds and rebuilds template bases (`POST /v1/templates/build`, `/rebuild`, as jobs),

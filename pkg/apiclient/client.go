@@ -493,6 +493,36 @@ func (c *Client) DeleteTemplateFile(ctx context.Context, category, base string, 
 	return &f, nil
 }
 
+// Secrets is the names secrets.env sets; never a value.
+func (c *Client) Secrets(ctx context.Context) ([]api.Secret, error) {
+	var ss []api.Secret
+	if err := c.get(ctx, api.PathSecrets, &ss); err != nil {
+		return nil, err
+	}
+	return ss, nil
+}
+
+// SetSecret sets a secret in secrets.env, and returns the names it sets;
+// replacing one set already needs confirm (an *api.Error with
+// api.CodeConfirmRequired otherwise).
+func (c *Client) SetSecret(ctx context.Context, name, value string, confirm bool) ([]api.Secret, error) {
+	var ss []api.Secret
+	if err := c.do(ctx, http.MethodPost, api.PathSecret(name), api.SetSecretRequest{Value: value, Confirm: confirm}, &ss); err != nil {
+		return nil, err
+	}
+	return ss, nil
+}
+
+// UnsetSecret removes a secret from secrets.env, and returns the names left;
+// without confirm it is an *api.Error with api.CodeConfirmRequired.
+func (c *Client) UnsetSecret(ctx context.Context, name string, confirm bool) ([]api.Secret, error) {
+	var ss []api.Secret
+	if err := c.do(ctx, http.MethodPost, api.PathSecretDelete(name), api.UnsetSecretRequest{Confirm: confirm}, &ss); err != nil {
+		return nil, err
+	}
+	return ss, nil
+}
+
 // ShowTemplate is the template a -t spec gives.
 func (c *Client) ShowTemplate(ctx context.Context, spec string) (*api.TemplateShow, error) {
 	var t api.TemplateShow

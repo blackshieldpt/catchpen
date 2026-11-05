@@ -61,30 +61,37 @@ func readConf(path string) (confFile, error) {
 	return confFile{text: b, hash: hashOf(b), exists: true, mode: st.Mode().Perm()}, nil
 }
 
+// unreplaceable is why a write may not replace the file at path ("": it
+// may): it must be a regular file (or none), not a symbolic link or a file
+// with other hard links (renaming over one would cut it from the others),
+// the daemon user's, and not read-only.
+func unreplaceable(path string) string {
+	st, err := os.Lstat(path)
+	if err != nil {
+		return ""
+	}
+	switch sys, _ := st.Sys().(*syscall.Stat_t); {
+	case st.Mode()&fs.ModeSymlink != 0:
+		return " is a symbolic link, which a write would replace"
+	case !st.Mode().IsRegular():
+		return " is not a regular file"
+	case sys != nil && sys.Nlink > 1:
+		return " has other hard links, which a write would leave as they are"
+	case sys != nil && int(sys.Uid) != os.Getuid():
+		return " belongs to another user, whom a write would take it from"
+	case st.Mode().Perm()&0o200 == 0:
+		return " is read-only"
+	}
+	return ""
+}
+
 // replaceable checks, under its lock, that a write may replace the file at
-// path, shown as name: it is a regular file (or none), not a symbolic link or
-// a file with other hard links (renaming over one would cut it from the
-// others), not read-only, and the file base was read from. It answers a
-// request it refuses.
+// path, shown as name (unreplaceable), and that it is the file base was read
+// from. It answers a request it refuses.
 func (s *Server) replaceable(w http.ResponseWriter, r *http.Request, path, name, base string) (confFile, bool) {
-	if st, err := os.Lstat(path); err == nil {
-		why := ""
-		switch sys, _ := st.Sys().(*syscall.Stat_t); {
-		case st.Mode()&fs.ModeSymlink != 0:
-			why = " is a symbolic link, which a write would replace"
-		case !st.Mode().IsRegular():
-			why = " is not a regular file"
-		case sys != nil && sys.Nlink > 1:
-			why = " has other hard links, which a write would leave as they are"
-		case sys != nil && int(sys.Uid) != os.Getuid():
-			why = " belongs to another user, whom a write would take it from"
-		case st.Mode().Perm()&0o200 == 0:
-			why = " is read-only"
-		}
-		if why != "" {
-			writeError(w, api.CodeConflict, name+why+": edit it by hand")
-			return confFile{}, false
-		}
+	if why := unreplaceable(path); why != "" {
+		writeError(w, api.CodeConflict, name+why+": edit it by hand")
+		return confFile{}, false
 	}
 	cur, err := readConf(path)
 	if err != nil {

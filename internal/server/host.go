@@ -246,6 +246,11 @@ func (s *Server) audit(w http.ResponseWriter, r *http.Request) {
 			delete(d, "old_hash")
 			delete(d, "new_hash")
 		}
+		if (e.Event == audit.SecretSet || e.Event == audit.SecretUnset) && !scoped(r, ScopeConfigWrite) {
+			// secrets.env's names, as every call on it, need config:write.
+			delete(d, "name")
+			delete(d, "replaced")
+		}
 		page.Events = append(page.Events, api.AuditEvent{Time: e.Time, Event: e.Event, VM: e.VM, Detail: d})
 	}
 	if next != nil {

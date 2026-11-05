@@ -302,8 +302,8 @@ a removed client's next request. Enrolments go in `clients.yaml` in the config d
   only you can read it: `(umask 077; catchpen daemon client add cockpit --hmac > cockpit.key)`.
 - `--scope config:write` lets the client scan, add and remove forges (their credentials
   are host secrets), submit tasks (their guests hold the template's secrets), and read
-  and write `config.yaml` and the template category files and show templates through
-  the API. The files can hold secrets; `config.yaml` can run host commands and turn off
+  and write `config.yaml` and the template category files, show templates, and list,
+  set and unset the secrets in `secrets.env` (never returning a value) through the API. The files can hold secrets; `config.yaml` can run host commands and turn off
   canary pauses and recordings, and a template can send host secrets into VMs, forward
   your SSH agent or open a VM's egress for your next `catchpen up`.
 - The CLI and the daemon must see the same config directory (`daemon info` prints it):

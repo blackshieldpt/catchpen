@@ -67,3 +67,84 @@ func TestParseFileErrors(t *testing.T) {
 		t.Errorf("missing file: %v %v", m, err)
 	}
 }
+
+// Set and Unset change only the lines of their name, and what Set writes
+// ParseFile reads back as it was set.
+func TestSetUnset(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secrets.env")
+	read := func(b []byte) map[string]string {
+		t.Helper()
+		if err := os.WriteFile(path, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		m, err := ParseFile(path)
+		if err != nil {
+			t.Fatalf("%q: %v", b, err)
+		}
+		return m
+	}
+	set := func(b, name, v string) (string, bool) {
+		t.Helper()
+		out, replaced, err := Set([]byte(b), name, v)
+		if err != nil {
+			t.Fatalf("Set(%q, %s): %v", b, name, err)
+		}
+		return string(out), replaced
+	}
+	for _, v := range []string{"plain", " lead", "trail ", "\ttab", `"quoted"`, `'single'`, `"`, `a"`, `"a'`, "a=b#c", "export X=1", strings.Repeat("x", MaxValue)} {
+		out, _ := set("A=1", "K", v)
+		if got := read([]byte(out)); got["K"] != v || got["A"] != "1" {
+			t.Errorf("%q: read back %q", v, got)
+		}
+	}
+
+	file := "## secrets\n# K=\nexport K=old\nB=2\n  K = older\n# K=\n"
+	if got, replaced := set(file, "K", "new"); got != "## secrets\n# K=\nB=2\nK=new\n# K=\n" || !replaced {
+		t.Errorf("replaced: %q %v", got, replaced) // the last line setting K: ParseFile's
+	}
+	if got, _ := set("export K=old\nB=2\n", "K", "new"); got != "export K=new\nB=2\n" {
+		t.Errorf("export kept: %q", got)
+	}
+	// A value on an earlier line is lost too, though the last line sets none.
+	if got, replaced := set("K=real\nK=\n", "K", "new"); got != "K=new\n" || !replaced {
+		t.Errorf("an earlier value: %q %v", got, replaced)
+	}
+	if got, replaced := set("K=\n", "K", "new"); got != "K=new\n" || replaced {
+		t.Errorf("no value: %q %v", got, replaced)
+	}
+	if got, replaced := set("K=\"\"\n", "K", "new"); got != "K=new\n" || replaced {
+		t.Errorf("no value, quoted: %q %v", got, replaced)
+	}
+	if got, replaced := set("# A note\n# K=\nB=2\n", "K", "v"); got != "# A note\nK=v\nB=2\n" || replaced {
+		t.Errorf("a placeholder: %q %v", got, replaced)
+	}
+	if got, _ := set("B=2", "K", "v"); got != "B=2\nK=v\n" {
+		t.Errorf("appended: %q", got)
+	}
+	if got, _ := set("", "K", "v"); got != "K=v\n" {
+		t.Errorf("a new file: %q", got)
+	}
+	// Set checks what it writes: no name or value adds a line.
+	for _, bad := range [][2]string{{"A\nB", "v"}, {"A=B", "v"}, {"K", "v\nB=2"}, {"K", ""}} {
+		if out, _, err := Set([]byte("A=1\n"), bad[0], bad[1]); err == nil {
+			t.Errorf("Set(%q, %q): %q", bad[0], bad[1], out)
+		}
+	}
+	if got, found := Unset([]byte(file), "K"); string(got) != "## secrets\n# K=\nB=2\n# K=\n" || !found {
+		t.Errorf("unset: %q %v", got, found)
+	}
+	if got, found := Unset([]byte("KK=1\nK_2=2\n"), "K"); string(got) != "KK=1\nK_2=2\n" || found {
+		t.Errorf("unset of a prefix: %q %v", got, found)
+	}
+
+	for v, want := range map[string]string{"": "empty", "a\nb": "newline", "a\rb": "newline", "a\x00b": "NUL", strings.Repeat("x", MaxValue+1): "longer than 32768"} {
+		if err := CheckValue(v); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%.20q: %v, want %s", v, err, want)
+		}
+	}
+	for name, ok := range map[string]bool{"GH_TOKEN": true, "_x9": true, "my.key": true, "A-B": true, "9X": false, ".x": false, "-x": false, "A B": false, "A=": false, "A/B": false, "": false, strings.Repeat("A", 129): false} {
+		if (CheckName(name) == nil) != ok {
+			t.Errorf("CheckName %q: %v", name, !ok)
+		}
+	}
+}
