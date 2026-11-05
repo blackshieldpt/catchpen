@@ -136,6 +136,33 @@ func (m *Manager) logf(format string, a ...any) {
 	}
 }
 
+// SecretLines is an Out told which of its lines name host secrets: the API's
+// jobs withhold those from a client without config:write.
+type SecretLines interface {
+	WriteSecret(p []byte) (int, error)
+}
+
+// secretf is logf for a line that names, or can name, a host secret: the
+// same text, through SecretLines when m.Out is one.
+func (m *Manager) secretf(format string, a ...any) {
+	if w, ok := m.Out.(SecretLines); ok {
+		_, _ = w.WriteSecret(fmt.Appendf(nil, format+"\n", a...))
+		return
+	}
+	m.logf(format, a...)
+}
+
+// errf is logf for a line quoting err: secretf when err is a *SecretError,
+// whose text names a host secret.
+func (m *Manager) errf(err error, format string, a ...any) {
+	var se *SecretError
+	if errors.As(err, &se) {
+		m.secretf(format, a...)
+		return
+	}
+	m.logf(format, a...)
+}
+
 func (m *Manager) dir(name string) string { return m.P.VM(name) }
 
 func (m *Manager) herdrDo(fn func(hostherdr.Herdr) error) {
@@ -213,7 +240,7 @@ func (m *Manager) notify(e notify.Event) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	if err := m.Notifier().Send(ctx, e); err != nil {
-		m.logf("warning: notification: %v", err)
+		m.secretf("warning: notification: %v", err)
 	}
 }
 

@@ -15,6 +15,25 @@ import (
 	"github.com/blackshieldpt/catchpen/pkg/api"
 )
 
+// Every line WriteSecret writes to is marked: one it ends, one a Write began,
+// and one it leaves for a Write or the job's end to end. A line it doesn't
+// write to isn't.
+func TestJobWriteSecret(t *testing.T) {
+	j := &job{info: api.JobInfo{State: api.JobRunning}}
+	io.WriteString(j, "a: ")
+	j.WriteSecret([]byte("NAME\nb: NAME"))
+	io.WriteString(j, " too\nplain\nc: ")
+	j.WriteSecret([]byte("NAME"))
+	j.end(nil)
+	w := withheldSecretLine
+	if g := j.from(0, false).Lines; !reflect.DeepEqual(g, []string{w, w, "plain", w}) {
+		t.Errorf("without config:write: %q", g)
+	}
+	if g := j.from(0, true).Lines; !reflect.DeepEqual(g, []string{"a: NAME", "b: NAME too", "plain", "c: NAME"}) {
+		t.Errorf("with config:write: %q", g)
+	}
+}
+
 // A job's output is split into lines, each cut to MaxJobLine; the line left
 // unended is written out when the job ends.
 func TestJobLines(t *testing.T) {

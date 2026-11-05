@@ -73,6 +73,7 @@ type job struct {
 	lines    []string             // the last api.MaxJobLines
 	named    []bool               // for each of lines: it names host secrets
 	part     []byte               // the start of a line not ended yet
+	marked   bool                 // part holds text written as naming host secrets
 	watch    *watch               // nil: not watched
 	act      func(*canary.Canary) // runs watch.hit, without waiting
 	hit      *canary.Canary
@@ -81,7 +82,13 @@ type job struct {
 }
 
 // Write takes progress output, a line at a time.
-func (j *job) Write(b []byte) (int, error) {
+func (j *job) Write(b []byte) (int, error) { return j.write(b, false) }
+
+// WriteSecret takes progress output that names host secrets (vm.SecretLines):
+// every line it writes to is marked as naming them.
+func (j *job) WriteSecret(b []byte) (int, error) { return j.write(b, true) }
+
+func (j *job) write(b []byte, named bool) (int, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	n := len(b)
@@ -90,8 +97,11 @@ func (j *job) Write(b []byte) (int, error) {
 		if i < 0 {
 			break
 		}
-		j.add(append(j.part, b[:i]...))
-		j.part, b = nil, b[i+1:]
+		j.add(append(j.part, b[:i]...), named || j.marked)
+		j.part, j.marked, b = nil, false, b[i+1:]
+	}
+	if len(b) > 0 && named {
+		j.marked = true
 	}
 	if len(j.part)+len(b) <= api.MaxJobLine { // what a line keeps, at most
 		j.part = append(j.part, b...)
@@ -101,7 +111,8 @@ func (j *job) Write(b []byte) (int, error) {
 	return n, nil
 }
 
-func (j *job) add(line []byte) {
+// add keeps a line; named: it was written as naming host secrets.
+func (j *job) add(line []byte, named bool) {
 	s := string(line[:min(len(line), api.MaxJobLine)])
 	prev := ""
 	if len(j.lines) > 0 {
@@ -109,7 +120,7 @@ func (j *job) add(line []byte) {
 	}
 	j.check(prev + s) // a decoy split across two lines too
 	j.lines = append(j.lines, s)
-	j.named = append(j.named, strings.HasPrefix(s, vm.MissingSecrets))
+	j.named = append(j.named, named || strings.HasPrefix(s, vm.MissingSecrets))
 	if len(j.lines) > api.MaxJobLines {
 		j.lines = slices.Delete(j.lines, 0, len(j.lines)-api.MaxJobLines)
 		j.named = slices.Delete(j.named, 0, len(j.named)-api.MaxJobLines)
@@ -140,8 +151,8 @@ func (j *job) end(err error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if len(j.part) > 0 {
-		j.add(j.part)
-		j.part = nil
+		j.add(j.part, j.marked)
+		j.part, j.marked = nil, false
 	}
 	j.info.State, j.info.Ended = api.JobDone, time.Now().UTC()
 	if err != nil {

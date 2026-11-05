@@ -216,7 +216,8 @@ the host serves on another interface.
 
 **`could not remove deploy key ...` / `could not delete ... token`** at destroy: catchpen
 couldn't reach the forge. Remove them in the forge's settings; the audit log has their
-ids.
+ids. Over the API, a client without `config:write` reads the line withheld when it names
+the forge's secret (missing or unreadable).
 
 **`<dir> is not a git repository (use --into)`**: pass the host repository with `--into`.
 

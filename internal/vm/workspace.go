@@ -254,7 +254,7 @@ func (m *Manager) releaseForges(s *State) {
 			err = (&forge.Client{HTTP: m.HTTP, F: f, Token: tok}).DeleteDeployKey(ctx, r.Repo, r.DeployKeyID)
 		}
 		if err != nil {
-			m.logf("warning: could not remove deploy key %d from %s: %v (remove it in the forge's repo settings)", r.DeployKeyID, r.Repo, err)
+			m.errf(err, "warning: could not remove deploy key %d from %s: %v (remove it in the forge's repo settings)", r.DeployKeyID, r.Repo, err)
 		}
 		m.audit(audit.DeployKeyRemove, s.Name, map[string]any{"repo": r.Repo.String(), "id": r.DeployKeyID, "ok": err == nil})
 	}
@@ -266,7 +266,7 @@ func (m *Manager) releaseForges(s *State) {
 			err = (&forge.Client{HTTP: m.HTTP, F: f, User: t.User, Password: pw}).DeleteToken(ctx, t.ID)
 		}
 		if err != nil {
-			m.logf("warning: could not delete %s token %d for %s: %v (delete it in the user's settings)", name, t.ID, t.User, err)
+			m.errf(err, "warning: could not delete %s token %d for %s: %v (delete it in the user's settings)", name, t.ID, t.User, err)
 		}
 		m.audit(audit.TokenDelete, s.Name, map[string]any{"forge": name, "id": t.ID, "ok": err == nil})
 	}

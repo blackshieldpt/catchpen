@@ -167,8 +167,10 @@ const PathJobs = Prefix + "/jobs"
 //
 // Every client reads every job. For a client without config:write, an error
 // that names a host secret (a forge's, missing or unreadable, or one a
-// push can't read) and a line naming the secrets a push didn't find are a
-// "withheld: ..." note instead, whoever started the job.
+// push can't read) and a line that names host secrets (the secrets a push
+// didn't find, a push's env keys, a forge secret a destroy's cleanup can't
+// have, any notification's failure) are a "withheld: ..." note instead,
+// whoever started the job.
 func PathJob(id string) string {
 	return PathJobs + "/" + strings.ReplaceAll(url.PathEscape(id), ".", "%2E")
 }
@@ -230,7 +232,8 @@ type JobInfo struct {
 
 // Job is a job and its progress lines, which can quote the guest. Once its
 // lines or error carry one of the VM's decoy credentials, every line and the
-// error are a "(withheld: ...)" note instead, their count kept.
+// error are a "(withheld: ...)" note instead, their count kept. Lines and an
+// error that name host secrets are withheld from some clients (see PathJob).
 type Job struct {
 	JobInfo
 	From  int      `json:"from"` // the number of Lines' first line: above the after asked for when older lines were dropped

@@ -120,9 +120,12 @@ before 0.1.0 describe work on `master` before the first tagged release.
   scanned for the VM's decoy credentials (the guest can put text into both, as a failed
   clone's output): once one is found, every line and the error are withheld, and the
   hit is acted on at once as `canary_action` says (a stop waits for the VM's lock), audited
-  with the client. A job's error that names a host secret, and a push's
-  `secrets not found on the host` line, are withheld from a client without
-  `config:write`, whoever started the job. A canary hit
+  with the client. A job's error that names a host secret, and its lines that do (a
+  push's `secrets not found on the host` and `env from template`; a destroy's, a task
+  cancel's or delete's, or a failed create's `could not remove deploy key` and `could
+  not delete … token` warnings when the forge's secret is missing or unreadable; and
+  every `warning: notification`, whose error can quote the sink's configuration), are
+  withheld from a client without `config:write`, whoever started the job. A canary hit
   on a VM already destroyed is now audited and notified instead of dropped.
 - The unit `catchpen daemon install` writes has `KillMode=process`: VMs the daemon
   starts keep running when it stops or restarts. Run `catchpen daemon install` again to

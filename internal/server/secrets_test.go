@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -428,6 +430,60 @@ func TestJobSecretsScope(t *testing.T) {
 				t.Errorf("%s reads %s's job: %v %q %v", tc.reader, starters[k], j.Error, j.Lines, err)
 			}
 		}
+	}
+}
+
+// A destroy whose VM's forge secrets are gone warns, naming them: a client
+// without config:write, even the one that started the job, reads those lines
+// withheld; a config:write client and the socket read them. A forge's own
+// failure (its secret found) names no secret: every client reads it.
+func TestJobSecretLines(t *testing.T) {
+	h := home(t, nil)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "boom", http.StatusInternalServerError) }))
+	defer srv.Close()
+	write(t, h.p.SecretsFile(), "OK_063=x\n")
+	for _, name := range []string{"alpha", "beta"} {
+		h.writeVM(t, vm.State{Name: name, Template: "base", User: "dev", Created: created,
+			Repos: []vm.RepoState{{Repo: forge.Repo{Forge: "dk", Owner: "o", Name: "r"}, DeployKeyID: 7},
+				{Repo: forge.Repo{Forge: "ok", Owner: "o", Name: "r"}, DeployKeyID: 8}},
+			Forges: map[string]forge.Forge{
+				"dk":   {Name: "dk", Type: forge.Gitea, Host: "127.0.0.1", Auth: forge.Auth{Mode: forge.ModeDeployKey, Token: "secret:GONE_063"}},
+				"ok":   {Name: "ok", Type: forge.Gitea, Host: "127.0.0.1", HTTPURL: srv.URL, Auth: forge.Auth{Mode: forge.ModeDeployKey, Token: "secret:OK_063"}},
+				"mint": {Name: "mint", Type: forge.Gitea, Host: "127.0.0.1", Auth: forge.Auth{Mode: forge.ModeMintedToken, User: "bot", Password: "secret:GONE_063P"}},
+			}})
+		write(t, filepath.Join(h.p.VM(name), "forge", "tokens.json"), `{"mint":{"id":3,"user":"bot","token":"t"}}`)
+	}
+	a := serveTCPManager(t, func() (*vm.Manager, error) {
+		return &vm.Manager{P: h.p, Cfg: config.Default(), Tpl: template.Loader{UserDir: h.p.Templates()}}, nil
+	})
+	ctx := context.Background()
+	laptop := a.client(t, apiclient.Options{Cert: &a.laptop}) // no scope
+	cockpit := a.client(t, apiclient.Options{HMAC: &apiclient.HMAC{Name: "cockpit", Key: a.key}})
+	key := "warning: could not remove deploy key 7 from dk:o/r: secret GONE_063 not found on the host (remove it in the forge's repo settings)"
+	tok := "warning: could not delete mint token 3 for bot: secret GONE_063P not found on the host (delete it in the user's settings)"
+	failed := "warning: could not remove deploy key 8 from ok:o/r: DELETE ok/repos/o/r/keys/8: HTTP 500: Internal Server Error (remove it in the forge's repo settings)"
+	withheld := "withheld: the line names host secrets: reading it needs the config:write scope"
+	j, _ := waiter(t, laptop)(laptop.DestroyVM(ctx, "alpha", api.DestroyVMRequest{Confirm: true}))
+	for _, tc := range []struct {
+		c      *apiclient.Client
+		reader string
+		want   []string
+	}{
+		{laptop, "laptop", []string{withheld, failed, withheld, "destroyed alpha"}},
+		{cockpit, "cockpit", []string{key, failed, tok, "destroyed alpha"}},
+	} {
+		g, err := tc.c.Job(ctx, j.ID, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if g.State != api.JobDone || !reflect.DeepEqual(g.Lines, tc.want) {
+			t.Errorf("%s reads: %q (%s)", tc.reader, g.Lines, g.State)
+		}
+	}
+	c := h.client(t)
+	if j, lines := waiter(t, c)(c.DestroyVM(ctx, "beta", api.DestroyVMRequest{Confirm: true})); j.State != api.JobDone ||
+		!reflect.DeepEqual(lines, []string{key, failed, tok, "destroyed beta"}) {
+		t.Errorf("over the socket: %+v %q", j, lines)
 	}
 }
 

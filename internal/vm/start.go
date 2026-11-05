@@ -281,7 +281,7 @@ func (m *Manager) refreshEnv(name string) error {
 			changes = append(changes, "-"+k)
 		}
 	}
-	m.logf("%s: env from template %s: %s", name, s.Template, strings.Join(changes, " "))
+	m.secretf("%s: env from template %s: %s", name, s.Template, strings.Join(changes, " "))
 	s.Env = t.Env
 	return m.vm(name).save(s)
 }
@@ -314,7 +314,7 @@ func (m *Manager) push(ctx context.Context, g *Guest, s *State) error {
 		m.logf("warning: %s", w)
 	}
 	if len(res.Missing) > 0 {
-		m.logf(MissingSecrets+"%s (set them in the environment, %s, or config.yaml secrets)",
+		m.secretf(MissingSecrets+"%s (set them in the environment, %s, or config.yaml secrets)",
 			strings.Join(res.Missing, ", "), m.P.SecretsFile())
 	}
 	m.audit(audit.CredsPush, s.Name, map[string]any{"secrets": res.Found, "missing": res.Missing, "ok": err == nil})
