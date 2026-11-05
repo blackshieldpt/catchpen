@@ -278,6 +278,9 @@ func prOpts(o vm.PullOpts, req api.PRVMRequest) vm.PROpts {
 }
 
 func (s *Server) pullVM(w http.ResponseWriter, r *http.Request) {
+	if !taskAllowed(w, r) { // the task's commits, onto the host
+		return
+	}
 	var req api.PullVMRequest
 	if !decode(w, r, &req) {
 		return
@@ -297,6 +300,9 @@ func (s *Server) pullVM(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) prVM(w http.ResponseWriter, r *http.Request) {
+	if !taskAllowed(w, r) { // pushed with the host's git credentials
+		return
+	}
 	var req api.PRVMRequest
 	if !decode(w, r, &req) {
 		return

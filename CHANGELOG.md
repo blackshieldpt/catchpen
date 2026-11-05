@@ -70,7 +70,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
   `config:write` clients). Pull and pr take `into`, an
   absolute, clean path, and pr its description as `body`: no `--patches` or
   `--body-file`, so `into` is the only host path a call names; pr's `head` must be under
-  `catchpen/`. Both are refused (409) on a VM a canary hit paused.
+  `catchpen/`. Both are refused (409) on a VM a canary hit paused, and on a task's VM
+  (named `task-…`) need a client with `config:write` (403 otherwise).
 - The API reads and changes a VM's egress (`GET /v1/vms/<name>/egress`;
   `POST /v1/vms/<name>/egress/allow`, `/unallow`, `/deny`, `/undeny` with 1 to 64
   entries, all checked before any is applied; `POST /v1/vms/<name>/egress/config`) and
@@ -93,11 +94,11 @@ before 0.1.0 describe work on `master` before the first tagged release.
   snapshots, `"confirm": true` and those snapshots (else 428, or 409 when they changed).
   Restore and snapshot delete need `"confirm": true`, which the CLI doesn't ask, and a
   restore the VM's canary hit (`canary_hit`, as `GET /v1/vms/<name>` tells; 409 when
-  it differs), and on a task's VM (named `task-…`) a client with `config:write` (403
-  otherwise); a snapshot needs a name. Once the VM and snapshot are found, all six
-  are refused (409) on a VM a canary hit paused; reset, rebase and restore, which can
-  start the VM, and push, which can clone through its SSH agent, on one with an SSH
-  agent (`ssh.agent` other than `off`).
+  it differs); a snapshot needs a name. On a task's VM (named `task-…`), all but a
+  snapshot's save need a client with `config:write` (403 otherwise; the `GET`s don't).
+  Once the VM and snapshot are found, all six are refused (409) on a VM a canary hit
+  paused; reset, rebase and restore, which can start the VM, and push, which can clone
+  through its SSH agent, on one with an SSH agent (`ssh.agent` other than `off`).
 - The API creates, starts, stops, destroys and resumes VMs (`POST /v1/vms`,
   `POST /v1/vms/<name>/start`, `/stop`, `/destroy`, `/resume`), each as a job that runs on
   in the daemon when its client goes, read with `GET /v1/jobs` and

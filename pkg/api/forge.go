@@ -39,12 +39,14 @@ func PathForgeDelete(name string) string { return PathForge(name) + "/delete" }
 
 // PathVMPull is POST, with a PullVMRequest: fetch a branch of one of the
 // VM's repos into refs/catchpen/<vm>/<branch> of a host repository, as
-// catchpen pull does, as a job.
+// catchpen pull does, as a job. On a task's VM it needs config:write, as
+// PathVMResume does.
 func PathVMPull(name string) string { return PathVM(name) + "/pull" }
 
 // PathVMPR is POST, with a PRVMRequest: pull a branch, push it with the
 // daemon's host git credentials and open a pull request, as catchpen pr
-// does, as a job; its last line names the pull request.
+// does, as a job; its last line names the pull request. On a task's VM it
+// needs config:write, as PathVMResume does.
 func PathVMPR(name string) string { return PathVM(name) + "/pr" }
 
 // ForgeInfo is a forge. Its credentials are named, never given.

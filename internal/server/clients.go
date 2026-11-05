@@ -32,7 +32,8 @@ const (
 // run host commands, the forges, whose credentials are host secrets, and
 // secrets.env's secrets, and submit tasks, whose guests hold the template's
 // secrets, and change their VMs' egress, open forwards on them, start, stop,
-// resume and destroy them and restore their snapshots.
+// resume, destroy, reset, rebase and push to them, restore and delete their
+// snapshots, and pull branches and open pull requests from them.
 const ScopeConfigWrite = "config:write"
 
 // KeyBytes is the size of a generated HMAC key.

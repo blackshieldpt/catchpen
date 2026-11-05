@@ -137,6 +137,11 @@ environment, not your shell's, and only onto a branch under `catchpen/` (`head`,
 `catchpen/<vm>/<branch>`; 400 otherwise), so not onto the repo's default branch; a push
 can still run the forge's CI on that branch, as the CLI's does. Both are refused (409)
 on a VM a canary hit paused, and their audit events (`export.pull`, `export.pr`) carry `client`.
+On a task's VM (any VM named `task-…`, see [tasks.md](tasks.md)) both need a client
+enrolled with `--scope config:write`, the scope that submits tasks (403 otherwise,
+whether or not the VM exists; a client on the unix socket has every scope): they bring
+the unattended agent's commits onto the host, and pr pushes them with the host's
+credentials. On other VMs they need no scope.
 
 ## SSH agent
 

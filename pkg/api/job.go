@@ -37,7 +37,9 @@ func PathVMResume(name string) string { return PathVM(name) + "/resume" }
 // Reset, rebase, push and the snapshot calls (POST) are refused with
 // CodeVMPaused on a VM a canary hit paused; reset, rebase and restore, which
 // can start the VM, and push, which can clone through its SSH agent, with
-// CodeConflict on a VM with an SSH agent (ssh.agent other than off).
+// CodeConflict on a VM with an SSH agent (ssh.agent other than off). On a
+// task's VM, all but a snapshot's save first need config:write
+// (CodeForbidden).
 
 // PathVMReset is GET: the VMLoss resetting the VM would cause. It is also
 // POST, with a ResetVMRequest: give the VM a fresh disk and run first boot
@@ -46,19 +48,22 @@ func PathVMResume(name string) string { return PathVM(name) + "/resume" }
 // began, fails the job, nothing changed; one while it works leaves the VM
 // stopped, the job failing. Without
 // Confirm it is refused with CodeConfirmRequired; with snapshots or a canary
-// hit other than the VM's, with CodeConflict.
+// hit other than the VM's, with CodeConflict. On a task's VM the POST needs
+// config:write, as PathVMResume does; the GET doesn't.
 func PathVMReset(name string) string { return PathVM(name) + "/reset" }
 
 // PathVMRebase is GET: the VMLoss rebasing the VM would cause. It is also
 // POST, with a RebaseVMRequest or no body: move the VM's disk onto its
 // template's current base, as catchpen rebase does; a running VM is started
 // again, as by reset. A VM with snapshots needs Confirm (else CodeConfirmRequired) and
-// those snapshots (else CodeConflict).
+// those snapshots (else CodeConflict). On a task's VM the POST needs
+// config:write, as PathVMResume does; the GET doesn't.
 func PathVMRebase(name string) string { return PathVM(name) + "/rebase" }
 
 // PathVMPush is POST, with no body (or {}): push credentials, agent config,
 // and env, skills and plugins refreshed from the template into the running
-// VM, as catchpen creds push does.
+// VM, as catchpen creds push does. On a task's VM it needs config:write, as
+// PathVMResume does.
 func PathVMPush(name string) string { return PathVM(name) + "/push" }
 
 // PathSnapshotRestore is POST, with a RestoreSnapshotRequest: return the VM
@@ -73,7 +78,7 @@ func PathSnapshotRestore(name, snap string) string { return pathSnapshot(name, s
 // PathSnapshotDelete is POST, with a DeleteSnapshotRequest: delete the
 // snapshot, as catchpen rmsnap does. Without Confirm it is refused with
 // CodeConfirmRequired; a snapshot the VM hasn't, with CodeNotFound; it takes
-// no CanaryHit.
+// no CanaryHit. On a task's VM it needs config:write, as PathVMResume does.
 func PathSnapshotDelete(name, snap string) string { return pathSnapshot(name, snap) + "/delete" }
 
 func pathSnapshot(name, snap string) string {

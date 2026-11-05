@@ -37,6 +37,9 @@ func (s *Server) vmResetLoss(w http.ResponseWriter, r *http.Request) {
 // resetVM needs confirm, and the snapshots and canary hit the client was
 // told it loses.
 func (s *Server) resetVM(w http.ResponseWriter, r *http.Request) {
+	if !taskAllowed(w, r) { // it wipes a kept hit's disk and snapshots, and stops and starts a running VM
+		return
+	}
 	var req api.ResetVMRequest
 	if !decode(w, r, &req) {
 		return
@@ -65,6 +68,9 @@ func (s *Server) vmRebaseLoss(w http.ResponseWriter, r *http.Request) {
 
 // rebaseVM needs confirm, and the snapshots it deletes, when the VM has any.
 func (s *Server) rebaseVM(w http.ResponseWriter, r *http.Request) {
+	if !taskAllowed(w, r) { // it deletes the snapshots, and stops and starts a running VM
+		return
+	}
 	var req api.RebaseVMRequest
 	if !decode(w, r, &req) {
 		return
@@ -87,6 +93,9 @@ func (s *Server) rebaseVM(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) pushVM(w http.ResponseWriter, r *http.Request) {
+	if !taskAllowed(w, r) { // into a running task's guest
+		return
+	}
 	if !decode(w, r, &struct{}{}) {
 		return
 	}
@@ -149,6 +158,9 @@ func (s *Server) restoreSnapshot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteSnapshot(w http.ResponseWriter, r *http.Request) {
+	if !taskAllowed(w, r) { // a kept hit's snapshots are evidence
+		return
+	}
 	var req api.DeleteSnapshotRequest
 	if !decode(w, r, &req) {
 		return
