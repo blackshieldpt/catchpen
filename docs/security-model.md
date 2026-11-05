@@ -36,7 +36,8 @@ the agent user has passwordless sudo inside it.
   keyboard-interactive or PKCS#11 keys), and keeps the VM from updating its pinned host key
   and catchpen's key from being added to an agent. catchpen's own `ssh`, `run`, `attach`,
   `cp` and `forward` read only that file; `catchpen forward` turns port forwarding back on
-  only for its own sessions. A manual `ssh catchpen-<vm>` (after `catchpen setup-ssh`) reads
+  only for its own sessions, and agent forwarding off for them. A manual `ssh catchpen-<vm>`
+  (after `catchpen setup-ssh`) reads
   your own ssh config too: catchpen's settings beat a block after its Include but not one
   before it, and a block's `IdentityFile`, `CertificateFile`, `SendEnv` and `SetEnv` still
   apply, so the VM's sshd sees those public keys and variables. `catchpen setup-ssh` reports

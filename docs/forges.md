@@ -183,7 +183,8 @@ catchpen forward dev --stop
 ```
 
 Each forward is a background `ssh -N`, logged in `vms/<name>/forward.log`; all of them
-end when the VM stops. `-R` bypasses the egress proxy, so it is recorded in the VM's
+end when the VM stops. A forward never forwards the VM's SSH agent (a session does, when
+the template sets `ssh.agent`). `-R` bypasses the egress proxy, so it is recorded in the VM's
 egress log. `ports:` from a `ports.yaml` section, such as
 `web: { ports: [3000, "8080:80"] }` picked with `-t web`, are forwarded at start instead.
 
@@ -194,4 +195,4 @@ at most) opens one as a job, and `POST /v1/vms/<name>/forwards/stop` ends them a
 session's ssh runs on the daemon's host: `local` and `dynamic` listen on its 127.0.0.1,
 and `remote` reaches what it can reach. Opening one is refused (409) on a VM a canary
 hit paused, one that isn't running, a warm pool VM, and one with `ssh.agent` other than
-`off`, whose agent the session would forward: use the CLI there.
+`off`: use the CLI there.

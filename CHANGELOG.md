@@ -71,8 +71,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
   `pkg/apiclient`'s `Egress`, `EditEgress`, `SetEgressConfig`, `Forwards`, `OpenForward`
   and `StopForwards`. Egress changes are refused (409) on a warm pool VM and on a VM
   whose mode isn't allowlist; a forward on a VM a canary hit paused, one that isn't
-  running, a warm pool VM and one with an SSH agent (`ssh.agent` other than `off`),
-  which the session's ssh would forward. Their audit events carry `client`.
+  running, a warm pool VM and one with an SSH agent (`ssh.agent` other than `off`).
+  Their audit events carry `client`.
 - The API resets, rebases and pushes credentials to VMs, and saves, restores and deletes
   their snapshots (`POST /v1/vms/<name>/reset`, `/rebase`, `/push`,
   `POST /v1/vms/<name>/snapshots`, `/snapshots/<snap>/restore`, `/snapshots/<snap>/delete`),
@@ -174,6 +174,14 @@ before 0.1.0 describe work on `master` before the first tagged release.
 - New VMs, and VMs after `catchpen reset`, no longer finish booting with cloud-init
   reporting `degraded done`: the user-data failed cloud-init's schema (`ssh_genkeytypes`
   was empty).
+
+### Security
+
+- `catchpen forward` no longer lets the guest use the VM's SSH agent. On a VM with
+  `ssh.agent: restricted` (or `host`, with an ssh that starts such a forward at all),
+  its background `ssh -N` took `ForwardAgent` from the VM's block in catchpen's
+  `ssh_config`, so the guest's sshd could use that agent for as long as the forward ran,
+  with no session open. It now runs with `ForwardAgent=no`.
 
 ## [0.1.2] - 2026-10-29
 

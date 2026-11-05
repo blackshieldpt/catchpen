@@ -146,8 +146,11 @@ func (m *Manager) Forward(ctx context.Context, name string, local, remote, dynam
 		return nil, err
 	}
 	defer logf.Close()
+	// ForwardAgent=no beats the VM's ssh_config block (the first value ssh reads
+	// wins): with the VM's agent forwarded, the guest's sshd could use it for as
+	// long as the forward runs, no session needed.
 	args := append([]string{"-F", m.P.SSHConfig(), "-N", "-o", "BatchMode=yes", "-o", "ClearAllForwardings=no",
-		"-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30", "-o", "GatewayPorts=no"}, specs...)
+		"-o", "ForwardAgent=no", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30", "-o", "GatewayPorts=no"}, specs...)
 	args = append(args, sshx.AliasPrefix+name)
 	cmd := exec.Command("ssh", args...)
 	cmd.Stdout, cmd.Stderr = logf, logf
