@@ -81,6 +81,10 @@ type Section struct {
 // whose sections replace built-in ones of the same name.
 type Loader struct {
 	UserDir string
+	// Files replaces user category files by category name (nil: none), to
+	// check a change before it is written. Assets are still read from
+	// UserDir.
+	Files map[string][]byte
 }
 
 var (
@@ -125,11 +129,11 @@ func (l Loader) Library() (*Library, error) {
 			continue
 		}
 		p := filepath.Join(l.UserDir, c.Name+".yaml")
-		b, err = os.ReadFile(p)
-		if errors.Is(err, fs.ErrNotExist) {
+		if f, ok := l.Files[c.Name]; ok {
+			b = f
+		} else if b, err = os.ReadFile(p); errors.Is(err, fs.ErrNotExist) {
 			continue
-		}
-		if err != nil {
+		} else if err != nil {
 			return nil, err
 		}
 		if err := lib.add(c, b, p, os.DirFS(l.UserDir)); err != nil {

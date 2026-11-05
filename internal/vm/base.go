@@ -77,6 +77,11 @@ func (m *Manager) Resolve(spec string) (*Resolved, error) {
 	if err != nil {
 		return nil, err
 	}
+	return m.ResolveTemplate(t)
+}
+
+// ResolveTemplate is Resolve for t, a template already built.
+func (m *Manager) ResolveTemplate(t *template.Template) (*Resolved, error) {
 	if t.Distro == "" {
 		return nil, fmt.Errorf("-t %s: no distro (distros.yaml has no default)", t.Name)
 	}

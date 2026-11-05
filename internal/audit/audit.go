@@ -58,6 +58,7 @@ const (
 	GC              = "gc"
 	APIClientAdd    = "api.client.add"
 	APIClientRemove = "api.client.rm"
+	ConfigWrite     = "config.write"
 )
 
 // Event is one audit line.

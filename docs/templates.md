@@ -200,3 +200,38 @@ Base builds run with the same isolation as VMs, through a proxy that allows any 
 host but no private address, and use the template's package caches (Docker's excepted).
 Build logs are in `~/.local/share/catchpen/bases/`; see
 [troubleshooting.md](troubleshooting.md#base-builds).
+
+## Over the API
+
+For a client enrolled with `--scope config:write` (403 otherwise; over the unix socket,
+every call is allowed), `catchpen daemon`'s API reads and writes your category files in
+`~/.config/catchpen/templates/` and shows what a `-t` spec gives. Sections can hold
+literal values (`env`, MCP headers), so reading them needs the scope too;
+`GET /v1/templates` lists every category's sections, without their settings, to any
+client.
+
+| Call | What it does |
+|---|---|
+| `GET /v1/templates/files/<category>` | Your file's `text`, its SHA-256 (`hash`, `""` with no file), whether it `exists`, and `builtin`: the built-in file's text. |
+| `POST /v1/templates/files/<category>` | `text` and `base_hash`, as for [`config.yaml`](configuration.md#over-the-api): written, or created with a `base_hash` of `""` (0600, or the file's mode). |
+| `POST /v1/templates/files/<category>/delete` | `base_hash` and `"confirm": true`: removes your file, so the built-in sections apply again. |
+| `GET /v1/templates/show?t=<spec>` | What `catchpen template show` prints: the spec, normalized, the sections each category gave (`parts`), the base image's path and the settings, as YAML. |
+
+`<category>` is one of the [categories](#categories) (404 otherwise). A write or a delete
+may not break what worked: it is refused (400), nothing changed, if the category files
+loaded before it and wouldn't after, or if the default template, a profile or a
+`pool:` entry's template passed before it and wouldn't after, checked as `catchpen up`
+checks a template (its sections, distro, cloud-init, and an allowlist's presets and
+entries; not its repos, which need their forge, nor open egress or
+`ssh.agent: restricted`, which need `--allow-open` or a repo). A `pool:` entry the write adds must
+pass. The error names the template, such as `-t default`, `-t profiles:<name>` or
+`pool template <spec>`. What didn't work may stay so, and other sections are checked
+when a VM picks them, as after a hand edit, since a section or a profile may be meant
+only with other picks; nor are the templates existing VMs were made from checked (a
+rebuild of one says so). As with `config.yaml`, a stale `base_hash` or a file that is
+a symbolic link, has other hard links, belongs to another user, is read-only or isn't
+a regular file is refused (409), writes wait for each other (one lock with `config.yaml`'s), and each is audited
+as `config.write`,
+its `file` `templates/<category>.yaml` (a delete's `new_hash` is `""`). The scripts and
+`files` sources a section names aren't written over the API: put them in the templates
+directory by hand first.

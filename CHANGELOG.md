@@ -8,6 +8,24 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- The API reads and writes `config.yaml` (`GET /v1/config`, `POST /v1/config`) and your
+  template category files (`GET /v1/templates/files/<category>`, `POST` to write or
+  create one, `POST .../delete` to remove one), and shows what a `-t` spec gives
+  (`GET /v1/templates/show?t=<spec>`), with `pkg/apiclient`'s `Config`, `WriteConfig`,
+  `TemplateFile`, `WriteTemplateFile`, `DeleteTemplateFile` and `ShowTemplate`. Every
+  call, reads too, needs a client enrolled with `--scope config:write` (403 otherwise;
+  over the unix socket, every call is allowed): the files can hold literal secrets and
+  run host commands, and such a client can do anything a hand edit can. A write sends the whole
+  file with the hash it was read with, and is refused when the file changed since
+  (409), doesn't load as catchpen loads it (400), would change `config.yaml`'s
+  `server:` (409), or replaces or removes a symbolic link, a file with other hard
+  links, another user's file, a read-only file or anything but a regular file (409); a
+  write or delete may not make the default template, a profile or a `pool:` entry's
+  template that passed `catchpen up`'s checks (distro, cloud-init, egress presets and
+  entries; not repos, open egress or `ssh.agent: restricted`, which need a flag or a
+  repo) fail them, and a new `pool:` entry must pass (400). Writes are audited as
+  `config.write`, with the file and its old and new hashes, which `GET /v1/audit` shows
+  only to `config:write` clients. `secrets.env` isn't read or written over the API.
 - The API submits headless tasks (`POST /v1/tasks`, one task, the prompt as text),
   cancels and deletes them (`POST /v1/tasks/<id>/cancel`, `/delete`, as jobs), and
   builds and rebuilds template bases (`POST /v1/templates/build`, `/rebuild`, as jobs),

@@ -100,14 +100,20 @@ func Default() Config {
 
 // Load reads path over the defaults; a missing file yields the defaults.
 func Load(path string) (Config, error) {
-	c := Default()
 	b, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return c, nil
+		return Default(), nil
 	}
 	if err != nil {
-		return c, err
+		return Default(), err
 	}
+	return Parse(path, b)
+}
+
+// Parse reads b, the text of config file path, over the defaults, as Load
+// does.
+func Parse(path string, b []byte) (Config, error) {
+	c := Default()
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	dec.KnownFields(true)
 	var f Config

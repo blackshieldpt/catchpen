@@ -241,6 +241,11 @@ func (s *Server) audit(w http.ResponseWriter, r *http.Request) {
 	page := api.AuditPage{Events: make([]api.AuditEvent, 0, len(es))}
 	for _, e := range es {
 		d, _ := redactAll(e.Detail).(map[string]any)
+		if e.Event == audit.ConfigWrite && !scoped(r, ScopeConfigWrite) {
+			// A hash of a file mostly known confirms a guess of a secret in it.
+			delete(d, "old_hash")
+			delete(d, "new_hash")
+		}
 		page.Events = append(page.Events, api.AuditEvent{Time: e.Time, Event: e.Event, VM: e.VM, Detail: d})
 	}
 	if next != nil {

@@ -445,6 +445,63 @@ func (c *Client) DeleteForge(ctx context.Context, name string, confirm bool) ([]
 	return fs, nil
 }
 
+// Config is config.yaml.
+func (c *Client) Config(ctx context.Context) (*api.ConfigFile, error) {
+	var f api.ConfigFile
+	if err := c.get(ctx, api.PathConfig, &f); err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+// WriteConfig replaces config.yaml with text, if it is still the file whose
+// hash is base, and returns it as written.
+func (c *Client) WriteConfig(ctx context.Context, text, base string) (*api.ConfigFile, error) {
+	var f api.ConfigFile
+	if err := c.do(ctx, http.MethodPost, api.PathConfig, api.WriteFileRequest{Text: text, BaseHash: base}, &f); err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+// TemplateFile is the user's file of a template category.
+func (c *Client) TemplateFile(ctx context.Context, category string) (*api.TemplateFile, error) {
+	var f api.TemplateFile
+	if err := c.get(ctx, api.PathTemplateFile(category), &f); err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+// WriteTemplateFile writes the user's file of a template category, if it is
+// still the file whose hash is base ("": none), and returns it as written.
+func (c *Client) WriteTemplateFile(ctx context.Context, category, text, base string) (*api.TemplateFile, error) {
+	var f api.TemplateFile
+	if err := c.do(ctx, http.MethodPost, api.PathTemplateFile(category), api.WriteFileRequest{Text: text, BaseHash: base}, &f); err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+// DeleteTemplateFile removes the user's file of a template category, if it
+// is still the file whose hash is base.
+func (c *Client) DeleteTemplateFile(ctx context.Context, category, base string, confirm bool) (*api.TemplateFile, error) {
+	var f api.TemplateFile
+	if err := c.do(ctx, http.MethodPost, api.PathTemplateFileDelete(category), api.DeleteFileRequest{BaseHash: base, Confirm: confirm}, &f); err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+// ShowTemplate is the template a -t spec gives.
+func (c *Client) ShowTemplate(ctx context.Context, spec string) (*api.TemplateShow, error) {
+	var t api.TemplateShow
+	if err := c.get(ctx, api.PathTemplateShow+"?t="+url.QueryEscape(spec), &t); err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
 // SubmitTask queues a headless task, and returns it as queued.
 func (c *Client) SubmitTask(ctx context.Context, r api.SubmitTaskRequest) (*api.TaskInfo, error) {
 	var t api.TaskInfo
