@@ -64,7 +64,10 @@ before 0.1.0 describe work on `master` before the first tagged release.
   the keys only if they are those confirmed (409 otherwise). Scanning, adding and
   removing need a client enrolled with `--scope config:write` (403 otherwise), since a
   forge names host secrets that are sent to its host; removing needs `"confirm": true`.
-  Adds and removals are audited (`forge.add`, `forge.rm`). Pull and pr take `into`, an
+  Listing and testing don't, but tell the names of a forge's secrets (in the list, and
+  in a test's error) only to `config:write` clients. Adds and removals are audited
+  (`forge.add`, `forge.rm`; `GET /v1/audit` shows `forge.add`'s secrets' names only to
+  `config:write` clients). Pull and pr take `into`, an
   absolute, clean path, and pr its description as `body`: no `--patches` or
   `--body-file`, so `into` is the only host path a call names; pr's `head` must be under
   `catchpen/`. Both are refused (409) on a VM a canary hit paused.
@@ -116,7 +119,9 @@ before 0.1.0 describe work on `master` before the first tagged release.
   scanned for the VM's decoy credentials (the guest can put text into both, as a failed
   clone's output): once one is found, every line and the error are withheld, and the
   hit is acted on at once as `canary_action` says (a stop waits for the VM's lock), audited
-  with the client. A canary hit
+  with the client. A job's error that names a host secret, and a push's
+  `secrets not found on the host` line, are withheld from a client without
+  `config:write`, whoever started the job. A canary hit
   on a VM already destroyed is now audited and notified instead of dropped.
 - The unit `catchpen daemon install` writes has `KillMode=process`: VMs the daemon
   starts keep running when it stops or restarts. Run `catchpen daemon install` again to
@@ -129,7 +134,9 @@ before 0.1.0 describe work on `master` before the first tagged release.
   command. A `--repo` with a user or password is shown without them, and that task's
   error is withheld (`catchpen task show` prints it); other text loses a plain
   `scheme://user:password@` URL's. A task's output and errors, and audit details, can
-  name host paths, as `catchpen task ls` and `catchpen audit` show them.
+  name host paths, as `catchpen task ls` and `catchpen audit` show them. `creds.push`'s
+  secrets' names (those a VM's template found and missed) are shown only to
+  `config:write` clients.
 - The API lists the VMs (`GET /v1/vms`, warm pool VMs marked `pool`), shows one
   (`GET /v1/vms/<name>`) and lists its snapshots (`GET /v1/vms/<name>/snapshots`), with
   `pkg/apiclient`'s `VMs`, `VM` and `Snapshots`. It tells a VM's state, template, size,

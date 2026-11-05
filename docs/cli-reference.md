@@ -306,7 +306,9 @@ a removed client's next request. Enrolments go in `clients.yaml` in the config d
   task's VM, change its egress, open forwards, start, stop, resume and destroy it and
   restore its snapshots, and read
   and write `config.yaml` and the template category files, show templates, and list,
-  set and unset the secrets in `secrets.env` (never returning a value) through the API. The files can hold secrets; `config.yaml` can run host commands and turn off
+  set and unset the secrets in `secrets.env` (never returning a value) through the API,
+  and be told which secrets forges, forge tests, `creds.push` and `forge.add` events,
+  jobs' errors and a push's `secrets not found on the host` line name. The files can hold secrets; `config.yaml` can run host commands and turn off
   canary pauses and recordings, and a template can send host secrets into VMs, forward
   your SSH agent or open a VM's egress for your next `catchpen up`.
 - The CLI and the daemon must see the same config directory (`daemon info` prints it):

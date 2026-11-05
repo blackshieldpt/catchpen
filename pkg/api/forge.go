@@ -13,7 +13,8 @@ import (
 // A forge names host secrets that the server sends to the forge's host, so
 // adding one, removing one and scanning need the client's config:write
 // scope (CodeForbidden otherwise; a unix socket client has every scope).
-// Listing and testing don't.
+// Listing and testing don't, but tell the secrets' names only to a client
+// with it.
 const PathForges = Prefix + "/forges"
 
 // PathForgeScan is POST, with a ForgeScanRequest: the SSH host keys a forge
@@ -54,9 +55,9 @@ type ForgeInfo struct {
 	WebURL         string   `json:"web_url"`
 	SSHPort        int      `json:"ssh_port"`
 	Mode           string   `json:"mode"`                      // deploy-key, minted-token, token, agent or none
-	TokenSecret    string   `json:"token_secret,omitempty"`    // the host secret holding its API token
+	TokenSecret    string   `json:"token_secret,omitempty"`    // the host secret holding its API token; told only to a config:write client
 	User           string   `json:"user,omitempty"`            // minted-token: the account tokens are minted for
-	PasswordSecret string   `json:"password_secret,omitempty"` // minted-token: the host secret holding that account's password
+	PasswordSecret string   `json:"password_secret,omitempty"` // minted-token: the host secret holding that account's password; told only to a config:write client
 	Scopes         []string `json:"scopes"`                    // minted tokens' scopes
 	HostKeys       []string `json:"host_keys"`                 // the fingerprints of its pinned SSH host keys
 }
@@ -100,7 +101,7 @@ type ForgeCheck struct {
 	Login     string `json:"login,omitempty"` // the account they authenticate as
 	HostKeys  bool   `json:"host_keys"`       // its SSH server offers only pinned keys
 	HostBound bool   `json:"host_bound"`      // its SSH server supports host-bound auth (agent mode)
-	Error     string `json:"error,omitempty"` // the check that failed, if one did; can quote the forge
+	Error     string `json:"error,omitempty"` // the check that failed, if one did; can quote the forge; withheld from a client without config:write when it names a secret
 }
 
 // DeleteForgeRequest confirms a forge's removal.

@@ -253,7 +253,7 @@ func confirmMessage(what, running string, l api.VMLoss) string {
 }
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.jobs.list())
+	writeJSON(w, http.StatusOK, s.jobs.list(scoped(r, ScopeConfigWrite)))
 }
 
 func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
@@ -271,5 +271,5 @@ func (s *Server) getJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, api.CodeNotFound, "no such job")
 		return
 	}
-	writeJSON(w, http.StatusOK, j.from(after))
+	writeJSON(w, http.StatusOK, j.from(after, scoped(r, ScopeConfigWrite)))
 }

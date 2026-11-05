@@ -79,11 +79,11 @@ func TestJobDecoys(t *testing.T) {
 		}
 		js.stop() // waits for the job, and the hit, to end
 		j, _ := js.find(i.ID)
-		g := j.from(0)
+		g := j.from(0, true)
 		if !reflect.DeepEqual(g.Lines, tc.lines) || g.Written != len(tc.lines) || g.Error != tc.errMsg {
 			t.Errorf("%s: %+v", tc.name, g)
 		}
-		if l := js.list(); l[0].Error != tc.errMsg {
+		if l := js.list(true); l[0].Error != tc.errMsg {
 			t.Errorf("%s: listed %+v", tc.name, l[0])
 		}
 		if want := map[bool]int{true: 1}[tc.hit]; hits != want {

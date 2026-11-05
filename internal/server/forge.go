@@ -36,8 +36,9 @@ func allowed(w http.ResponseWriter, r *http.Request, scope string) bool {
 	return true
 }
 
-// forgeInfo copies what the API may tell of a forge: its secrets' names,
-// never their values.
+// forgeInfo copies what the API may tell of a forge: its secrets' names
+// (to a config:write client: writeForges blanks them for others), never
+// their values.
 func forgeInfo(f forge.Forge) api.ForgeInfo {
 	i := api.ForgeInfo{Name: f.Name, Type: f.Type, Host: f.Host, WebURL: f.WebURL(), SSHPort: f.Port(), Mode: f.Auth.Mode,
 		User: f.Auth.User, Scopes: api.List(f.Auth.Scopes), HostKeys: []string{}}
@@ -60,7 +61,12 @@ func (s *Server) writeForges(w http.ResponseWriter, r *http.Request, m *vm.Manag
 	}
 	out := make([]api.ForgeInfo, 0, len(reg.Forges))
 	for _, f := range reg.Forges {
-		out = append(out, forgeInfo(f))
+		i := forgeInfo(f)
+		if !scoped(r, ScopeConfigWrite) {
+			// The host's secrets' names, as secrets.env's, need config:write.
+			i.TokenSecret, i.PasswordSecret = "", ""
+		}
+		out = append(out, i)
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -193,11 +199,19 @@ func (s *Server) testForge(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	res, err := m.TestForge(ctx, f) // f from the registry: its secrets go only where it says
 	c := api.ForgeCheck{API: res.API, Login: res.Login, HostKeys: res.HostKeys, HostBound: res.HostBound}
-	if err != nil {
+	var se *vm.SecretError
+	switch {
+	case errors.As(err, &se) && !scoped(r, ScopeConfigWrite):
+		c.Error = withheldSecret
+	case err != nil:
 		c.Error = err.Error()
 	}
 	writeJSON(w, http.StatusOK, c)
 }
+
+// withheldSecret stands for a forge test's error naming the forge's secret,
+// to a client without config:write.
+const withheldSecret = "withheld: a secret this forge names is not found on the host or can't be read: naming it needs the config:write scope"
 
 var errNoForge = errors.New("no such forge")
 

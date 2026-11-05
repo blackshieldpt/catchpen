@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/blackshieldpt/catchpen/internal/canary"
+	"github.com/blackshieldpt/catchpen/internal/vm"
 	"github.com/blackshieldpt/catchpen/pkg/api"
 )
 
@@ -57,16 +59,25 @@ const (
 	withheldUnread = "(withheld: the VM's canaries couldn't be read)"
 )
 
+// What a client without config:write gets in place of a job's error or
+// line that names a host secret.
+const (
+	withheldSecretError = "withheld: the job's error names a host secret: reading it needs the config:write scope"
+	withheldSecretLine  = "withheld: the line names host secrets: reading it needs the config:write scope"
+)
+
 // job is one job, and the writer its progress lines are written to.
 type job struct {
 	mu       sync.Mutex
 	info     api.JobInfo
 	lines    []string             // the last api.MaxJobLines
+	named    []bool               // for each of lines: it names host secrets
 	part     []byte               // the start of a line not ended yet
 	watch    *watch               // nil: not watched
 	act      func(*canary.Canary) // runs watch.hit, without waiting
 	hit      *canary.Canary
 	withheld string // what clients get in place of every line and the error ("": the text)
+	secret   bool   // the error names a host secret (a *vm.SecretError)
 }
 
 // Write takes progress output, a line at a time.
@@ -98,8 +109,10 @@ func (j *job) add(line []byte) {
 	}
 	j.check(prev + s) // a decoy split across two lines too
 	j.lines = append(j.lines, s)
+	j.named = append(j.named, strings.HasPrefix(s, vm.MissingSecrets))
 	if len(j.lines) > api.MaxJobLines {
 		j.lines = slices.Delete(j.lines, 0, len(j.lines)-api.MaxJobLines)
+		j.named = slices.Delete(j.named, 0, len(j.named)-api.MaxJobLines)
 	}
 	j.info.Written++
 }
@@ -138,37 +151,49 @@ func (j *job) end(err error) {
 		}
 		j.check(last + err.Error()) // a decoy split from the last line too
 		j.info.State, j.info.Error = api.JobFailed, err.Error()
+		var se *vm.SecretError
+		j.secret = errors.As(err, &se)
 	}
 }
 
+// get is the job's info as a config:write client gets it: for the server's
+// own use, and the answer that starts the job (no error yet).
 func (j *job) get() api.JobInfo {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	return j.shown()
+	return j.shown(true)
 }
 
-// shown is the job's info as clients get it; j.mu is held.
-func (j *job) shown() api.JobInfo {
+// shown is the job's info as a client gets it (secrets: one with
+// config:write); j.mu is held. A decoy's note wins.
+func (j *job) shown(secrets bool) api.JobInfo {
 	info := j.info
-	if j.withheld != "" && info.Error != "" {
+	switch {
+	case j.withheld != "" && info.Error != "":
 		info.Error = j.withheld
+	case j.secret && !secrets:
+		info.Error = withheldSecretError
 	}
 	return info
 }
 
-// from is the job with its lines from the after-th on (those kept).
-func (j *job) from(after int) api.Job {
+// from is the job with its lines from the after-th on (those kept), as a
+// client gets it (secrets: one with config:write). A decoy's note wins.
+func (j *job) from(after int, secrets bool) api.Job {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	first := j.info.Written - len(j.lines) // the number of the first line kept
 	from := min(max(after, first), j.info.Written)
 	lines := append([]string{}, j.lines[from-first:]...)
-	if j.withheld != "" {
-		for i := range lines {
+	for i := range lines {
+		switch {
+		case j.withheld != "":
 			lines[i] = j.withheld
+		case j.named[from-first+i] && !secrets:
+			lines[i] = withheldSecretLine
 		}
 	}
-	return api.Job{JobInfo: j.shown(), From: from, Lines: lines}
+	return api.Job{JobInfo: j.shown(secrets), From: from, Lines: lines}
 }
 
 // start runs fn as a job of kind on VM vm for client, with progress written
@@ -220,13 +245,17 @@ func (js *jobs) prune() {
 	}
 }
 
-// list is every job kept, newest first.
-func (js *jobs) list() []api.JobInfo {
+// list is every job kept, newest first, as a client gets them (secrets:
+// one with config:write).
+func (js *jobs) list(secrets bool) []api.JobInfo {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 	out := make([]api.JobInfo, 0, len(js.all))
 	for i := len(js.all) - 1; i >= 0; i-- {
-		out = append(out, js.all[i].get())
+		j := js.all[i]
+		j.mu.Lock()
+		out = append(out, j.shown(secrets))
+		j.mu.Unlock()
 	}
 	return out
 }

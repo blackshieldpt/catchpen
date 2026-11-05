@@ -51,6 +51,27 @@ func (m *Manager) resolver() *creds.Resolver {
 
 func (m *Manager) forges() (forge.Registry, error) { return forge.Load(m.P.Forges()) }
 
+// SecretError is a secret the host hasn't, or can't read: a forge's
+// (secretRef) or a push's (hostSecrets). Its text names the secret, so the
+// API withholds it from a client without config:write; every lookup of a
+// host secret whose error can reach a job returns one, wrapped with %w.
+type SecretError struct{ Err error }
+
+func (e *SecretError) Error() string { return e.Err.Error() }
+func (e *SecretError) Unwrap() error { return e.Err }
+
+// hostSecrets is the host's secrets as agents.Push looks them up: a lookup
+// that fails is a SecretError.
+type hostSecrets struct{ r *creds.Resolver }
+
+func (h hostSecrets) Lookup(ctx context.Context, name string) (string, bool, error) {
+	v, ok, err := h.r.Lookup(ctx, name)
+	if err != nil {
+		return "", false, &SecretError{err}
+	}
+	return v, ok, nil
+}
+
 // secretRef resolves a forge auth field (secret:NAME); missing is an error.
 func secretRef(ctx context.Context, r *creds.Resolver, ref string) (string, error) {
 	name, ok := strings.CutPrefix(ref, "secret:")
@@ -59,10 +80,10 @@ func secretRef(ctx context.Context, r *creds.Resolver, ref string) (string, erro
 	}
 	v, found, err := r.Lookup(ctx, name)
 	if err != nil {
-		return "", err
+		return "", &SecretError{err}
 	}
 	if !found {
-		return "", fmt.Errorf("secret %s not found on the host", name)
+		return "", &SecretError{fmt.Errorf("secret %s not found on the host", name)}
 	}
 	return v, nil
 }

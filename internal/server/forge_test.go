@@ -72,7 +72,8 @@ func (h *vmHost) forgesYAML(t *testing.T, fs ...forge.Forge) {
 	}
 }
 
-// The forges are listed with their secrets' names, never their values.
+// The forges are listed with their secrets' names (over the unix socket,
+// which has every scope), never their values.
 func TestForges(t *testing.T) {
 	h := home(t, nil)
 	c := h.client(t)
@@ -220,7 +221,8 @@ func TestAddForgeAgent(t *testing.T) {
 }
 
 // A test checks the forge from the registry with the host's secret, and
-// tells what failed rather than failing.
+// tells what failed rather than failing (over the unix socket, which has
+// every scope, naming a secret not found).
 func TestTestForge(t *testing.T) {
 	var auth []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

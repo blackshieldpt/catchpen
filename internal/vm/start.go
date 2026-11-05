@@ -295,6 +295,10 @@ func (r sshRemote) Run(ctx context.Context, cmd string, stdin []byte) (sshx.Gues
 	return sshx.Run(ctx, r.c, cmd, bytes.NewReader(stdin))
 }
 
+// MissingSecrets starts the line push writes naming the secrets the host
+// hasn't; the API withholds that line from a client without config:write.
+const MissingSecrets = "secrets not found on the host: "
+
 func (m *Manager) push(ctx context.Context, g *Guest, s *State) error {
 	spec := m.pushSpec(ctx, s)
 	cloneCtx := ctx // clones can take longer than the config push
@@ -305,12 +309,12 @@ func (m *Manager) push(ctx context.Context, g *Guest, s *State) error {
 		return err
 	}
 	spec.ExtraEnv = forge.GitHubEnv(gcreds)
-	res, err := agents.Push(ctx, sshRemote{g.Client}, spec, m.resolver())
+	res, err := agents.Push(ctx, sshRemote{g.Client}, spec, hostSecrets{m.resolver()})
 	for _, w := range res.Warnings {
 		m.logf("warning: %s", w)
 	}
 	if len(res.Missing) > 0 {
-		m.logf("secrets not found on the host: %s (set them in the environment, %s, or config.yaml secrets)",
+		m.logf(MissingSecrets+"%s (set them in the environment, %s, or config.yaml secrets)",
 			strings.Join(res.Missing, ", "), m.P.SecretsFile())
 	}
 	m.audit(audit.CredsPush, s.Name, map[string]any{"secrets": res.Found, "missing": res.Missing, "ok": err == nil})

@@ -102,7 +102,7 @@ With the daemon's API on (`server:` in [configuration.md](configuration.md)):
 
 | Call | As | Takes |
 |---|---|---|
-| `GET /v1/forges` | `forge ls` | nothing; it names each forge's secrets, never their values |
+| `GET /v1/forges` | `forge ls` | nothing; it names each forge's secrets (to a `config:write` client only), never their values |
 | `POST /v1/forges/scan` | `forge add`'s scan | `type`, `host`, `http_url`, `ssh_port` |
 | `POST /v1/forges` | `forge add` | `name`, `type`, `host`, `http_url`, `ssh_port`, `mode`, `token_secret`, `user`, `password_secret`, `scopes`, and the scan's `fingerprints` you confirmed |
 | `POST /v1/forges/<name>/test` | `forge test` | nothing |
@@ -121,6 +121,11 @@ unix socket, every call is allowed); listing and testing don't. Adds and removal
 audited (`forge.add`, with the secrets the forge names, and `forge.rm`, both with
 `client`); the CLI's aren't. A test answers with what passed and, in `error`, the check
 that failed, which can quote the forge's API (up to 300 characters) and its `login`.
+A client without `config:write` isn't told which secrets a forge names: the list leaves
+out `token_secret` and `password_secret`, `GET /v1/audit` leaves them out of
+`forge.add`, and a test whose secret is not found on the host or can't be read answers
+`withheld: a secret this forge names is not found on the host or can't be read: naming
+it needs the config:write scope` in `error`.
 Calls that reach a forge answer within 60 s, and a TCP client has 90 s to read the
 answer.
 

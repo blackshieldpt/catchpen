@@ -228,6 +228,8 @@ func TestTasksHideSecrets(t *testing.T) {
 	}
 }
 
+// The audit log, a page at a time, a URL's credentials dropped; over the
+// unix socket, which has every scope, creds.push names its secrets.
 func TestAudit(t *testing.T) {
 	h := home(t, nil)
 	if st, body := h.raw(t, api.PathAudit); st != http.StatusOK || body != `{"events":[]}`+"\n" {

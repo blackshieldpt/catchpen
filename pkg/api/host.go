@@ -40,7 +40,8 @@ func PathTask(id string) string {
 // TaskInfo is what the API tells of a headless task. It never carries its
 // prompt or its command (though Error can quote the guest's stderr, which
 // may echo it), and drops the user and password of a URL in Repo or Error.
-// Error and Output can quote the guest and name host paths.
+// Error can quote the guest and name host paths; Output, set on the host,
+// can name a host path.
 type TaskInfo struct {
 	ID           string    `json:"id"`
 	State        string    `json:"state"` // queued, starting, running, exporting, done, failed, cancelled, or lost (its supervisor died)
@@ -77,7 +78,11 @@ type TaskUsage struct {
 // default DefaultAuditLimit) and before (an AuditPage's Next: the page after
 // it). Pages walk the log as it was: an event written meanwhile with a time
 // at or before the cursor's can be missed (or, at its time, displace one),
-// and a rotation drops the oldest events.
+// and a rotation drops the oldest events. For a client without config:write
+// it leaves out the detail that names host secrets or hashes a file:
+// config.write's old_hash and new_hash, secret.set's and secret.unset's
+// name and replaced, creds.push's secrets and missing, and forge.add's
+// token_secret and password_secret.
 const PathAudit = Prefix + "/audit"
 
 const (

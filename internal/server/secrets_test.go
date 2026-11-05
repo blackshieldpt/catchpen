@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -13,6 +15,7 @@ import (
 	"github.com/blackshieldpt/catchpen/internal/audit"
 	"github.com/blackshieldpt/catchpen/internal/config"
 	"github.com/blackshieldpt/catchpen/internal/creds"
+	"github.com/blackshieldpt/catchpen/internal/forge"
 	"github.com/blackshieldpt/catchpen/internal/fsutil"
 	"github.com/blackshieldpt/catchpen/internal/template"
 	"github.com/blackshieldpt/catchpen/internal/vm"
@@ -269,6 +272,161 @@ func TestSecretsScope(t *testing.T) {
 		}
 		if err != nil || fmt.Sprint(got) != tc.want {
 			t.Errorf("audit: %v %v, want %s", got, err, tc.want)
+		}
+	}
+}
+
+// The host's secrets' names are told only to a config:write client: not to
+// another in the forges, a forge test's error or creds.push's and
+// forge.add's audit detail. A forge test's other errors are told to both.
+func TestSecretNamesScope(t *testing.T) {
+	h := home(t, nil)
+	write(t, h.p.SecretsFile(), "GH_061="+decoy+"\n")
+	const closed = "http://127.0.0.1:1" // nothing listens: the API check fails
+	h.forgesYAML(t,
+		forge.Forge{Name: "gh", Type: forge.Gitea, Host: "127.0.0.1", HTTPURL: closed, Auth: forge.Auth{Mode: forge.ModeToken, Token: "secret:GH_061"}},
+		forge.Forge{Name: "gone", Type: forge.Gitea, Host: "127.0.0.1", HTTPURL: closed, Auth: forge.Auth{Mode: forge.ModeToken, Token: "secret:GONE_061"}},
+		forge.Forge{Name: "cmd", Type: forge.Gitea, Host: "127.0.0.1", HTTPURL: closed,
+			Auth: forge.Auth{Mode: forge.ModeMintedToken, User: "bot", Password: "secret:CMD_PW", Scopes: []string{"write:repository"}}})
+	cfg := config.Default()
+	cfg.Secrets = map[string]creds.Source{"CMD_PW": {Command: []string{"false"}}} // its source fails
+	a := serveTCPManager(t, func() (*vm.Manager, error) {
+		return &vm.Manager{P: h.p, Cfg: cfg, Tpl: template.Loader{UserDir: h.p.Templates()}}, nil
+	})
+	ctx := context.Background()
+	laptop := a.client(t, apiclient.Options{Cert: &a.laptop}) // no scope
+	cockpit := a.client(t, apiclient.Options{HMAC: &apiclient.HMAC{Name: "cockpit", Key: a.key}})
+	if _, err := cockpit.AddForge(ctx, api.AddForgeRequest{Name: "b", Type: "gitea", Host: "b.test", Mode: "token", TokenSecret: "B_TOK"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := (audit.Log{Path: h.p.Audit()}).Record(audit.CredsPush, "alpha",
+		map[string]any{"secrets": []string{"GH_061"}, "missing": []string{"GONE_061"}, "ok": true}); err != nil {
+		t.Fatal(err)
+	}
+
+	names := func(c *apiclient.Client) string {
+		fs, err := c.Forges(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, f := range fs {
+			out = append(out, f.Name+" "+f.Mode+" "+f.TokenSecret+" "+f.PasswordSecret)
+		}
+		return strings.Join(out, ", ")
+	}
+	if got := names(laptop); got != "gh token  , gone token  , cmd minted-token  , b token  " {
+		t.Errorf("forges without the scope: %s", got)
+	}
+	if got := names(cockpit); got != "gh token GH_061 , gone token GONE_061 , cmd minted-token  CMD_PW, b token B_TOK " {
+		t.Errorf("forges with the scope: %s", got)
+	}
+
+	const withheld = "withheld: a secret this forge names is not found on the host or can't be read: naming it needs the config:write scope"
+	tested := func(c *apiclient.Client, name string) string {
+		r, err := c.TestForge(ctx, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.Error
+	}
+	for _, tc := range []struct{ forge, cockpit string }{
+		{"gone", "secret GONE_061 not found on the host"},
+		{"cmd", "secret CMD_PW: false: exit status 1"},
+	} {
+		if got := tested(laptop, tc.forge); got != withheld {
+			t.Errorf("test %s without the scope: %q", tc.forge, got)
+		}
+		if got := tested(cockpit, tc.forge); got != tc.cockpit {
+			t.Errorf("test %s with the scope: %q", tc.forge, got)
+		}
+	}
+	if l, c := tested(laptop, "gh"), tested(cockpit, "gh"); l == "" || l != c || strings.Contains(l, "withheld") {
+		t.Errorf("test gh, a forge's own error: %q without the scope, %q with it", l, c)
+	}
+
+	details := func(c *apiclient.Client) string {
+		page, err := c.Audit(ctx, apiclient.AuditQuery{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, e := range page.Events {
+			out = append(out, e.Event+" "+fmt.Sprint(e.Detail))
+		}
+		return strings.Join(out, "\n")
+	}
+	if got, want := details(laptop), "creds.push map[ok:true]\n"+
+		"forge.add map[client:cockpit forge:b host:b.test host_keys:[] mode:token ssh_port:22 type:gitea web_url:https://b.test]"; got != want {
+		t.Errorf("audit without the scope: %q", got)
+	}
+	if got, want := details(cockpit), "creds.push map[missing:[GONE_061] ok:true secrets:[GH_061]]\n"+
+		"forge.add map[client:cockpit forge:b host:b.test host_keys:[] mode:token password_secret: ssh_port:22 token_secret:B_TOK type:gitea web_url:https://b.test]"; got != want {
+		t.Errorf("audit with the scope: %q", got)
+	}
+}
+
+// A job's error and lines that name a host secret are told only to a
+// config:write reader, whichever client started the job.
+func TestJobSecretsScope(t *testing.T) {
+	h := home(t, nil)
+	h.forgesYAML(t, forge.Forge{Name: "gone", Type: forge.Gitea, Host: "127.0.0.1", HTTPURL: "http://127.0.0.1:1",
+		Auth: forge.Auth{Mode: forge.ModeToken, Token: "secret:GONE_061"}})
+	a := serveTCPManager(t, func() (*vm.Manager, error) {
+		return &vm.Manager{P: h.p, Cfg: config.Default(), Tpl: template.Loader{UserDir: h.p.Templates()}}, nil
+	})
+	reg, err := forge.Load(h.p.Forges())
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone, _ := reg.Get("gone")
+	named := vm.MissingSecrets + "GONE_061 (set them …)"
+	// Each job writes a line as push's and fails with a real *vm.SecretError,
+	// wrapped as provisionForges wraps it (TestSecretErrorsWrapped, in vm).
+	op := func(ctx context.Context, out io.Writer) error {
+		fmt.Fprintf(out, "creating\n%s\n", named)
+		_, err := (&vm.Manager{P: h.p, Cfg: config.Default()}).TestForge(ctx, gone)
+		return fmt.Errorf("forge gone: %w", err)
+	}
+	ctx := context.Background()
+	laptop := a.client(t, apiclient.Options{Cert: &a.laptop}) // no scope
+	cockpit := a.client(t, apiclient.Options{HMAC: &apiclient.HMAC{Name: "cockpit", Key: a.key}})
+	starters := []string{"cockpit", "laptop"}
+	var ids []string
+	for _, client := range starters {
+		i, err := a.srv.jobs.start(api.JobVMCreate, "alpha", client, nil, op)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := cockpit.WaitJob(ctx, i.ID, func(string) {}); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, i.ID)
+	}
+	for _, tc := range []struct {
+		c           *apiclient.Client
+		reader      string
+		error, line string
+	}{
+		{laptop, "laptop", "withheld: the job's error names a host secret: reading it needs the config:write scope",
+			"withheld: the line names host secrets: reading it needs the config:write scope"},
+		{cockpit, "cockpit", "forge gone: secret GONE_061 not found on the host", named},
+	} {
+		js, err := tc.c.Jobs(ctx)
+		if err != nil || len(js) != 2 || js[0].Error != tc.error || js[1].Error != tc.error {
+			t.Errorf("%s lists: %v", tc.reader, err)
+			for _, j := range js {
+				t.Errorf("%s lists %s's job: %v", tc.reader, j.Client, j.Error)
+			}
+		}
+		for k, id := range ids {
+			j, err := tc.c.Job(ctx, id, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if j.Error != tc.error || !reflect.DeepEqual(j.Lines, []string{"creating", tc.line}) {
+				t.Errorf("%s reads %s's job: %v %q %v", tc.reader, starters[k], j.Error, j.Lines, err)
+			}
 		}
 	}
 }

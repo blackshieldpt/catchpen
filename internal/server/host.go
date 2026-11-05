@@ -251,6 +251,16 @@ func (s *Server) audit(w http.ResponseWriter, r *http.Request) {
 			delete(d, "name")
 			delete(d, "replaced")
 		}
+		if e.Event == audit.CredsPush && !scoped(r, ScopeConfigWrite) {
+			// The names a VM's template found and missed, as secrets.env's.
+			delete(d, "secrets")
+			delete(d, "missing")
+		}
+		if e.Event == audit.ForgeAdd && !scoped(r, ScopeConfigWrite) {
+			// The secrets the forge names, as GET /v1/forges leaves them out.
+			delete(d, "token_secret")
+			delete(d, "password_secret")
+		}
 		page.Events = append(page.Events, api.AuditEvent{Time: e.Time, Event: e.Event, VM: e.VM, Detail: d})
 	}
 	if next != nil {

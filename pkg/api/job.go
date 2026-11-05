@@ -152,12 +152,18 @@ type VMLoss struct {
 }
 
 // PathJobs is GET: the jobs running and the last ones that ended, as
-// []JobInfo, newest first.
+// []JobInfo, newest first. For a client without config:write, an error that
+// names a host secret is a "withheld: ..." note instead (see PathJob).
 const PathJobs = Prefix + "/jobs"
 
 // PathJob is GET: one job, as a Job, with its progress lines from the
 // query's after (a count of lines; default 0) on. Its id is escaped as
 // PathVM's name is.
+//
+// Every client reads every job. For a client without config:write, an error
+// that names a host secret (a forge's, missing or unreadable, or one a
+// push can't read) and a line naming the secrets a push didn't find are a
+// "withheld: ..." note instead, whoever started the job.
 func PathJob(id string) string {
 	return PathJobs + "/" + strings.ReplaceAll(url.PathEscape(id), ".", "%2E")
 }
@@ -213,7 +219,7 @@ type JobInfo struct {
 	State   string    `json:"state"`  // JobRunning, JobDone or JobFailed
 	Created time.Time `json:"created"`
 	Ended   time.Time `json:"ended,omitzero"`
-	Error   string    `json:"error,omitempty"` // why it failed; can quote the guest and name host paths
+	Error   string    `json:"error,omitempty"` // why it failed; can quote the guest and name host paths; withheld from a client without config:write when it names a host secret
 	Written int       `json:"written"`         // progress lines written so far
 }
 
