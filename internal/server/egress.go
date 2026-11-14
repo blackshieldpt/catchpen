@@ -68,12 +68,13 @@ func (s *Server) egressVM(w http.ResponseWriter, r *http.Request) (*vm.Info, *vm
 const taskVMPrefix = "task-"
 
 // taskAllowed is whether the request's client may change the egress of,
-// open a forward on, start, stop, resume, restore, destroy, reset, rebase or
-// push to the VM named in the path, save or delete its snapshots, or pull a
-// branch or open a pull request from it: on a task's VM (any VM so named, one
-// made with the CLI too) an unattended agent a config:write client submitted
-// runs, so these need config:write, the scope that submits tasks. It looks at
-// the name alone, before the body or the VM, and answers a client it refuses.
+// open a forward on, open a terminal or console on, start, stop, resume,
+// restore, destroy, reset, rebase or push to the VM named in the path, save
+// or delete its snapshots, or pull a branch or open a pull request from it:
+// on a task's VM (any VM so named, one made with the CLI too) an unattended
+// agent a config:write client submitted runs, so these need config:write, the
+// scope that submits tasks. It looks at the name alone, before the body or
+// the VM, and answers a client it refuses.
 func taskAllowed(w http.ResponseWriter, r *http.Request) bool {
 	return !strings.HasPrefix(r.PathValue("name"), taskVMPrefix) || allowed(w, r, ScopeConfigWrite)
 }

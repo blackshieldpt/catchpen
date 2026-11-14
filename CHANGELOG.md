@@ -8,6 +8,15 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- The API streams a VM's terminal (`GET /v1/vms/<name>/terminal`, a WebSocket) and serial
+  console (`GET /v1/vms/<name>/console`): the terminal opens `ssh`, `run` or `attach` as the
+  CLI does, with `?kind=`, `?agent=`/`?arg=` and `?cols=`/`?rows=`, and is recorded and
+  audited as `web-ssh`, `web-run` or `web-attach` with the client's name. Both refuse a
+  paused VM, the terminal refuses a VM whose template sets `ssh.agent`, a `task-…` VM
+  needs `config:write`, and a console is one per VM and ends on a canary hit, whether it
+  paused the VM or was only logged. A stream whose `Origin` isn't the API's own is refused
+  (403), so a web page on another origin can't open one. `pkg/apiclient`'s `Terminal` and
+  `Console` drive them.
 - The API refuses a `POST` whose `Content-Type` isn't `application/json` (415
   `unsupported_media_type`; parameters such as `charset=utf-8` are allowed), with a body
   or without, from any client: a web page could otherwise have a browser that holds an

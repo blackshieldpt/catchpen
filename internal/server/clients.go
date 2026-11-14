@@ -31,7 +31,8 @@ const (
 // ScopeConfigWrite lets a client change config.yaml and templates, which can
 // run host commands, the forges, whose credentials are host secrets, and
 // secrets.env's secrets, and submit tasks, whose guests hold the template's
-// secrets, and change their VMs' egress, open forwards on them, start, stop,
+// secrets, and change their VMs' egress, open forwards on them, open a
+// terminal or console on them, start, stop,
 // resume, destroy, reset, rebase and push to them, save, restore and delete
 // their snapshots, and pull branches and open pull requests from them.
 const ScopeConfigWrite = "config:write"

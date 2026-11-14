@@ -1,7 +1,7 @@
 // Package apiclient is a Go client of the catchpen API (pkg/api), for the
 // web cockpit and other programs: over catchpen daemon's unix socket, or over
-// TCP with TLS as an enrolled client. It imports only pkg/api and the
-// standard library.
+// TCP with TLS as an enrolled client. It imports only pkg/api, the standard
+// library and the WebSocket module (for its streams).
 package apiclient
 
 import (

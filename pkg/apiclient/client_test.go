@@ -120,15 +120,25 @@ func (h headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return h.rt.RoundTrip(r)
 }
 
-// The client links nothing of catchpen's but pkg/api.
-func TestImportsOnlyAPIAndStandardLibrary(t *testing.T) {
+// The client links nothing of catchpen's but pkg/api, plus the WebSocket
+// module it streams terminals and consoles over.
+func TestImportsOnlyAPIWebSocketAndStandardLibrary(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps", "-f", "{{if not .Standard}}{{.ImportPath}}{{end}}", ".").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := strings.Fields(string(out))
-	want := []string{"github.com/blackshieldpt/catchpen/pkg/api", "github.com/blackshieldpt/catchpen/pkg/apiclient"}
-	if strings.Join(got, " ") != strings.Join(want, " ") {
-		t.Errorf("dependencies %v, want %v", got, want)
+	var extra []string
+	for _, p := range strings.Fields(string(out)) {
+		switch {
+		case p == "github.com/blackshieldpt/catchpen/pkg/api",
+			p == "github.com/blackshieldpt/catchpen/pkg/apiclient",
+			p == "github.com/coder/websocket",
+			strings.HasPrefix(p, "github.com/coder/websocket/"):
+		default:
+			extra = append(extra, p)
+		}
+	}
+	if len(extra) > 0 {
+		t.Errorf("dependencies outside pkg/api and the WebSocket module: %v", extra)
 	}
 }

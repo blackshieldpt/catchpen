@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -31,6 +32,11 @@ type Server struct {
 	hmac    *api.Verifier
 	jobs    *jobs
 
+	// consoles are the VMs with a console stream open: QEMU serves one
+	// console client at a time.
+	consoleMu sync.Mutex
+	consoles  map[string]struct{}
+
 	// Manager builds the Manager each request uses (nil: the VM endpoints
 	// answer internal). It must build a new one each call: a job sets its
 	// Out and Client.
@@ -42,7 +48,7 @@ type Server struct {
 // New returns the API of catchpen at version, for this process's user over
 // the unix socket and for the clients in the clients file over TCP.
 func New(version, clients string) *Server {
-	s := &Server{version: version, uid: os.Getuid(), clients: clients, jobs: newJobs()}
+	s := &Server{version: version, uid: os.Getuid(), clients: clients, jobs: newJobs(), consoles: map[string]struct{}{}}
 	s.hmac = api.NewVerifier(s.hmacKey)
 	return s
 }
@@ -60,6 +66,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathVMs, s.vms)
 	mux.HandleFunc("GET "+api.PathVMs+"/{name}", s.vm)
 	mux.HandleFunc("GET "+api.PathVMs+"/{name}/snapshots", s.snapshots)
+	mux.HandleFunc("GET "+api.PathVMs+"/{name}/terminal", s.terminal)
+	mux.HandleFunc("GET "+api.PathVMs+"/{name}/console", s.console)
 	mux.HandleFunc("GET "+api.PathTemplates, s.templates)
 	mux.HandleFunc("GET "+api.PathTasks, s.tasks)
 	mux.HandleFunc("GET "+api.PathTasks+"/{id}", s.task)

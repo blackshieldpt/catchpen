@@ -20,6 +20,37 @@ func TestCheckSize(t *testing.T) {
 	}
 }
 
+func TestStreamPathsAndKinds(t *testing.T) {
+	if got := PathVMTerminal("a"); got != "/v1/vms/a/terminal" {
+		t.Errorf("PathVMTerminal = %q", got)
+	}
+	if got := PathVMConsole("a"); got != "/v1/vms/a/console" {
+		t.Errorf("PathVMConsole = %q", got)
+	}
+	queries := []string{QueryKind, QueryAgent, QueryArg, QueryCols, QueryRows}
+	seen := map[string]bool{}
+	for _, q := range queries {
+		if q == "" || seen[q] {
+			t.Errorf("query name %q is empty or repeated", q)
+		}
+		seen[q] = true
+	}
+	kinds := []string{TerminalSSH, TerminalRun, TerminalAttach}
+	seen = map[string]bool{}
+	for _, k := range kinds {
+		if k == "" || seen[k] {
+			t.Errorf("terminal kind %q is empty or repeated", k)
+		}
+		seen[k] = true
+	}
+	if TerminalTerm == "" {
+		t.Error("TerminalTerm is empty")
+	}
+	if MaxStreamMessage < 64<<10 {
+		t.Errorf("MaxStreamMessage = %d, want at least 64 KiB", MaxStreamMessage)
+	}
+}
+
 // An exit status of 0 is sent, not left out.
 func TestFrameJSON(t *testing.T) {
 	zero := 0

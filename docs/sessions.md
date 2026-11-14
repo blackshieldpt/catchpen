@@ -24,6 +24,19 @@ Remote-SSH, for example) work directly. Those connections aren't recorded; `catc
 `run` and `attach` are. They also read your own ssh config: `catchpen setup-ssh` warns
 about settings of yours that reach the VM's sshd (see [security-model.md](security-model.md)).
 
+## Over the API
+
+`GET /v1/vms/<name>/terminal` is a WebSocket that opens `ssh`, `run` or `attach` as the
+CLI does: `?kind=` picks one (`ssh` by default), `?agent=` and repeated `?arg=` go with
+`kind=run`, and `?cols=` and `?rows=` (together) set the size. A session is recorded and
+audited as `web-ssh`, `web-run` or `web-attach`, with the client's name. `GET
+/v1/vms/<name>/console` streams the serial console, filtered as `catchpen console`
+filters it, one stream per VM. Both refuse a paused VM. The terminal also refuses a VM
+whose template sets `ssh.agent` (it would carry your keys), and a `task-…` VM needs a
+client enrolled with `--scope config:write`. A canary hit ends an open console stream,
+whether it paused the VM or was only logged (`canary_action: log`). `pkg/apiclient`'s
+`Terminal` and `Console` drive both.
+
 ## Host tmux
 
 `catchpen tmux [<vm>...]` opens a host tmux session `catchpen` with a window per running VM,
