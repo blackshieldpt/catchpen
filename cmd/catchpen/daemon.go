@@ -23,12 +23,14 @@ func daemonCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			v, _, _ := versionInfo()
+			srv := server.New(v, paths.Default().Clients())
 			d := &daemon.Daemon{
 				Manager: manager,
 				Prompts: func(ctx context.Context, m *vm.Manager, dirs map[string]string) error {
-					return egress.Watch(ctx, dirs, m.PromptDecider(egress.DesktopDecider()))
+					// API clients first; with none eligible, the desktop.
+					return egress.Watch(ctx, dirs, srv.PromptDecider(m.PromptDecider(egress.DesktopDecider())))
 				},
-				API: server.New(v, paths.Default().Clients()),
+				API: srv,
 				Log: os.Stderr,
 			}
 			return d.Run(cmd.Context())

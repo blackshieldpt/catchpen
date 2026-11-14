@@ -8,6 +8,12 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- The API answers egress prompts (`GET /v1/egress/prompts`, a WebSocket): a connected client
+  is sent each prompt and answers `allow-once`, `allow-always`, `deny` or `deny-always`, the
+  first answer deciding. Each answer is audited as `egress.prompt` with the client's name,
+  answering a `task-…` VM's prompt needs `config:write`, and with no client that may answer
+  the daemon's desktop notifications are used as before. `pkg/apiclient`'s `Prompts` drives
+  it.
 - The API streams a VM's terminal (`GET /v1/vms/<name>/terminal`, a WebSocket) and serial
   console (`GET /v1/vms/<name>/console`): the terminal opens `ssh`, `run` or `attach` as the
   CLI does, with `?kind=`, `?agent=`/`?arg=` and `?cols=`/`?rows=`, and is recorded and

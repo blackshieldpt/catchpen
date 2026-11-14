@@ -31,6 +31,7 @@ type Server struct {
 	clients string // the clients file: who may connect over TCP
 	hmac    *api.Verifier
 	jobs    *jobs
+	prompts *prompts
 
 	// consoles are the VMs with a console stream open: QEMU serves one
 	// console client at a time.
@@ -48,7 +49,7 @@ type Server struct {
 // New returns the API of catchpen at version, for this process's user over
 // the unix socket and for the clients in the clients file over TCP.
 func New(version, clients string) *Server {
-	s := &Server{version: version, uid: os.Getuid(), clients: clients, jobs: newJobs(), consoles: map[string]struct{}{}}
+	s := &Server{version: version, uid: os.Getuid(), clients: clients, jobs: newJobs(), prompts: newPrompts(), consoles: map[string]struct{}{}}
 	s.hmac = api.NewVerifier(s.hmacKey)
 	return s
 }
@@ -107,6 +108,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/egress/"+api.EgressDeny, s.editEgress(egress.DenylistFile, true))
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/egress/"+api.EgressUndeny, s.editEgress(egress.DenylistFile, false))
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/egress/config", s.setEgressConfig)
+	mux.HandleFunc("GET "+api.PathEgressPrompts, s.egressPrompts)
 	mux.HandleFunc("GET "+api.PathVMs+"/{name}/forwards", s.forwards)
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/forwards", s.openForward)
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/forwards/stop", s.stopForwards)

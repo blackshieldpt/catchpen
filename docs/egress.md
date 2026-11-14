@@ -109,6 +109,22 @@ Prompts for requests that already timed out are dropped, and each VM can have at
 distinct destinations waiting (more are denied), so a guest can't bury you in prompts.
 Answered prompts go to the audit log; timeouts are only in the VM's egress log.
 
+### Prompts over the API
+
+A client on `GET /v1/egress/prompts` (a WebSocket; `pkg/apiclient`'s `Prompts` drives
+it) is sent every prompt asked while it is connected, and those already pending when it
+connects. It answers with `allow-once`, `allow-always`, `deny` or `deny-always`; the first
+answer decides, and every client is told the prompt is done. Each answer is audited as
+`egress.prompt` with the client's name. Answering a `task-…` VM's prompt needs
+`--scope config:write` (a client on the unix socket has every scope). With no client that
+may answer connected, the daemon asks through desktop notifications as before, so a
+scope-less client alone does not suppress them. A connected client that idles does: its
+prompts wait out `prompt_timeout` and are denied, so a cockpit should keep the stream open
+only while someone can answer. Prompts are streamed only for the VMs the daemon's own
+watcher serves; one a `catchpen egress watch` serves is the CLI's. `allow-always` and
+`deny-always` still change the VM's lists, and the audit records the decision, not whether
+that edit succeeded.
+
 ## Logs
 
 `vms/<name>/egress.log` records every request the proxy allows or blocks by policy, plus
