@@ -109,6 +109,9 @@ func (s *Server) pushVM(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createSnapshot(w http.ResponseWriter, r *http.Request) {
+	if !taskAllowed(w, r) { // each save is one more snapshot a kept hit's destroy must confirm
+		return
+	}
 	var req api.CreateSnapshotRequest
 	if !decode(w, r, &req) {
 		return

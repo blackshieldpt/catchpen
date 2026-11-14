@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -105,8 +106,23 @@ func taskHeld(w http.ResponseWriter, m *vm.Manager, t *task.Task) bool {
 	if (!task.Final(t.State) && t.Alive()) || (!m.Paused(t.VM) && !m.Hit(t.VM)) {
 		return false
 	}
-	writeError(w, api.CodeConflict, "a canary hit "+t.VM+": destroy it first with POST "+api.PathVMDestroy(t.VM)+", which confirms the hit")
+	writeError(w, api.CodeConflict, heldMessage(t.VM))
 	return true
+}
+
+// heldMessage refuses a task whose VM (name) a canary hit, with the way on:
+// destroying a task's VM needs config:write, which cancel and delete don't.
+func heldMessage(name string) string {
+	return "a canary hit " + name + ": destroy it first with POST " + api.PathVMDestroy(name) + " (needs config:write), which confirms the hit"
+}
+
+// unlessHeld is a cancel or delete job's error: a hit after taskHeld looked
+// (vm.ErrHit) is told as taskHeld tells it, not with the CLI's way on.
+func unlessHeld(t *task.Task, err error) error {
+	if errors.Is(err, vm.ErrHit) {
+		return errors.New(heldMessage(t.VM))
+	}
+	return err
 }
 
 func (s *Server) cancelTask(w http.ResponseWriter, r *http.Request) {
@@ -125,7 +141,7 @@ func (s *Server) cancelTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.startJob(w, r, m, api.JobTaskCancel, t.VM, func(ctx context.Context, m *vm.Manager) error {
-		return (&runner.Runner{M: m}).Cancel(t.ID)
+		return unlessHeld(t, (&runner.Runner{M: m}).Cancel(t.ID))
 	})
 }
 
@@ -145,7 +161,7 @@ func (s *Server) deleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.startJob(w, r, m, api.JobTaskDelete, t.VM, func(ctx context.Context, m *vm.Manager) error {
-		return (&runner.Runner{M: m}).Remove(t.ID)
+		return unlessHeld(t, (&runner.Runner{M: m}).Remove(t.ID))
 	})
 }
 

@@ -50,7 +50,9 @@ before 0.1.0 describe work on `master` before the first tagged release.
   (403 otherwise): a task's guest holds the template's secrets. A task's `into` is an
   absolute, clean path, needed for `--out pr` and `bundle`; a repo with any of
   `@ ? # %` and a template whose `ssh.agent` isn't `off` are refused. Cancel and delete
-  refuse a lost task whose VM a canary hit paused or whose decoys were used.
+  refuse (409) a lost task whose VM a canary hit paused or whose decoys were used, and
+  delete refuses an ended task whose VM a canary hit, while that VM exists: destroying
+  that VM (`POST /v1/vms/task-<id>/destroy`) needs `config:write`.
   `GET /v1/tasks` and `/v1/tasks/<id>` withhold a task's error from a client without
   `config:write`: it can quote the task's guest, which holds the template's secrets.
 - `catchpen task cancel` and `task rm` are recorded in the audit log (`task.cancel`,
@@ -94,8 +96,8 @@ before 0.1.0 describe work on `master` before the first tagged release.
   snapshots, `"confirm": true` and those snapshots (else 428, or 409 when they changed).
   Restore and snapshot delete need `"confirm": true`, which the CLI doesn't ask, and a
   restore the VM's canary hit (`canary_hit`, as `GET /v1/vms/<name>` tells; 409 when
-  it differs); a snapshot needs a name. On a task's VM (named `task-…`), all but a
-  snapshot's save need a client with `config:write` (403 otherwise; the `GET`s don't).
+  it differs); a snapshot needs a name. On a task's VM (named `task-…`), all six need a
+  client with `config:write` (403 otherwise; the `GET`s don't).
   Once the VM and snapshot are found, all six are refused (409) on a VM a canary hit
   paused; reset, rebase and restore, which can start the VM, and push, which can clone
   through its SSH agent, on one with an SSH agent (`ssh.agent` other than `off`).
@@ -182,13 +184,13 @@ before 0.1.0 describe work on `master` before the first tagged release.
   as the hit left it, or else stopped) and the task as it was:
   `task <id>: task-<id>: its canaries were found in use: kept, with the task; destroy the
   VM first (catchpen destroy task-<id>)`. Over the API, cancel and delete already
-  refused such a task (409); a hit after that check now fails their job with that error
-  instead of losing the VM. `task rm` and `POST /v1/tasks/<id>/delete` of an ended task
-  whose VM a canary hit (kept by its supervisor) deleted the task's directory, its
-  prompt, output and `supervisor.log` included; both now refuse while that VM exists,
-  with the same error (the API with 409, `a canary hit task-<id>: destroy it first with
-  POST /v1/vms/task-<id>/destroy, which confirms the hit`, which is now also its message
-  for a lost task).
+  refused such a task (409); a hit after that check now fails their job instead of
+  losing the VM, with the 409's message. `task rm` and `POST /v1/tasks/<id>/delete` of
+  an ended task whose VM a canary hit (kept by its supervisor) deleted the task's
+  directory, its prompt, output and `supervisor.log` included; both now refuse while
+  that VM exists, with the same error (the API with 409, `a canary hit task-<id>: destroy
+  it first with POST /v1/vms/task-<id>/destroy (needs config:write), which confirms the
+  hit`, which is now also its message for a lost task).
 - `catchpen egress allow`, `unallow`, `deny` and `undeny`, and answered egress prompts,
   warn when the audit log can't be written, as other commands do; they went on silently.
 - `catchpen reset`, `catchpen rebase` and a restore that stops a running VM (a disk-only

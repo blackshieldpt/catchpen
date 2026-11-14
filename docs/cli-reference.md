@@ -304,7 +304,7 @@ a removed client's next request. Enrolments go in `clients.yaml` in the config d
 - `--scope config:write` lets the client scan, add and remove forges (their credentials
   are host secrets), submit tasks (their guests hold the template's secrets) and, on a
   task's VM, change its egress, open forwards, start, stop, resume, destroy, reset,
-  rebase and push credentials to it, restore and delete its snapshots, and pull branches
+  rebase and push credentials to it, save, restore and delete its snapshots, and pull branches
   and open pull requests from it, and read
   and write `config.yaml` and the template category files, show templates, and list,
   set and unset the secrets in `secrets.env` (never returning a value) through the API,

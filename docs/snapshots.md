@@ -68,7 +68,7 @@ these runs as a job:
 
 | Call | As | Needs |
 |---|---|---|
-| `POST /v1/vms/<name>/snapshots` | `snapshot` | `{"name": …}` (no default name); `"disk_only": true` for `--disk-only` |
+| `POST /v1/vms/<name>/snapshots` | `snapshot` | `{"name": …}` (no default name); `"disk_only": true` for `--disk-only`; on a task's VM, a client with `config:write` |
 | `POST /v1/vms/<name>/snapshots/<snap>/restore` | `restore` | `"confirm": true`, with the `canary_hit` that `GET /v1/vms/<name>` tells; `"disk_only": true` for `--disk-only`; on a task's VM, a client with `config:write` |
 | `POST /v1/vms/<name>/snapshots/<snap>/delete` | `rmsnap` | `"confirm": true`; on a task's VM, a client with `config:write` |
 | `POST /v1/vms/<name>/reset` | `reset` | `"confirm": true`, with the `snapshots` and `canary_hit` that `GET` on the same path tells; `"latest": true` for `--latest`; on a task's VM, a client with `config:write` |
@@ -83,16 +83,17 @@ first (to keep a paused VM's memory and disk as evidence, use `catchpen snapshot
 Reset, rebase and restore can start the VM, and push can clone a repo again through the
 VM's SSH agent, so they are refused on a VM with `ssh.agent` other than `off`, which
 loads or forwards your SSH keys: use the CLI there. On a task's VM (any VM named
-`task-…`), all but saving a snapshot need a client enrolled with `--scope config:write`,
-the scope that submits tasks (403 otherwise, whether or not the VM or snapshot exists; a
-client on the unix socket has every scope): a memory snapshot's restore runs the
-unattended agent's guest again, a reset or rebase stops and starts a running one, a push
-sends the template's secrets into it, a reset wipes its disk, and a reset, rebase or
-snapshot delete deletes its snapshots: evidence of a canary hit, which catchpen keeps
-after the task ends. Saving a snapshot
-needs no scope: it neither stops nor starts the VM (a memory snapshot pauses it while it
-is written), and only a restore runs what it saved. `GET` on the reset and rebase paths
-needs no scope either.
+`task-…`), all six need a client enrolled with `--scope config:write`, the scope that
+submits tasks (403 otherwise, whether or not the VM or snapshot exists; a client on the
+unix socket has every scope): a memory snapshot's restore runs the unattended agent's
+guest again, a reset or rebase stops and starts a running one, a push sends the
+template's secrets into it, a reset wipes its disk, and a reset, rebase or snapshot
+delete deletes its snapshots: evidence of a canary hit, which catchpen keeps after the
+task ends. A save on a task's VM adds one more snapshot that destroying the VM must then
+confirm, which could keep a kept VM's destroy failing. On other VMs any client can save
+snapshots, and no VM has a limit on how many, so saves can fill the host's disk. `GET` on
+the reset and rebase paths, and the snapshot list (`GET /v1/vms/<name>/snapshots`), need
+no scope.
 
 ## Garbage collection
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/blackshieldpt/catchpen/internal/audit"
 	"github.com/blackshieldpt/catchpen/internal/config"
+	"github.com/blackshieldpt/catchpen/internal/fsutil"
 	"github.com/blackshieldpt/catchpen/internal/task"
 	"github.com/blackshieldpt/catchpen/internal/template"
 	"github.com/blackshieldpt/catchpen/internal/vm"
@@ -185,7 +186,7 @@ func heldVM(t *testing.T, h *vmHost, name, file string) {
 }
 
 // Cancelling signals a task's supervisor, or reaps a task whose supervisor
-// died; either is audited. One ended, or holding a hit VM, is refused.
+// died; either is audited. One ended, or lost with a hit VM, is refused.
 func TestCancelTask(t *testing.T) {
 	h, log := supervisor(t)
 	c := h.client(t)
@@ -237,7 +238,7 @@ func TestCancelTask(t *testing.T) {
 	var e *api.Error
 	for id, want := range map[string]string{
 		"bbbbbbb2": "task bbbbbbb2 is already done",
-		"ccccccc3": "a canary hit task-ccccccc3: destroy it first with POST /v1/vms/task-ccccccc3/destroy, which confirms the hit",
+		"ccccccc3": "a canary hit task-ccccccc3: destroy it first with POST /v1/vms/task-ccccccc3/destroy (needs config:write), which confirms the hit",
 		"ddddddd4": "a canary hit task-ddddddd4: destroy it first",
 	} {
 		if _, err := c.CancelTask(ctx, id); !errors.As(err, &e) || e.Code != api.CodeConflict || !strings.HasPrefix(e.Message, want) {
@@ -297,15 +298,15 @@ func TestDeleteTask(t *testing.T) {
 	var e *api.Error
 	for id, want := range map[string]string{
 		tk.ID:      "task " + tk.ID + " is queued: cancel it first",
-		"ccccccc3": "a canary hit task-ccccccc3: destroy it first",
+		"ccccccc3": "a canary hit task-ccccccc3: destroy it first with POST /v1/vms/task-ccccccc3/destroy (needs config:write), which confirms the hit",
 		"ddddddd4": "a canary hit task-ddddddd4: destroy it first",
 	} {
 		if _, err := c.DeleteTask(ctx, id); !errors.As(err, &e) || e.Code != api.CodeConflict || !strings.HasPrefix(e.Message, want) {
 			t.Errorf("%s: %v", id, err)
 		}
 	}
-	if _, err := os.Stat(h.p.VM("task-ccccccc3")); err != nil {
-		t.Errorf("an ended task's hit VM: %v", err)
+	if js, err := c.Jobs(ctx); err != nil || len(js) != 2 { // aaaaaaa1's and bbbbbbb2's
+		t.Errorf("jobs after the refusals: %+v %v", js, err)
 	}
 	if _, err := c.DeleteTask(ctx, "eeeeeee5"); code(err) != api.CodeNotFound {
 		t.Errorf("no such task: %v", err)
@@ -315,6 +316,51 @@ func TestDeleteTask(t *testing.T) {
 	}
 	if ts, err := st.List(); err != nil || len(ts) != 3 {
 		t.Errorf("left: %+v %v", ts, err)
+	}
+}
+
+// A canary hit after cancel's or delete's check fails the job, keeping a lost
+// task's VM and its record, and the job's error says what the 409 says: not
+// the CLI's catchpen destroy. The test holds the VM's lock, which the job's
+// destroy waits for, until the hit is written.
+func TestTaskHitAfterCheck(t *testing.T) {
+	h, _ := supervisor(t)
+	c := h.client(t)
+	ctx := context.Background()
+	wait := waiter(t, c)
+	for _, tc := range []struct {
+		id   string
+		call func(string) (*api.JobInfo, error)
+	}{
+		{"aaaaaaa1", func(id string) (*api.JobInfo, error) { return c.CancelTask(ctx, id) }},
+		{"bbbbbbb2", func(id string) (*api.JobInfo, error) { return c.DeleteTask(ctx, id) }},
+	} {
+		name := "task-" + tc.id
+		h.task(t, task.Task{ID: tc.id, State: task.Running, VM: name, Created: created, PID: 1 << 30})
+		h.writeVM(t, vm.State{Name: name, Template: "base", Created: created})
+		unlock, err := fsutil.Lock(filepath.Join(h.p.VM(name), ".lock"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		j, err := tc.call(tc.id) // no hit yet: the job starts
+		write(t, filepath.Join(h.p.VM(name), "canary-hit.json"), "{}")
+		unlock()
+		want := "a canary hit " + name + ": destroy it first with POST /v1/vms/" + name + "/destroy (needs config:write), which confirms the hit"
+		if end, _ := wait(j, err); end.State != api.JobFailed || end.Error != want {
+			t.Errorf("%s: %s %s", tc.id, end.State, end.Error)
+		}
+		if _, err := os.Stat(h.p.VM(name)); err != nil {
+			t.Errorf("%s: the VM: %v", tc.id, err)
+		}
+		if got, err := (task.Store{Dir: h.p.Tasks()}).Load(tc.id); err != nil || got.State != task.Running {
+			t.Errorf("%s: the task: %+v %v", tc.id, got, err)
+		}
+	}
+	// Another error is the job's as it was: a VM name destroy refuses.
+	h.task(t, task.Task{ID: "ccccccc3", State: task.Running, VM: "task-CCC", Created: created, PID: 1 << 30})
+	h.writeVM(t, vm.State{Name: "task-CCC", Template: "base", Created: created})
+	if end, _ := wait(c.CancelTask(ctx, "ccccccc3")); end.State != api.JobFailed || !strings.HasPrefix(end.Error, `invalid VM name "task-CCC"`) {
+		t.Errorf("another error: %s %s", end.State, end.Error)
 	}
 }
 

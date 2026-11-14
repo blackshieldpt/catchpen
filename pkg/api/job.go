@@ -38,8 +38,7 @@ func PathVMResume(name string) string { return PathVM(name) + "/resume" }
 // CodeVMPaused on a VM a canary hit paused; reset, rebase and restore, which
 // can start the VM, and push, which can clone through its SSH agent, with
 // CodeConflict on a VM with an SSH agent (ssh.agent other than off). On a
-// task's VM, all but a snapshot's save first need config:write
-// (CodeForbidden).
+// task's VM, all first need config:write (CodeForbidden).
 
 // PathVMReset is GET: the VMLoss resetting the VM would cause. It is also
 // POST, with a ResetVMRequest: give the VM a fresh disk and run first boot

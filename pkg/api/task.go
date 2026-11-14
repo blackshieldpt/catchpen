@@ -22,9 +22,10 @@ func PathTaskCancel(id string) string { return PathTask(id) + "/cancel" }
 // its supervisor gone) whose VM a canary hit paused, or whose decoys were
 // used: either call would destroy that VM. So is delete on an ended task
 // whose VM a canary hit, while that VM exists: its record goes with the
-// evidence. Destroy the VM first with PathVMDestroy, which confirms the hit.
-// A hit after that check fails the job instead: a lost task's VM is kept
-// (stopped, unless the hit paused it) and its record left as it was.
+// evidence. Destroy the VM first with PathVMDestroy, which confirms the hit
+// and needs config:write (cancel and delete need no scope). A hit after that
+// check fails the job instead, with the same message: a lost task's VM is
+// kept (stopped, unless the hit paused it) and its record left as it was.
 func PathTaskDelete(id string) string { return PathTask(id) + "/delete" }
 
 // PathTemplateBuild is POST, with a BuildTemplateRequest: build a

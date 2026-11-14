@@ -20,7 +20,8 @@ func PathVM(name string) string {
 // PathSnapshots is GET: a VM's snapshots, as []SnapshotInfo, oldest first.
 // It is also POST, with a CreateSnapshotRequest: save a snapshot, as catchpen
 // snapshot does (with its memory, of a running VM, unless DiskOnly), as a
-// job; a name the VM has is refused with CodeConflict.
+// job; a name the VM has is refused with CodeConflict. On a task's VM the
+// POST needs config:write, as PathVMResume does; the GET doesn't.
 func PathSnapshots(name string) string { return PathVM(name) + "/snapshots" }
 
 // A VM's state.

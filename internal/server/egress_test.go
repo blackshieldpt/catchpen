@@ -368,13 +368,13 @@ func TestEgressOverTCP(t *testing.T) {
 
 // Over TCP, a task's VM (task-<id>) has its egress changed, a forward
 // opened, or is started, stopped, resumed, restored, destroyed, reset,
-// rebased or pushed to, a snapshot deleted, or a branch pulled or a pull
-// request opened from it, only by a client with config:write, the scope that
-// submits tasks; one without is refused before the VM is looked up or the
-// body checked. The name decides: task-hand, made with the CLI for no task,
-// is one too. Its egress, forwards and what destroying, resetting or
-// rebasing it loses are read, its forwards stopped and a snapshot of it saved
-// by any client, and other VMs' egress changed by any.
+// rebased or pushed to, a snapshot saved or deleted, or a branch pulled or a
+// pull request opened from it, only by a client with config:write, the scope
+// that submits tasks; one without is refused before the VM is looked up or
+// the body checked. The name decides: task-hand, made with the CLI for no
+// task, is one too. Its egress, forwards and what destroying, resetting or
+// rebasing it loses are read, and its forwards stopped, by any client, and
+// other VMs' egress changed and snapshots saved by any.
 func TestTaskVMScope(t *testing.T) {
 	h := egressHost(t)
 	// A reset let through fails at once: its base isn't there.
@@ -418,6 +418,8 @@ func TestTaskVMScope(t *testing.T) {
 			{"pull no into", second(laptop.PullVM(ctx, name, api.PullVMRequest{}))},
 			{"pr", second(laptop.PRVM(ctx, name, api.PRVMRequest{PullVMRequest: api.PullVMRequest{Into: into}}))},
 			{"pr no into", second(laptop.PRVM(ctx, name, api.PRVMRequest{}))},
+			{"snapshot", second(laptop.CreateSnapshot(ctx, name, api.CreateSnapshotRequest{Name: "s2"}))},
+			{"snapshot no name", second(laptop.CreateSnapshot(ctx, name, api.CreateSnapshotRequest{}))},
 		} {
 			refused(t, name+" "+tc.what, tc.err, api.CodeForbidden, msg)
 		}
@@ -440,9 +442,6 @@ func TestTaskVMScope(t *testing.T) {
 	if l, err := laptop.RebaseLoss(ctx, "task-a1"); err != nil || fmt.Sprint(l.Snapshots) != "[s1]" {
 		t.Errorf("rebase loss: %+v %v", l, err)
 	}
-	// A save neither stops nor starts the VM, and only a restore runs it.
-	refused(t, "snapshot", second(laptop.CreateSnapshot(ctx, "task-a1", api.CreateSnapshotRequest{Name: "s1"})),
-		api.CodeConflict, "the VM has a snapshot of that name")
 	if e, err := laptop.EditEgress(ctx, "alpha", api.EgressAllow, []string{"pypi.org"}); err != nil || fmt.Sprint(e.Allow) != "[pypi.org]" {
 		t.Errorf("alpha: %+v %v", e, err)
 	}
@@ -456,6 +455,8 @@ func TestTaskVMScope(t *testing.T) {
 		api.CodeConfirmRequired, "rebasing alpha deletes its snapshots (s1)")
 	refused(t, "alpha delete snapshot", second(laptop.DeleteSnapshot(ctx, "alpha", "s1", api.DeleteSnapshotRequest{})),
 		api.CodeConfirmRequired, "deleting alpha's snapshot s1 can't be undone")
+	refused(t, "alpha snapshot", second(laptop.CreateSnapshot(ctx, "alpha", api.CreateSnapshotRequest{Name: "s1"})),
+		api.CodeConflict, "the VM has a snapshot of that name")
 	wait := waiter(t, laptop)
 	for _, tc := range []struct {
 		what, kind string
@@ -497,6 +498,8 @@ func TestTaskVMScope(t *testing.T) {
 	refused(t, "push with the scope", second(cockpit.PushCreds(ctx, "task-nope")), api.CodeNotFound, "no such VM")
 	refused(t, "delete snapshot with the scope", second(cockpit.DeleteSnapshot(ctx, "task-a1", "s1", api.DeleteSnapshotRequest{})),
 		api.CodeConfirmRequired, "deleting task-a1's snapshot s1 can't be undone")
+	refused(t, "snapshot with the scope", second(cockpit.CreateSnapshot(ctx, "task-a1", api.CreateSnapshotRequest{Name: "s1"})),
+		api.CodeConflict, "the VM has a snapshot of that name")
 	refused(t, "pull with the scope", second(cockpit.PullVM(ctx, "task-nope", api.PullVMRequest{Into: into})), api.CodeNotFound, "no such VM")
 	refused(t, "pr with the scope", second(cockpit.PRVM(ctx, "task-nope", api.PRVMRequest{PullVMRequest: api.PullVMRequest{Into: into}})),
 		api.CodeNotFound, "no such VM")

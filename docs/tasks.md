@@ -150,21 +150,23 @@ keys. A cancel of a task that ended, and a delete of one whose supervisor runs, 
 refused (409); so are both on a lost task (its supervisor gone) whose VM a canary hit
 paused or whose decoys were used, which they would destroy, and a delete of an ended task
 whose VM a canary hit, while that VM exists: destroy that VM first with its own call,
-which confirms the hit. A hit after that check fails their job instead, keeping
-a lost task's VM and its record, as `task cancel` and `task rm` do. Neither asks for `confirm`, as
+which confirms the hit and needs `config:write`, as the 409 says. A hit after that check
+fails their job instead with the same message, keeping a lost task's VM and its record
+(as `task cancel` and `task rm` do). Neither asks for `confirm`, as
 the CLI doesn't, and a cancel destroys commits the task hasn't exported. Their audit
 events carry `client`.
 On a task's VM (any VM named `task-…`), changing its egress or opening a forward (see
 [egress.md](egress.md#over-the-api) and [forges.md](forges.md#port-forwards)),
 starting, stopping (with `force` or not), resuming or destroying it (see the `server`
 row in [configuration.md](configuration.md)), resetting, rebasing or pushing
-credentials to it, restoring or deleting a snapshot (see
+credentials to it, saving, restoring or deleting a snapshot (see
 [snapshots.md](snapshots.md#over-the-api)), and pulling a branch from it or opening a
 pull request (see [forges.md](forges.md#over-the-api)) need `config:write` too (403
 otherwise; a client on the unix socket has every scope): with them a client could wipe
-what a canary hit left in its VM, bring its commits onto the host, or let the unattended
-agent a `config:write` client submitted reach further, run on or stop. Reading the VM, its egress and
-forwards, stopping its forwards, saving a snapshot and `GET /v1/vms/<name>/destroy`,
+what a canary hit left in its VM, add snapshots that its destroy must confirm, bring its
+commits onto the host, or let the unattended
+agent a `config:write` client submitted reach further, run on or stop. Reading the VM, its egress,
+forwards and snapshots, stopping its forwards, and `GET /v1/vms/<name>/destroy`,
 `/reset` and `/rebase` need no scope. The API creates no VM whose name starts with
 `task-`, for any client (400, on the unix socket too), so none can take a queued task's
 VM name; the CLI still can.
