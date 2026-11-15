@@ -28,6 +28,29 @@ func PathTaskCancel(id string) string { return PathTask(id) + "/cancel" }
 // kept (stopped, unless the hit paused it) and its record left as it was.
 func PathTaskDelete(id string) string { return PathTask(id) + "/delete" }
 
+// PathTaskOutput is GET: a task's output, one JSON TaskOutputLine per line
+// (ContentTypeNDJSON), from ?after= (a line's N; default 0) on, at most
+// ?limit= lines (default 1000, 0 for no limit, at most MaxTaskOutputLines),
+// and with ?follow=true on as the task writes it, until the task ends. It
+// needs config:write: the output quotes the guest, which holds the template's
+// secrets. A line that carries one of the task VM's decoys is withheld from
+// there on, and the hit is acted on.
+func PathTaskOutput(id string) string { return PathTask(id) + "/output" }
+
+// TaskOutputLine is one line of a task's output. N is its place, 0-based:
+// ask for after=N+1 to continue. Line is what the agent printed, made
+// printable; it can quote the guest.
+type TaskOutputLine struct {
+	N    int    `json:"n"`
+	Line string `json:"line"`
+}
+
+// How many task output lines a request reads: the default, and the most.
+const (
+	DefaultTaskOutputLines = 1000
+	MaxTaskOutputLines     = 10000
+)
+
 // PathTemplateBuild is POST, with a BuildTemplateRequest: build a
 // template's base, as catchpen template build does, as a job.
 const PathTemplateBuild = PathTemplates + "/build"

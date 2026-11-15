@@ -8,6 +8,11 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- The API serves a task's output (`GET /v1/tasks/<id>/output`, NDJSON lines with `n` and
+  `line`): `after` (a line's `N`), `limit` (default 1000, 0 for all, at most 10000) and
+  `follow=true` to read until the task ends. It needs `config:write`; a line carrying one of
+  the task VM's decoys is withheld from there on, and the hit is acted on and audited with
+  the client. `pkg/apiclient`'s `TaskOutput` drives it.
 - The API follows the audit log (`GET /v1/audit/follow?vm=&after=`) and pages and follows a
   VM's egress log (`GET /v1/vms/<name>/egress/log`, with `before` and `limit`, and
   `GET .../egress/log/follow?after=`). A follow streams NDJSON lines, oldest first, from

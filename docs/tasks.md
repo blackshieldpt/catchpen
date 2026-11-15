@@ -133,6 +133,7 @@ With the daemon's API on (`server:` in [configuration.md](configuration.md)):
 | `POST /v1/tasks` | `task run`, one task | `template`, `repo`, `agent` (default `claude`), `cmd`, `prompt`, `timeout_s` (60 to 172800; default 7200), `max_budget_usd`, `out` (default `pr` with a repo, else `none`), `into`, `title`, `rw`, `keep` |
 | `POST /v1/tasks/<id>/cancel` | `task cancel`, as a job | nothing |
 | `POST /v1/tasks/<id>/delete` | `task rm`, as a job | nothing |
+| `GET /v1/tasks/<id>/output` | `task logs` | `after` (a line's `N`), `limit` (default 1000, 0 for all, at most 10000), `follow=true` to keep reading until the task ends |
 
 Submitting needs a client enrolled with `--scope config:write` (403 otherwise; over the
 unix socket, every call is allowed): a task runs whatever its prompt or `cmd` says in a
@@ -155,6 +156,15 @@ fails their job instead with the same message, keeping a lost task's VM and its 
 (as `task cancel` and `task rm` do). Neither asks for `confirm`, as
 the CLI doesn't, and a cancel destroys commits the task hasn't exported. Their audit
 events carry `client`.
+The output (`GET /v1/tasks/<id>/output`) needs `--scope config:write` too (403 otherwise,
+before the task is looked up): it is the agent's transcript and can quote the template's
+secrets. A line carrying one of the task VM's decoys is withheld from there on (`(withheld:
+it contained the VM's decoy credentials)`), the hit is acted on and audited with the
+client, and decoys that can't be read withhold every line. The lines are the printable
+ones `catchpen task logs` shows, not the raw agent events. A line is held until the next
+arrives (a decoy may straddle two), so a follow shows a line when the next is written or the
+task ends. The stream ends at `limit` or, with `follow`, when the task ends; to go on, ask
+again with `after` set to the last `N` plus one. `pkg/apiclient`'s `TaskOutput` drives it.
 On a task's VM (any VM named `task-…`), changing its egress or opening a forward (see
 [egress.md](egress.md#over-the-api) and [forges.md](forges.md#port-forwards)),
 starting, stopping (with `force` or not), resuming or destroying it (see the `server`

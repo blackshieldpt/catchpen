@@ -73,6 +73,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathTasks, s.tasks)
 	mux.HandleFunc("GET "+api.PathTasks+"/{id}", s.task)
 	mux.HandleFunc("POST "+api.PathTasks, s.submitTask)
+	mux.HandleFunc("GET "+api.PathTasks+"/{id}/output", s.taskOutput)
 	mux.HandleFunc("POST "+api.PathTasks+"/{id}/cancel", s.cancelTask)
 	mux.HandleFunc("POST "+api.PathTasks+"/{id}/delete", s.deleteTask)
 	mux.HandleFunc("POST "+api.PathTemplateBuild, s.buildTemplate)
