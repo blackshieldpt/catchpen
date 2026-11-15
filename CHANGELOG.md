@@ -234,6 +234,11 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Security
 
+- A job's error and progress lines are withheld from a client without `config:write`,
+  whatever wrote them: the guest can print the template's secrets into them, and every
+  enrolled client read them through `GET /v1/jobs` and `/v1/jobs/<id>`. Such a client now
+  reads `withheld: a job's line (or error) can quote its guest …` in their place; the job's
+  state, kind, VM, client and line count stay, and a decoy's note still wins for everyone.
 - `catchpen forward` no longer lets the guest use the VM's SSH agent. On a VM with
   `ssh.agent: restricted` (or `host`, with an ssh that starts such a forward at all),
   its background `ssh -N` took `ForwardAgent` from the VM's block in catchpen's

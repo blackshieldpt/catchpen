@@ -156,20 +156,19 @@ type VMLoss struct {
 }
 
 // PathJobs is GET: the jobs running and the last ones that ended, as
-// []JobInfo, newest first. For a client without config:write, an error that
-// names a host secret is a "withheld: ..." note instead (see PathJob).
+// []JobInfo, newest first. For a client without config:write, the error is a
+// "withheld: ..." note instead (see PathJob).
 const PathJobs = Prefix + "/jobs"
 
 // PathJob is GET: one job, as a Job, with its progress lines from the
 // query's after (a count of lines; default 0) on. Its id is escaped as
 // PathVM's name is.
 //
-// Every client reads every job. For a client without config:write, an error
-// that names a host secret (a forge's, missing or unreadable, or one a
-// push can't read) and a line that names host secrets (the secrets a push
-// didn't find, a push's env keys, a forge secret a destroy's cleanup can't
-// have, any notification's failure) are a "withheld: ..." note instead,
-// whoever started the job.
+// Every client reads every job. For a client without config:write, the error
+// and every line are a "withheld: ..." note instead, whoever started the job
+// and whatever wrote it: the guest can print the template's secrets into
+// either. The job's state, kind, VM, client and line count stay; a decoy's
+// note still comes first, for every client.
 func PathJob(id string) string {
 	return PathJobs + "/" + strings.ReplaceAll(url.PathEscape(id), ".", "%2E")
 }
@@ -225,14 +224,14 @@ type JobInfo struct {
 	State   string    `json:"state"`  // JobRunning, JobDone or JobFailed
 	Created time.Time `json:"created"`
 	Ended   time.Time `json:"ended,omitzero"`
-	Error   string    `json:"error,omitempty"` // why it failed; can quote the guest and name host paths; withheld from a client without config:write when it names a host secret
+	Error   string    `json:"error,omitempty"` // why it failed; can quote the guest and name host paths; withheld from a client without config:write
 	Written int       `json:"written"`         // progress lines written so far
 }
 
 // Job is a job and its progress lines, which can quote the guest. Once its
 // lines or error carry one of the VM's decoy credentials, every line and the
-// error are a "(withheld: ...)" note instead, their count kept. Lines and an
-// error that name host secrets are withheld from some clients (see PathJob).
+// error are a "(withheld: ...)" note instead, their count kept. Lines and the
+// error are withheld from a client without config:write (see PathJob).
 type Job struct {
 	JobInfo
 	From  int      `json:"from"` // the number of Lines' first line: above the after asked for when older lines were dropped

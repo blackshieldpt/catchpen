@@ -13,26 +13,8 @@ import (
 
 	"github.com/blackshieldpt/catchpen/internal/vm"
 	"github.com/blackshieldpt/catchpen/pkg/api"
+	"github.com/blackshieldpt/catchpen/pkg/apiclient"
 )
-
-// Every line WriteSecret writes to is marked: one it ends, one a Write began,
-// and one it leaves for a Write or the job's end to end. A line it doesn't
-// write to isn't.
-func TestJobWriteSecret(t *testing.T) {
-	j := &job{info: api.JobInfo{State: api.JobRunning}}
-	io.WriteString(j, "a: ")
-	j.WriteSecret([]byte("NAME\nb: NAME"))
-	io.WriteString(j, " too\nplain\nc: ")
-	j.WriteSecret([]byte("NAME"))
-	j.end(nil)
-	w := withheldSecretLine
-	if g := j.from(0, false).Lines; !reflect.DeepEqual(g, []string{w, w, "plain", w}) {
-		t.Errorf("without config:write: %q", g)
-	}
-	if g := j.from(0, true).Lines; !reflect.DeepEqual(g, []string{"a: NAME", "b: NAME too", "plain", "c: NAME"}) {
-		t.Errorf("with config:write: %q", g)
-	}
-}
 
 // A job's output is split into lines, each cut to MaxJobLine; the line left
 // unended is written out when the job ends.
@@ -193,9 +175,9 @@ func TestJobPanic(t *testing.T) {
 	}
 }
 
-// A *vm.SecretError, wrapped, and a line starting vm.MissingSecrets are
-// withheld from a client without config:write; a decoy's note wins over
-// both; a line's mark goes with the line once it is dropped.
+// A job's error and every line are withheld from a client without
+// config:write, whatever wrote them, a *vm.SecretError or a plain error alike;
+// a decoy's note wins over both, for every client.
 func TestJobSecretsWithheld(t *testing.T) {
 	named := vm.MissingSecrets + "GONE_061 (set them …)"
 	secretErr := fmt.Errorf("forge gone: %w", &vm.SecretError{Err: errors.New("secret GONE_061 not found on the host")})
@@ -212,9 +194,9 @@ func TestJobSecretsWithheld(t *testing.T) {
 		want    string
 	}{
 		{0, true, fmt.Sprintf("[%q %q %q] %s", "one", named, "two", secretErr)},
-		{0, false, fmt.Sprintf("[%q %q %q] %s", "one", withheldSecretLine, "two", withheldSecretError)},
-		{1, false, fmt.Sprintf("[%q %q] %s", withheldSecretLine, "two", withheldSecretError)},
-		{2, false, fmt.Sprintf("[%q] %s", "two", withheldSecretError)},
+		{0, false, fmt.Sprintf("[%q %q %q] %s", withheldTextLine, withheldTextLine, withheldTextLine, withheldTextError)},
+		{1, false, fmt.Sprintf("[%q %q] %s", withheldTextLine, withheldTextLine, withheldTextError)},
+		{2, false, fmt.Sprintf("[%q] %s", withheldTextLine, withheldTextError)},
 	} {
 		if got := view(j, tc.after, tc.secrets); got != tc.want {
 			t.Errorf("after %d, secrets %v: %s", tc.after, tc.secrets, got)
@@ -232,7 +214,54 @@ func TestJobSecretsWithheld(t *testing.T) {
 		fmt.Fprintln(plain, "x")
 	}
 	plain.end(errors.New("secret GONE_061 not found on the host")) // not a *vm.SecretError
-	if g := plain.from(0, false); g.Error != "secret GONE_061 not found on the host" || slices.Contains(g.Lines, withheldSecretLine) {
-		t.Errorf("the named line dropped: %q, %s", g.Lines[:min(2, len(g.Lines))], g.Error)
+	if g := plain.from(0, false); g.Error != withheldTextError || len(g.Lines) != api.MaxJobLines ||
+		slices.ContainsFunc(g.Lines, func(s string) bool { return s != withheldTextLine }) {
+		t.Errorf("a plain error or line shown: %q, %s", g.Lines[:min(2, len(g.Lines))], g.Error)
+	}
+}
+
+// A job's error and lines can quote its guest, which holds the template's
+// secrets: a client without config:write reads them withheld, in the list
+// and on the job alike, and paging still counts them; config:write reads them.
+func TestJobTextWithheld(t *testing.T) {
+	a := serveTCPManager(t, nil)
+	ctx := context.Background()
+	laptop := a.client(t, apiclient.Options{Cert: &a.laptop}) // no scope
+	cockpit := a.client(t, apiclient.Options{HMAC: &apiclient.HMAC{Name: "cockpit", Key: a.key}})
+	info, err := a.srv.jobs.start(api.JobVMStart, "alpha", "cockpit", nil,
+		func(_ context.Context, out io.Writer) error {
+			fmt.Fprintln(out, "guest said SECRET-069")
+			return errors.New("failed: SECRET-069")
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	end, _ := waiter(t, cockpit)(&info, nil)
+	if end.State != api.JobFailed {
+		t.Fatalf("the job ended %s", end.State)
+	}
+	for _, tc := range []struct {
+		c           *apiclient.Client
+		reader      string
+		error, line string
+	}{
+		{laptop, "laptop", withheldTextError, withheldTextLine},
+		{cockpit, "cockpit", "failed: SECRET-069", "guest said SECRET-069"},
+	} {
+		js, err := tc.c.Jobs(ctx)
+		if err != nil || len(js) != 1 || js[0].ID != info.ID || js[0].Error != tc.error {
+			t.Errorf("%s lists: %v %+v", tc.reader, err, js)
+		}
+		j, err := tc.c.Job(ctx, info.ID, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if j.State != api.JobFailed || j.Kind != api.JobVMStart || j.VM != "alpha" || j.From != 0 ||
+			j.Error != tc.error || !reflect.DeepEqual(j.Lines, []string{tc.line}) {
+			t.Errorf("%s reads: %+v", tc.reader, j)
+		}
+		if p, err := tc.c.Job(ctx, info.ID, 1); err != nil || p.From != 1 || len(p.Lines) != 0 {
+			t.Errorf("%s after 1: %+v %v", tc.reader, p, err)
+		}
 	}
 }

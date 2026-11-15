@@ -9,12 +9,10 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/blackshieldpt/catchpen/internal/canary"
-	"github.com/blackshieldpt/catchpen/internal/vm"
 	"github.com/blackshieldpt/catchpen/pkg/api"
 )
 
@@ -60,10 +58,10 @@ const (
 )
 
 // What a client without config:write gets in place of a job's error or
-// line that names a host secret.
+// line: the guest can print the template's secrets into either.
 const (
-	withheldSecretError = "withheld: the job's error names a host secret: reading it needs the config:write scope"
-	withheldSecretLine  = "withheld: the line names host secrets: reading it needs the config:write scope"
+	withheldTextError = "withheld: a job's error can quote its guest, which holds the template's secrets: reading it needs the config:write scope"
+	withheldTextLine  = "withheld: a job's line can quote its guest, which holds the template's secrets: reading it needs the config:write scope"
 )
 
 // job is one job, and the writer its progress lines are written to.
@@ -71,24 +69,17 @@ type job struct {
 	mu       sync.Mutex
 	info     api.JobInfo
 	lines    []string             // the last api.MaxJobLines
-	named    []bool               // for each of lines: it names host secrets
 	part     []byte               // the start of a line not ended yet
-	marked   bool                 // part holds text written as naming host secrets
 	watch    *watch               // nil: not watched
 	act      func(*canary.Canary) // runs watch.hit, without waiting
 	hit      *canary.Canary
 	withheld string // what clients get in place of every line and the error ("": the text)
-	secret   bool   // the error names a host secret (a *vm.SecretError)
 }
 
 // Write takes progress output, a line at a time.
-func (j *job) Write(b []byte) (int, error) { return j.write(b, false) }
+func (j *job) Write(b []byte) (int, error) { return j.write(b) }
 
-// WriteSecret takes progress output that names host secrets (vm.SecretLines):
-// every line it writes to is marked as naming them.
-func (j *job) WriteSecret(b []byte) (int, error) { return j.write(b, true) }
-
-func (j *job) write(b []byte, named bool) (int, error) {
+func (j *job) write(b []byte) (int, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	n := len(b)
@@ -97,11 +88,8 @@ func (j *job) write(b []byte, named bool) (int, error) {
 		if i < 0 {
 			break
 		}
-		j.add(append(j.part, b[:i]...), named || j.marked)
-		j.part, j.marked, b = nil, false, b[i+1:]
-	}
-	if len(b) > 0 && named {
-		j.marked = true
+		j.add(append(j.part, b[:i]...))
+		j.part, b = nil, b[i+1:]
 	}
 	if len(j.part)+len(b) <= api.MaxJobLine { // what a line keeps, at most
 		j.part = append(j.part, b...)
@@ -111,8 +99,8 @@ func (j *job) write(b []byte, named bool) (int, error) {
 	return n, nil
 }
 
-// add keeps a line; named: it was written as naming host secrets.
-func (j *job) add(line []byte, named bool) {
+// add keeps a line.
+func (j *job) add(line []byte) {
 	s := string(line[:min(len(line), api.MaxJobLine)])
 	prev := ""
 	if len(j.lines) > 0 {
@@ -120,10 +108,8 @@ func (j *job) add(line []byte, named bool) {
 	}
 	j.check(prev + s) // a decoy split across two lines too
 	j.lines = append(j.lines, s)
-	j.named = append(j.named, named || strings.HasPrefix(s, vm.MissingSecrets))
 	if len(j.lines) > api.MaxJobLines {
 		j.lines = slices.Delete(j.lines, 0, len(j.lines)-api.MaxJobLines)
-		j.named = slices.Delete(j.named, 0, len(j.named)-api.MaxJobLines)
 	}
 	j.info.Written++
 }
@@ -151,8 +137,8 @@ func (j *job) end(err error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	if len(j.part) > 0 {
-		j.add(j.part, j.marked)
-		j.part, j.marked = nil, false
+		j.add(j.part)
+		j.part = nil
 	}
 	j.info.State, j.info.Ended = api.JobDone, time.Now().UTC()
 	if err != nil {
@@ -162,8 +148,6 @@ func (j *job) end(err error) {
 		}
 		j.check(last + err.Error()) // a decoy split from the last line too
 		j.info.State, j.info.Error = api.JobFailed, err.Error()
-		var se *vm.SecretError
-		j.secret = errors.As(err, &se)
 	}
 }
 
@@ -182,14 +166,15 @@ func (j *job) shown(secrets bool) api.JobInfo {
 	switch {
 	case j.withheld != "" && info.Error != "":
 		info.Error = j.withheld
-	case j.secret && !secrets:
-		info.Error = withheldSecretError
+	case !secrets && info.Error != "":
+		info.Error = withheldTextError
 	}
 	return info
 }
 
 // from is the job with its lines from the after-th on (those kept), as a
-// client gets it (secrets: one with config:write). A decoy's note wins.
+// client gets it (secrets: one with config:write, who gets the text). A
+// decoy's note wins.
 func (j *job) from(after int, secrets bool) api.Job {
 	j.mu.Lock()
 	defer j.mu.Unlock()
@@ -200,8 +185,8 @@ func (j *job) from(after int, secrets bool) api.Job {
 		switch {
 		case j.withheld != "":
 			lines[i] = j.withheld
-		case j.named[from-first+i] && !secrets:
-			lines[i] = withheldSecretLine
+		case !secrets:
+			lines[i] = withheldTextLine
 		}
 	}
 	return api.Job{JobInfo: j.shown(secrets), From: from, Lines: lines}

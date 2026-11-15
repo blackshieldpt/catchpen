@@ -368,8 +368,8 @@ func TestSecretNamesScope(t *testing.T) {
 	}
 }
 
-// A job's error and lines that name a host secret are told only to a
-// config:write reader, whichever client started the job.
+// A job's error and lines are told only to a config:write reader, whichever
+// client started the job: the guest can quote a host secret into either.
 func TestJobSecretsScope(t *testing.T) {
 	h := home(t, nil)
 	h.forgesYAML(t, forge.Forge{Name: "gone", Type: forge.Gitea, Host: "127.0.0.1", HTTPURL: "http://127.0.0.1:1",
@@ -409,10 +409,10 @@ func TestJobSecretsScope(t *testing.T) {
 		c           *apiclient.Client
 		reader      string
 		error, line string
+		first       string // the first line, the job's "creating"
 	}{
-		{laptop, "laptop", "withheld: the job's error names a host secret: reading it needs the config:write scope",
-			"withheld: the line names host secrets: reading it needs the config:write scope"},
-		{cockpit, "cockpit", "forge gone: secret GONE_061 not found on the host", named},
+		{laptop, "laptop", withheldTextError, withheldTextLine, withheldTextLine},
+		{cockpit, "cockpit", "forge gone: secret GONE_061 not found on the host", named, "creating"},
 	} {
 		js, err := tc.c.Jobs(ctx)
 		if err != nil || len(js) != 2 || js[0].Error != tc.error || js[1].Error != tc.error {
@@ -426,7 +426,7 @@ func TestJobSecretsScope(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if j.Error != tc.error || !reflect.DeepEqual(j.Lines, []string{"creating", tc.line}) {
+			if j.Error != tc.error || !reflect.DeepEqual(j.Lines, []string{tc.first, tc.line}) {
 				t.Errorf("%s reads %s's job: %v %q %v", tc.reader, starters[k], j.Error, j.Lines, err)
 			}
 		}
@@ -434,9 +434,9 @@ func TestJobSecretsScope(t *testing.T) {
 }
 
 // A destroy whose VM's forge secrets are gone warns, naming them: a client
-// without config:write, even the one that started the job, reads those lines
-// withheld; a config:write client and the socket read them. A forge's own
-// failure (its secret found) names no secret: every client reads it.
+// without config:write, even the one that started the job, reads every line
+// withheld, the forge's own failure included; a config:write client and the
+// socket read them.
 func TestJobSecretLines(t *testing.T) {
 	h := home(t, nil)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "boom", http.StatusInternalServerError) }))
@@ -462,14 +462,13 @@ func TestJobSecretLines(t *testing.T) {
 	key := "warning: could not remove deploy key 7 from dk:o/r: secret GONE_063 not found on the host (remove it in the forge's repo settings)"
 	tok := "warning: could not delete mint token 3 for bot: secret GONE_063P not found on the host (delete it in the user's settings)"
 	failed := "warning: could not remove deploy key 8 from ok:o/r: DELETE ok/repos/o/r/keys/8: HTTP 500: Internal Server Error (remove it in the forge's repo settings)"
-	withheld := "withheld: the line names host secrets: reading it needs the config:write scope"
 	j, _ := waiter(t, laptop)(laptop.DestroyVM(ctx, "alpha", api.DestroyVMRequest{Confirm: true}))
 	for _, tc := range []struct {
 		c      *apiclient.Client
 		reader string
 		want   []string
 	}{
-		{laptop, "laptop", []string{withheld, failed, withheld, "destroyed alpha"}},
+		{laptop, "laptop", []string{withheldTextLine, withheldTextLine, withheldTextLine, withheldTextLine}},
 		{cockpit, "cockpit", []string{key, failed, tok, "destroyed alpha"}},
 	} {
 		g, err := tc.c.Job(ctx, j.ID, 0)
