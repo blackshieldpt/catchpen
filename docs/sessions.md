@@ -108,3 +108,10 @@ NDJSON lines, oldest first, with the same redaction and the same `config:write`
 withholding as `GET /v1/audit`. `pkg/apiclient`'s `AuditFollow` drives it. Events at or
 after `after` are delivered, so pass the last one you saw and expect it once more (dedupe
 by time and content).
+
+The API also composes a live feed, `GET /v1/events` (NDJSON): a state for every VM at connect
+(`running`, `stopped`, `paused`), then each state change (and a `gone` for a removed VM) and
+the `canary.hit` and `task.end` audit events, the latter from `after` (default: now) and
+shaped as `GET /v1/audit` shapes them. Every client may read it; prompts are their own
+stream (`GET /v1/egress/prompts`); the full audit log follows at `/v1/audit/follow`.
+`pkg/apiclient`'s `Events` drives it.

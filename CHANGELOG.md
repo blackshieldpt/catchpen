@@ -19,6 +19,11 @@ before 0.1.0 describe work on `master` before the first tagged release.
   the given time (default: now), at or after it, so an entry at that time may come twice.
   The audit follow applies the paged read's redaction and `config:write` withholding.
   `pkg/apiclient`'s `AuditFollow`, `EgressLog` and `EgressLogFollow` drive them.
+- The API streams an event feed (`GET /v1/events`, NDJSON): a snapshot of every VM's state at
+  connect, then each VM state change (a removed VM is `gone`) and the `canary.hit` and
+  `task.end` audit events, the latter from `after` (default: now) and shaped as the audit read
+  shapes them. Every client may read it. A slow client drops events. `pkg/apiclient`'s
+  `Events` drives it.
 - The API answers egress prompts (`GET /v1/egress/prompts`, a WebSocket): a connected client
   is sent each prompt and answers `allow-once`, `allow-always`, `deny` or `deny-always`, the
   first answer deciding. Each answer is audited as `egress.prompt` with the client's name,

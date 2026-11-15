@@ -89,6 +89,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+api.PathSecrets+"/{name}/delete", s.unsetSecret)
 	mux.HandleFunc("GET "+api.PathAudit, s.audit)
 	mux.HandleFunc("GET "+api.PathAuditFollow, s.auditFollow)
+	mux.HandleFunc("GET "+api.PathEvents, s.events)
 	mux.HandleFunc("GET "+api.PathCache, s.cache)
 	mux.HandleFunc("POST "+api.PathVMs, s.createVM)
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/start", s.startVM)
