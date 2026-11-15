@@ -102,3 +102,9 @@ catchpen audit [<vm>] [-f]
 - canary hits.
 
 Like recordings, the audit log is never removed by `gc`.
+
+The API follows it: `GET /v1/audit/follow?vm=<name>&after=<time>` streams new events as
+NDJSON lines, oldest first, with the same redaction and the same `config:write`
+withholding as `GET /v1/audit`. `pkg/apiclient`'s `AuditFollow` drives it. Events at or
+after `after` are delivered, so pass the last one you saw and expect it once more (dedupe
+by time and content).

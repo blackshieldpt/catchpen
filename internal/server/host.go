@@ -240,33 +240,40 @@ func (s *Server) audit(w http.ResponseWriter, r *http.Request) {
 	}
 	page := api.AuditPage{Events: make([]api.AuditEvent, 0, len(es))}
 	for _, e := range es {
-		d, _ := redactAll(e.Detail).(map[string]any)
-		if e.Event == audit.ConfigWrite && !scoped(r, ScopeConfigWrite) {
-			// A hash of a file mostly known confirms a guess of a secret in it.
-			delete(d, "old_hash")
-			delete(d, "new_hash")
-		}
-		if (e.Event == audit.SecretSet || e.Event == audit.SecretUnset) && !scoped(r, ScopeConfigWrite) {
-			// secrets.env's names, as every call on it, need config:write.
-			delete(d, "name")
-			delete(d, "replaced")
-		}
-		if e.Event == audit.CredsPush && !scoped(r, ScopeConfigWrite) {
-			// The names a VM's template found and missed, as secrets.env's.
-			delete(d, "secrets")
-			delete(d, "missing")
-		}
-		if e.Event == audit.ForgeAdd && !scoped(r, ScopeConfigWrite) {
-			// The secrets the forge names, as GET /v1/forges leaves them out.
-			delete(d, "token_secret")
-			delete(d, "password_secret")
-		}
-		page.Events = append(page.Events, api.AuditEvent{Time: e.Time, Event: e.Event, VM: e.VM, Detail: d})
+		page.Events = append(page.Events, shownEvent(r, e))
 	}
 	if next != nil {
 		page.Next = cursor(*next)
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+// shownEvent is e as r's client may read it: a URL's user and password are
+// dropped, and what needs config:write is removed (a config file's hashes,
+// secrets.env's names, the secrets a credentials push found, a forge's).
+func shownEvent(r *http.Request, e audit.Event) api.AuditEvent {
+	d, _ := redactAll(e.Detail).(map[string]any)
+	if e.Event == audit.ConfigWrite && !scoped(r, ScopeConfigWrite) {
+		// A hash of a file mostly known confirms a guess of a secret in it.
+		delete(d, "old_hash")
+		delete(d, "new_hash")
+	}
+	if (e.Event == audit.SecretSet || e.Event == audit.SecretUnset) && !scoped(r, ScopeConfigWrite) {
+		// secrets.env's names, as every call on it, need config:write.
+		delete(d, "name")
+		delete(d, "replaced")
+	}
+	if e.Event == audit.CredsPush && !scoped(r, ScopeConfigWrite) {
+		// The names a VM's template found and missed, as secrets.env's.
+		delete(d, "secrets")
+		delete(d, "missing")
+	}
+	if e.Event == audit.ForgeAdd && !scoped(r, ScopeConfigWrite) {
+		// The secrets the forge names, as GET /v1/forges leaves them out.
+		delete(d, "token_secret")
+		delete(d, "password_secret")
+	}
+	return api.AuditEvent{Time: e.Time, Event: e.Event, VM: e.VM, Detail: d}
 }
 
 // cache tells what the package caches hold, as catchpen cache does, without

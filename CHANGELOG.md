@@ -8,6 +8,12 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ### Added
 
+- The API follows the audit log (`GET /v1/audit/follow?vm=&after=`) and pages and follows a
+  VM's egress log (`GET /v1/vms/<name>/egress/log`, with `before` and `limit`, and
+  `GET .../egress/log/follow?after=`). A follow streams NDJSON lines, oldest first, from
+  the given time (default: now), at or after it, so an entry at that time may come twice.
+  The audit follow applies the paged read's redaction and `config:write` withholding.
+  `pkg/apiclient`'s `AuditFollow`, `EgressLog` and `EgressLogFollow` drive them.
 - The API answers egress prompts (`GET /v1/egress/prompts`, a WebSocket): a connected client
   is sent each prompt and answers `allow-once`, `allow-always`, `deny` or `deny-always`, the
   first answer deciding. Each answer is audited as `egress.prompt` with the client's name,

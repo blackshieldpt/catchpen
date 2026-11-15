@@ -89,7 +89,16 @@ enrolled with `--scope config:write`, the scope that submits tasks (403 otherwis
 whether or not the VM exists; a client on the unix socket has every scope): an
 unattended agent that a `config:write` client submitted runs there, and only such a
 client widens its ways out. Reading its egress needs no scope.
-Their audit events carry `client`. The egress log isn't served yet.
+Their audit events carry `client`.
+
+The egress log is read with `GET /v1/vms/<name>/egress/log`: a page of entries, newest
+first, with `limit` from 1 to 1000 (default 100) and `before` set to the previous page's
+`next` (empty on the last page). `GET /v1/vms/<name>/egress/log/follow?after=<time>`
+streams new entries as NDJSON lines, oldest first, at or after the given entry's time
+(default: now); an entry at exactly `after` may come again, so dedupe it.
+`pkg/apiclient`'s `EgressLog` and `EgressLogFollow` drive them. Any enrolled client may
+read the log, as it may read `GET /v1/vms/<name>/egress`, and its hosts and reasons can
+come from the guest or an upstream.
 
 ## Prompting on deny
 
