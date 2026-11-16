@@ -32,6 +32,7 @@ type Server struct {
 	hmac    *api.Verifier
 	jobs    *jobs
 	prompts *prompts
+	limits  *limits
 
 	// consoles are the VMs with a console stream open: QEMU serves one
 	// console client at a time.
@@ -49,7 +50,7 @@ type Server struct {
 // New returns the API of catchpen at version, for this process's user over
 // the unix socket and for the clients in the clients file over TCP.
 func New(version, clients string) *Server {
-	s := &Server{version: version, uid: os.Getuid(), clients: clients, jobs: newJobs(), prompts: newPrompts(), consoles: map[string]struct{}{}}
+	s := &Server{version: version, uid: os.Getuid(), clients: clients, jobs: newJobs(), prompts: newPrompts(), limits: newLimits(), consoles: map[string]struct{}{}}
 	s.hmac = api.NewVerifier(s.hmacKey)
 	return s
 }
@@ -67,13 +68,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathVMs, s.vms)
 	mux.HandleFunc("GET "+api.PathVMs+"/{name}", s.vm)
 	mux.HandleFunc("GET "+api.PathVMs+"/{name}/snapshots", s.snapshots)
-	mux.HandleFunc("GET "+api.PathVMs+"/{name}/terminal", s.terminal)
-	mux.HandleFunc("GET "+api.PathVMs+"/{name}/console", s.console)
+	mux.HandleFunc("GET "+api.PathVMs+"/{name}/terminal", s.stream(s.terminal))
+	mux.HandleFunc("GET "+api.PathVMs+"/{name}/console", s.stream(s.console))
 	mux.HandleFunc("GET "+api.PathTemplates, s.templates)
 	mux.HandleFunc("GET "+api.PathTasks, s.tasks)
 	mux.HandleFunc("GET "+api.PathTasks+"/{id}", s.task)
 	mux.HandleFunc("POST "+api.PathTasks, s.submitTask)
-	mux.HandleFunc("GET "+api.PathTasks+"/{id}/output", s.taskOutput)
+	mux.HandleFunc("GET "+api.PathTasks+"/{id}/output", s.stream(s.taskOutput))
 	mux.HandleFunc("POST "+api.PathTasks+"/{id}/cancel", s.cancelTask)
 	mux.HandleFunc("POST "+api.PathTasks+"/{id}/delete", s.deleteTask)
 	mux.HandleFunc("POST "+api.PathTemplateBuild, s.buildTemplate)
@@ -88,8 +89,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+api.PathSecrets+"/{name}", s.setSecret)
 	mux.HandleFunc("POST "+api.PathSecrets+"/{name}/delete", s.unsetSecret)
 	mux.HandleFunc("GET "+api.PathAudit, s.audit)
-	mux.HandleFunc("GET "+api.PathAuditFollow, s.auditFollow)
-	mux.HandleFunc("GET "+api.PathEvents, s.events)
+	mux.HandleFunc("GET "+api.PathAuditFollow, s.stream(s.auditFollow))
+	mux.HandleFunc("GET "+api.PathEvents, s.stream(s.events))
 	mux.HandleFunc("GET "+api.PathCache, s.cache)
 	mux.HandleFunc("POST "+api.PathVMs, s.createVM)
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/start", s.startVM)
@@ -107,13 +108,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/snapshots/{snap}/delete", s.deleteSnapshot)
 	mux.HandleFunc("GET "+api.PathVMs+"/{name}/egress", s.egress)
 	mux.HandleFunc("GET "+api.PathVMs+"/{name}/egress/log", s.egressLog)
-	mux.HandleFunc("GET "+api.PathVMs+"/{name}/egress/log/follow", s.egressLogFollow)
+	mux.HandleFunc("GET "+api.PathVMs+"/{name}/egress/log/follow", s.stream(s.egressLogFollow))
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/egress/"+api.EgressAllow, s.editEgress(egress.AllowlistFile, true))
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/egress/"+api.EgressUnallow, s.editEgress(egress.AllowlistFile, false))
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/egress/"+api.EgressDeny, s.editEgress(egress.DenylistFile, true))
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/egress/"+api.EgressUndeny, s.editEgress(egress.DenylistFile, false))
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/egress/config", s.setEgressConfig)
-	mux.HandleFunc("GET "+api.PathEgressPrompts, s.egressPrompts)
+	mux.HandleFunc("GET "+api.PathEgressPrompts, s.stream(s.egressPrompts))
 	mux.HandleFunc("GET "+api.PathVMs+"/{name}/forwards", s.forwards)
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/forwards", s.openForward)
 	mux.HandleFunc("POST "+api.PathVMs+"/{name}/forwards/stop", s.stopForwards)
@@ -141,6 +142,10 @@ func (s *Server) Handler() http.Handler {
 			}
 		} else if uid, ok := r.Context().Value(peerUID{}).(int); !ok || uid != s.uid {
 			writeError(w, api.CodeUnauthorized, "not a connection from this user")
+			return
+		}
+		if c, ok := CallerOf(r.Context()); ok && !s.limits.allow(c.Name) {
+			writeError(w, api.CodeRateLimited, fmt.Sprintf("slow down: a client may make %d requests at once", reqBurst))
 			return
 		}
 		if r.Method == http.MethodPost {

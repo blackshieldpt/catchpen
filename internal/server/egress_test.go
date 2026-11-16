@@ -376,6 +376,11 @@ func TestEgressOverTCP(t *testing.T) {
 // rebasing it loses are read, and its forwards stopped, by any client, and
 // other VMs' egress changed and snapshots saved by any.
 func TestTaskVMScope(t *testing.T) {
+	// The calls below are one client's burst; the per-client rate limit has its
+	// own tests (limits_test.go).
+	oldBurst := reqBurst
+	reqBurst = 1 << 20
+	t.Cleanup(func() { reqBurst = oldBurst }) // registered first: runs last
 	h := egressHost(t)
 	// A reset let through fails at once: its base isn't there.
 	h.writeVM(t, vm.State{Name: "task-a1", Template: "base", Created: created, Egress: "allowlist", Task: "a1",

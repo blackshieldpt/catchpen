@@ -254,6 +254,11 @@ before 0.1.0 describe work on `master` before the first tagged release.
   its background `ssh -N` took `ForwardAgent` from the VM's block in catchpen's
   `ssh_config`, so the guest's sshd could use that agent for as long as the forward ran,
   with no session open. It now runs with `ForwardAgent=no`.
+- The API applies per-client limits: each enrolled TCP client has at most 8 open streams (terminal, console, prompts,
+  audit and egress follows, task output, events) and to 30 requests in a burst, refilled at
+  10 a second; beyond either it answers `429 rate_limited`. A client removed from the
+  clients file has its open streams ended within 2 s, not only its next request refused.
+  The unix socket is exempt.
 
 ## [0.1.2] - 2026-10-29
 
