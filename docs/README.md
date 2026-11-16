@@ -189,6 +189,8 @@ hosts.
 
 - [Deployment](deployment.md): host sizing, the daemon, warm pool, idle stop, scheduled
   rebuilds, headless hosts, backups
+- [The API](server.md): turning it on, enrolling clients, scopes, routes, streams and
+  limits
 - [Troubleshooting](troubleshooting.md): logs, error messages and recovery
 
 ### Contributing

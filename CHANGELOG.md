@@ -6,8 +6,10 @@ before 0.1.0 describe work on `master` before the first tagged release.
 
 ## [Unreleased]
 
-### Added
+### API
 
+- The API is documented on its own page, `docs/server.md`: enabling it, enrolling
+  clients, the scopes, every route, the streams and the limits.
 - The API serves a task's output (`GET /v1/tasks/<id>/output`, NDJSON lines with `n` and
   `line`): `after` (a line's `N`), `limit` (default 1000, 0 for all, at most 10000) and
   `follow=true` to read until the task ends. It needs `config:write`; a line carrying one of
@@ -86,8 +88,6 @@ before 0.1.0 describe work on `master` before the first tagged release.
   that VM (`POST /v1/vms/task-<id>/destroy`) needs `config:write`.
   `GET /v1/tasks` and `/v1/tasks/<id>` withhold a task's error from a client without
   `config:write`: it can quote the task's guest, which holds the template's secrets.
-- `catchpen task cancel` and `task rm` are recorded in the audit log (`task.cancel`,
-  `task.rm`).
 - The API lists, scans, adds, tests and removes forges (`GET /v1/forges`,
   `POST /v1/forges/scan`, `POST /v1/forges`, `POST /v1/forges/<name>/test`,
   `/delete`), and pulls branches from VMs and opens pull requests, as jobs
@@ -160,9 +160,6 @@ before 0.1.0 describe work on `master` before the first tagged release.
   every `warning: notification`, whose error can quote the sink's configuration), are
   withheld from a client without `config:write`, whoever started the job. A canary hit
   on a VM already destroyed is now audited and notified instead of dropped.
-- The unit `catchpen daemon install` writes has `KillMode=process`: VMs the daemon
-  starts keep running when it stops or restarts. Run `catchpen daemon install` again to
-  update an installed unit.
 - The API lists the template categories and their sections (`GET /v1/templates`), the
   headless tasks (`GET /v1/tasks`, `GET /v1/tasks/<id>`), the audit log a page at a time
   (`GET /v1/audit`, newest first, with `vm`, `limit` and `before`) and what the package
@@ -193,6 +190,14 @@ before 0.1.0 describe work on `master` before the first tagged release.
   socket, `api.sock` in the data directory (mode 0600, its own user only). It reports
   catchpen's version and the API version (`GET /v1/info`); the Go client is
   `pkg/apiclient`.
+
+### Added
+
+- `catchpen task cancel` and `task rm` are recorded in the audit log (`task.cancel`,
+  `task.rm`).
+- The unit `catchpen daemon install` writes has `KillMode=process`: VMs the daemon
+  starts keep running when it stops or restarts. Run `catchpen daemon install` again to
+  update an installed unit.
 - `catchpen egress config` records each change in the audit log (`egress.config`), with
   the old and new values, as allowlist and denylist edits already were.
 

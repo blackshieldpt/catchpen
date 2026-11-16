@@ -120,6 +120,23 @@ packages; existing VMs keep their base until you `reset --latest` or `rebase` th
 [snapshots.md](snapshots.md)). A failed rebuild leaves the old base in place and is
 retried at the next interval.
 
+### Serving the API
+
+`server: {}` makes the daemon serve the API on `api.sock` in the data directory, to its
+own user only. Add `server.listen` to serve enrolled clients over TLS 1.3 as well:
+
+```yaml
+server:
+  listen: ":7443"
+```
+
+`catchpen daemon info` prints the socket, the certificate's pin and the number of clients
+enrolled; `catchpen daemon client add` enrols one. The listener refuses to start with no
+client enrolled. `server:` is read when the daemon starts, so restart it after a change.
+On a host reachable from elsewhere, keep the port on a private network or behind a
+firewall: it authenticates clients, but doesn't confine who may connect. See
+[server.md](server.md).
+
 ## Running headless
 
 On a host without a desktop session:

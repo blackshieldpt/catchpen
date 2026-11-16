@@ -57,6 +57,7 @@ nav:
       - Canaries: canaries.md
   - Operating catchpen:
       - Deployment: deployment.md
+      - The API: server.md
       - Troubleshooting: troubleshooting.md
   - Contributing:
       - Development: development.md

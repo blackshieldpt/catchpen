@@ -93,6 +93,39 @@ the agent user has passwordless sudo inside it.
 - The notification relay holds the sink credentials on the host; the guest never sees
   them.
 
+## The API
+
+`catchpen daemon` can serve an API that does what the CLI does; it is off unless
+`server:` is set. Its two front doors have different trust:
+
+- **The unix socket** (`api.sock`, mode 0600) is the daemon's own user: any process of
+  that user can call every route with every scope, as it can run `catchpen` itself. The
+  socket is only as private as that account.
+- **`server.listen`** serves TLS 1.3 to clients enrolled by certificate (mTLS) or HMAC
+  key. An enrolled client is trusted as far as its scopes go: with none it controls VMs,
+  and `config:write` makes it as powerful as your shell. It can connect from any address
+  that reaches the port. There is no CA: the server's certificate is self-signed and
+  clients pin its key. A certificate or key is a host credential; a leaked one is an
+  account takeover until `catchpen daemon client rm`, which refuses its next request and
+  ends its open streams within 2 s.
+
+`config:write` is host code execution: it writes `config.yaml`, which can run host
+commands (`secrets.<name>.command`), turn off canary pauses and recordings, and send host
+secrets into VMs; it changes forge credentials; and it submits tasks whose guests hold
+the template's secrets. Enrol a `config:write` client only if you would give it your
+shell. Everything else is VM control.
+
+The API is bounded and leaves traces: 64 TCP connections, the per-client request and
+stream rates, 4 MiB bodies and timeouts (see [server.md](server.md#limits)); the audit
+events these calls cause carry `client` (`@local` over the socket), while a read writes
+none, and API sessions are recorded as
+`web-ssh`, `web-run` and `web-attach` like CLI ones. It never returns `secrets.env`
+values, `canaries.json`, private keys or resolved secrets, and guest text is data. A
+canary pause refuses a terminal and console and the calls that would work on its guest
+(reset, rebase, push, snapshots, forwards, pull and pr), as it does at the CLI; resuming
+it is its own audited call. CORS is never allowed, and a stream whose `Origin` isn't the
+API's own is refused, so a web page can't drive a client's certificate.
+
 ## Data coming from the guest
 
 - Bundles from `pull`, `pr` and tasks are fetched into `refs/catchpen/...` with hooks off
@@ -160,6 +193,13 @@ the agent user has passwordless sudo inside it.
 - Recordings, transcripts, task output and the audit log are kept after `destroy` and
   never removed by `gc`. They can contain secrets an agent printed. The audit log rotates
   at 32 MiB, keeping one old file (`audit.jsonl.1`), so its oldest entries do go.
+- An enrolled API client is a host credential: a leaked certificate or HMAC key can do
+  anything its scopes allow until `catchpen daemon client rm`. There is one scope, so a
+  client either has `config:write` or not, and no per-user identity is carried.
+- `server.listen` has no account lockout and no per-source ban beyond the 64-connection
+  and 16-per-address caps and the 60 s pre-auth timeout; keep it on a private network.
+- The unix socket's protection is the daemon user's account and its 0600 mode: any
+  process of that user, or root, can use every scope.
 
 ## Recommendations
 
